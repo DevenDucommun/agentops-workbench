@@ -31,6 +31,8 @@ PAI exports a sanitized session artifact after an agent run. AgentOps ingests th
 
 This is the recommended first integration because it is easiest to sanitize and easiest to describe publicly.
 
+This also supports Claude and Codex workflows when PAI acts as the local orchestrator or handoff layer. The important boundary is that PAI exports AgentOps-compatible events; AgentOps does not need to know whether the underlying work was performed by Claude, Codex, or another agent.
+
 Expected artifact:
 
 ```json
@@ -79,6 +81,8 @@ A future PAI adapter should implement the same ingestion contract as every other
 - output: normalized event stream
 - behavior: deterministic, tested, redacted
 - errors: structured parse diagnostics
+
+The adapter contract is shared with direct Claude and Codex adapters. PAI is not the schema owner; `agentops-event-v1` is.
 
 ## Open Questions
 

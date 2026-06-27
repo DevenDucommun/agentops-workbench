@@ -32,6 +32,7 @@ Outcomes:
 
 - Versioned normalized event schema.
 - Adapter contract and fixture format.
+- Canonical `agentops-event-v1` JSONL documentation.
 - Redaction pipeline before persistence.
 - Source metadata without private path leakage.
 - Parser tests for malformed, partial, and mixed event streams.
@@ -80,6 +81,7 @@ Outcomes:
 
 - Public adapter interface for local agent-session exporters.
 - Optional PAI-compatible post-hoc import path.
+- Direct Claude/Codex adapter strategy after sanitized fixture review.
 - Optional hook-envelope JSONL writer.
 - Clear documentation that PAI private memory stores are out of scope.
 

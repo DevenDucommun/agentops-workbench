@@ -28,6 +28,7 @@
 ## M2 Schema And Adapter Hardening
 
 - [ ] Define versioned normalized event schema.
+- [ ] Document canonical `agentops-event-v1` JSONL.
 - [ ] Add adapter interface.
 - [ ] Move JSONL parser behind adapter interface.
 - [ ] Add redaction pipeline.
@@ -61,6 +62,8 @@
 
 - [ ] Define sanitized hook-envelope JSONL format.
 - [ ] Add PAI-compatible post-hoc import docs.
+- [ ] Add PAI-compatible post-hoc import implementation.
+- [ ] Add direct Claude/Codex adapter research notes after sanitized fixture review.
 - [ ] Add optional PAI fixture generated from synthetic data.
 - [ ] Add JSON export.
 - [ ] Draft OpenTelemetry mapping table.
