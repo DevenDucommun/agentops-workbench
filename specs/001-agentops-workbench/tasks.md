@@ -79,6 +79,7 @@
 
 - [ ] Initialize private GitHub repo.
 - [ ] Enable secret scanning and dependabot alerts where available.
+- [ ] Enable `main` branch protection when GitHub account/repo visibility supports it.
 - [ ] Add CI workflow.
 - [ ] Run public-readiness scan.
 - [ ] Replace any private artifacts with synthetic examples.

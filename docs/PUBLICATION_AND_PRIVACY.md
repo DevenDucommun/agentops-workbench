@@ -98,12 +98,27 @@ Create the GitHub repository as private first. Keep it private until the public 
 Recommended initial settings:
 
 - visibility: private
-- branch protection: enabled before public launch
+- branch protection: enabled before public launch, or earlier if the GitHub account plan supports it for private repositories
 - issues: enabled
 - discussions: optional
 - wiki: disabled
 - secret scanning: enabled if available
 - dependabot alerts: enabled
+
+## Intended Branch Protection
+
+GitHub branch protection/rulesets may require GitHub Pro for private personal repositories. If unavailable while private, enable these settings as soon as the repository is public or the account plan supports them:
+
+- protect `main`
+- require pull request before merge
+- require one approving review
+- dismiss stale approvals on new pushes
+- require status check `Test`
+- require branches to be up to date before merge
+- require conversation resolution
+- require linear history
+- block force pushes
+- block branch deletion
 
 Suggested public repository description:
 
