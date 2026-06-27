@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+dist/
+.agentops/
+.agents/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example

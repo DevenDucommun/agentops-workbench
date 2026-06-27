@@ -1,0 +1,20 @@
+{
+  "name": "agentops-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agentops": "./bin/agentops"
+  },
+  "scripts": {
+    "agentops": "bun ./src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "scan:public": "bun ./scripts/public-readiness.ts",
+    "ci": "bun run typecheck && bun test && bun run scan:public",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
