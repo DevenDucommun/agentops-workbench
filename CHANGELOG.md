@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## v0.2.0 - 2026-06-28
+
 ### Added
 
 - `agentops adapters` and `agentops adapters --input <file>` for adapter discovery and detection diagnostics.
