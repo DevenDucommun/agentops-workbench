@@ -6,8 +6,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.1.0)
-- Current `main`: includes early v0.2 CLI inspection and sanitized Claude/Codex export adapter work
+- Public release: [`v0.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.2.0)
+- Current `main`: includes CLI inspection and sanitized Claude/Codex export adapter work
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Claude/Codex transcript parsing: planned, not implemented
 
