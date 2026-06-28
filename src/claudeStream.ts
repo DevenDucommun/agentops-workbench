@@ -16,6 +16,7 @@ type ClaudeStreamRecord = {
   usage?: ClaudeUsage;
   total_cost_usd?: number;
   stop_reason?: string | null;
+  _lineNumber?: number;
   [key: string]: unknown;
 };
 
@@ -51,6 +52,7 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line, index) => parseClaudeLine(line, index + 1));
+  validateClaudeRecords(records);
 
   const sessionId = records.find((record) => typeof record.session_id === "string")?.session_id;
   const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "claude-code-stream-session";
@@ -85,10 +87,29 @@ function parseClaudeLine(line: string, lineNumber: number): ClaudeStreamRecord {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("record must be a JSON object");
     }
-    return value as ClaudeStreamRecord;
+    return { ...(value as ClaudeStreamRecord), _lineNumber: lineNumber };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid Claude Code stream JSONL record on line ${lineNumber}: ${reason}`);
+  }
+}
+
+function validateClaudeRecords(records: ClaudeStreamRecord[]): void {
+  if (!records.length) throw new Error("Unsupported Claude Code stream JSONL shape: expected JSONL records from `claude -p --output-format stream-json`.");
+
+  const knownTypes = new Set(["system", "assistant", "user", "result", "tool_progress"]);
+  const knownRecords = records.filter((record) => typeof record.type === "string" && knownTypes.has(record.type));
+  if (!knownRecords.length) {
+    throw new Error("Unsupported Claude Code stream JSONL shape: expected system, assistant, user, result, or tool_progress events.");
+  }
+
+  for (const record of records) {
+    if ((record.type === "assistant" || record.type === "user") && !isRecord(record.message)) {
+      throw new Error(`Unsupported Claude Code stream JSONL record on line ${record._lineNumber ?? "unknown"}: ${record.type} event must include a message object.`);
+    }
+    if (record.type === "result" && record.subtype === undefined) {
+      throw new Error(`Unsupported Claude Code stream JSONL record on line ${record._lineNumber ?? "unknown"}: result event must include subtype.`);
+    }
   }
 }
 
@@ -342,4 +363,8 @@ function stringifyOutput(value: unknown): string | undefined {
 function compact(value: string): string {
   const oneLine = value.replace(/\s+/g, " ").trim();
   return oneLine.length > 120 ? `${oneLine.slice(0, 117)}...` : oneLine;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

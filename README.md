@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.6.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.6.0)
-- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter research, dashboard tool mapping, dashboard Markdown report export, and stronger evidence-claim checks
+- Public release: [`v0.7.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.7.0)
+- Current `main`: includes CLI inspection, config validation, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter hardening, dashboard tool mapping, dashboard Markdown report export, and stronger evidence-claim checks
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -47,6 +47,7 @@ bun install --frozen-lockfile
 ./bin/agentops sessions
 ./bin/agentops inspect --session latest
 ./bin/agentops report --session latest > report.md
+./bin/agentops config --check
 ./bin/agentops dashboard
 ```
 
@@ -67,6 +68,12 @@ Check public-readiness hygiene:
 
 ```bash
 ./bin/agentops scan-publication
+```
+
+Validate large synthetic-session performance:
+
+```bash
+bun run smoke:large-session
 ```
 
 ## Installation
@@ -94,6 +101,7 @@ Common commands:
 ./bin/agentops report --session latest > report.md
 ./bin/agentops repo-report --session latest > repo-report.md
 ./bin/agentops repo-report --session latest --format github > pr-comment.md
+./bin/agentops config --check
 ./bin/agentops dashboard --check
 ./bin/agentops scan-publication
 ```

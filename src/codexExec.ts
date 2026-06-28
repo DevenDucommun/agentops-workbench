@@ -11,6 +11,7 @@ type CodexRecord = {
   usage?: CodexUsage;
   error?: string | { message?: string };
   message?: string;
+  _lineNumber?: number;
   [key: string]: unknown;
 };
 
@@ -50,6 +51,7 @@ export function parseCodexExecJsonl(sourcePath: string, input: string, config: A
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line, index) => parseCodexLine(line, index + 1));
+  validateCodexRecords(records);
 
   const threadId = records.find((record) => record.type === "thread.started" && typeof record.thread_id === "string")?.thread_id;
   const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "codex-exec-session";
@@ -84,10 +86,29 @@ function parseCodexLine(line: string, lineNumber: number): CodexRecord {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("record must be a JSON object");
     }
-    return value as CodexRecord;
+    return { ...(value as CodexRecord), _lineNumber: lineNumber };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid Codex exec JSONL record on line ${lineNumber}: ${reason}`);
+  }
+}
+
+function validateCodexRecords(records: CodexRecord[]): void {
+  if (!records.length) throw new Error("Unsupported Codex exec JSONL shape: expected JSONL records from `codex exec --json`.");
+
+  const knownTypes = new Set(["thread.started", "turn.started", "turn.completed", "turn.failed", "error", "item.started", "item.completed"]);
+  const knownRecords = records.filter((record) => typeof record.type === "string" && knownTypes.has(record.type));
+  if (!knownRecords.length) {
+    throw new Error("Unsupported Codex exec JSONL shape: expected thread, turn, item, or error events from `codex exec --json`.");
+  }
+
+  for (const record of records) {
+    if ((record.type === "item.started" || record.type === "item.completed") && !isRecord(record.item)) {
+      throw new Error(`Unsupported Codex exec JSONL record on line ${record._lineNumber ?? "unknown"}: ${record.type} must include an item object.`);
+    }
+    if ((record.type === "item.started" || record.type === "item.completed") && typeof record.item?.type !== "string") {
+      throw new Error(`Unsupported Codex exec JSONL record on line ${record._lineNumber ?? "unknown"}: item.type must be a string.`);
+    }
   }
 }
 
@@ -289,4 +310,8 @@ function stringifyOutput(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return undefined;
   return JSON.stringify(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

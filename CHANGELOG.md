@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.7.0 - 2026-06-28
+
+### Added
+
+- `agentops config --check` for config validation and suppression guardrails.
+- Native Claude Code and Codex edge fixtures for partial streams, failed commands, permission-denied output, and retry-like flows.
+- Line-specific diagnostics for unsupported native Claude Code and Codex JSONL record shapes.
+- Redaction regression coverage for credential-like values, local paths, emails, and nested transcript payloads.
+- SQLite migration regression coverage for older local database schemas.
+- Large synthetic session smoke for ingest, analysis, and report generation.
+
+### Changed
+
+- CI smoke now covers config validation, native edge fixtures, and the large-session baseline.
+
 ## v0.6.0 - 2026-06-28
 
 ### Added

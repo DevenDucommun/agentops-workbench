@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v0.6.0`
+Current public release: `v0.7.0`
 
 Implemented:
 
@@ -36,6 +36,10 @@ Implemented:
   post-hoc artifacts.
 - Specific missing-evidence flags for test, lint, typecheck, and build claims.
 - Markdown report risk grouping by severity.
+- Config validation and suppression guardrails.
+- Native Claude Code and Codex edge fixture coverage plus unsupported-shape
+  diagnostics.
+- Redaction, migration, and large-session smoke coverage.
 - Install smoke, package dry-run smoke, and release archive smoke automation.
 
 Current boundaries:
@@ -118,6 +122,8 @@ Dependencies:
 ### v0.7.0: Adapter, Privacy, And Config Hardening
 
 Tracking issue: [#38](https://github.com/DevenDucommun/agentops-workbench/issues/38)
+
+Status: complete in `v0.7.0`.
 
 Purpose: make supported ingestion paths more robust before declaring public
 contract stability.

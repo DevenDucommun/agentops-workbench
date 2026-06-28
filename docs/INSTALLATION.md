@@ -95,6 +95,12 @@ Validate package contents with:
 bun run smoke:package
 ```
 
+Validate large synthetic-session ingest/report behavior with:
+
+```bash
+bun run smoke:large-session
+```
+
 See [Packaging strategy](PACKAGING.md) for the decision, deferred alternatives,
 and package content rules.
 

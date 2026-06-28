@@ -274,10 +274,23 @@ bun run ci
 ./bin/agentops scan-publication
 ```
 
+## v0.7 Hardening Notes
+
+The native adapters include synthetic edge fixtures for:
+
+- partial native streams
+- failed shell commands
+- permission-denied tool output
+- retry-like flows
+- unsupported record shapes with explicit diagnostics
+
+Unsupported native record shapes should fail with line-specific errors instead
+of being silently normalized. Raw transcript-file parsing remains out of scope.
+
 ## Roadmap Recommendation
 
 1. Add `codex-exec-jsonl` parser and synthetic fixtures. Status: implemented in `v0.4.0`.
 2. Add `claude-code-stream-json` parser and synthetic fixtures. Status: implemented after `v0.4.0`.
-3. Add native parser schema-drift diagnostics and adapter detection hints.
+3. Add native parser schema-drift diagnostics and adapter detection hints. Status: implemented in `v0.7.0`.
 4. Add optional capture scripts that write JSONL to a local ignored directory.
 5. Revisit hook-stream capture once post-hoc native parsing is stable.

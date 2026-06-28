@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"codex-edge-sample"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"Synthetic retry plan after a permission-denied command."}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"cat ./protected.txt","status":"failed","exit_code":1,"output":"permission denied"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"bun test","status":"completed","exit_code":0,"output":"1 pass\n0 fail"}}
+{"type":"item.completed","item":{"id":"item_4","type":"file_change","path":"src/retry-example.ts","operation":"edit","lines_added":3,"lines_removed":1}}
+{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":"Retried after the permission issue and verified the change with bun test."}}
+{"type":"turn.completed","usage":{"input_tokens":200,"output_tokens":50,"reasoning_output_tokens":10}}

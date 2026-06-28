@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -31,6 +31,34 @@ test("lists adapters and detection diagnostics", async () => {
   expect(detected.exitCode).toBe(0);
   expect(detected.stdout).toContain("Codex Export JSONL (100%)");
   expect(detected.stdout).toContain("found Codex source metadata");
+});
+
+test("validates config files", async () => {
+  const defaults = await runCli(["config", "--check"]);
+  expect(defaults.exitCode).toBe(0);
+  expect(defaults.stdout).toContain("AgentOps config OK");
+  expect(defaults.stdout).toContain("Using built-in defaults");
+
+  const dir = mkdtempSync(join(tmpdir(), "agentops-config-test-"));
+  const invalidPath = join(dir, "agentops.config.json");
+  writeFileSync(
+    invalidPath,
+    JSON.stringify({
+      schemaVersion: "agentops.config.v1",
+      privacy: {
+        storeRawPayload: true,
+        redactBeforeStore: false,
+        hashRawPayload: false
+      },
+      suppressions: [{ category: "large-churn" }]
+    })
+  );
+
+  const invalid = await runCli(["config", "--check", "--config", invalidPath]);
+  expect(invalid.exitCode).toBe(1);
+  expect(invalid.stderr).toContain("privacy.storeRawPayload requires privacy.redactBeforeStore");
+  expect(invalid.stderr).toContain("privacy.storeRawPayload requires privacy.hashRawPayload");
+  expect(invalid.stderr).toContain("suppressions[0].reason is required");
 });
 
 test("ingests then lists and inspects sessions", async () => {

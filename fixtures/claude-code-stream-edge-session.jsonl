@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"claude-edge-sample"}
+{"type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cat ./protected.txt"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"permission denied"}]}}
+{"type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Retrying with a safe verification command."},{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"bun test"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_2","is_error":false,"content":"1 pass\n0 fail"}]}}
+{"type":"result","subtype":"success","session_id":"claude-edge-sample","result":"Retried after the permission issue and verified the change with bun test.","usage":{"input_tokens":220,"output_tokens":70},"total_cost_usd":0.002}
