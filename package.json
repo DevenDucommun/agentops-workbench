@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "scan:public": "./bin/agentops scan-publication",
     "smoke:install": "bun ./scripts/smoke-install.ts",
+    "smoke:release-archive": "bun ./scripts/smoke-release-archive.ts",
     "ci": "bun run typecheck && bun test && bun run scan:public",
     "test": "bun test"
   },

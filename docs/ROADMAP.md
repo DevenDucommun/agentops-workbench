@@ -6,7 +6,7 @@ Make coding-agent work reviewable, auditable, and safer to trust.
 
 ## Current Status
 
-Public release: `v0.3.0`
+Public release: `v0.4.0`
 
 Implemented:
 
@@ -18,15 +18,29 @@ Implemented:
 - GitHub-ready PR comment Markdown output.
 - Session listing and inspection commands.
 - Sanitized export adapters for AgentOps JSONL, PAI, Claude Code, and Codex.
+- Native Codex `codex exec --json` ingestion.
 - Public-readiness scan, CI, branch protection, GitGuardian checks, secret scanning, and Dependabot security updates.
 - Local dashboard foundation backed by SQLite.
+- Dashboard MCP/tool usage map.
+- Release archive smoke automation.
 
 Current boundary:
 
 - Claude Code and Codex support means normalized, sanitized AgentOps JSONL exports.
-- Native Codex `codex exec --json` ingestion is implemented after `v0.3.0`.
 - Native Claude Code runtime parsing remains planned but not implemented.
-- Dashboard foundation is implemented; richer visualization remains future work.
+- Dashboard foundation is implemented with tool usage summary; richer visualization remains future work.
+
+## v0.4 Focus
+
+This release completes the first native runtime ingestion path and tightens
+release validation.
+
+Delivered:
+
+- Native Codex `codex exec --json` adapter and synthetic fixture coverage.
+- Claude Code stream JSON fixture research and public-safe fixture decision.
+- Dashboard MCP/tool usage map backed by SQLite.
+- Release archive smoke script for validating GitHub source archives.
 
 ## v0.3 Focus
 
@@ -137,7 +151,7 @@ Exit criteria:
 
 ## Phase 5: Dashboard
 
-Status: foundation implemented for `v0.3.0`; richer visualization remains future work.
+Status: foundation implemented for `v0.3.0`; MCP/tool usage summary added in `v0.4.0`; richer visualization remains future work.
 
 Outcomes:
 
@@ -172,7 +186,7 @@ Exit criteria:
 
 ## Phase 7: Public Launch
 
-Status: complete in `v0.1.0`, with `v0.3.0` now published.
+Status: complete in `v0.1.0`, with `v0.4.0` now published.
 
 Outcomes:
 

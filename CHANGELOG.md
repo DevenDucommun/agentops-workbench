@@ -1,10 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 - 2026-06-28
 
 ### Added
 
 - Native `codex exec --json` JSONL adapter with synthetic fixture coverage.
+- Dashboard MCP/tool usage summary backed by SQLite.
+- Release archive smoke script for validating GitHub source archives.
+- Claude Code stream JSON fixture research and public-safe fixture plan.
 
 ## v0.3.0 - 2026-06-28
 

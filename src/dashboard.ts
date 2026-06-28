@@ -7,12 +7,13 @@ import {
   getFileChanges,
   getRiskFlags,
   getSession,
+  getToolCalls,
   getUsageSummary,
   listSessions,
   openStore,
   type Store
 } from "./store";
-import type { CommandRecord, FileChangeRecord, RiskFlagRecord, SessionSummary, StoredEvent, UsageSummary } from "./types";
+import type { CommandRecord, FileChangeRecord, RiskFlagRecord, SessionSummary, StoredEvent, ToolCallRecord, UsageSummary } from "./types";
 
 export type DashboardOptions = {
   host?: string;
@@ -32,6 +33,7 @@ type DashboardSessionDetail = {
   events: StoredEvent[];
   commands: CommandRecord[];
   files: FileChangeRecord[];
+  tools: ToolCallRecord[];
   risks: RiskFlagRecord[];
   verification: CommandRecord[];
 };
@@ -95,6 +97,7 @@ function getDashboardSession(store: Store, sessionId: string, config: AgentOpsCo
     events: getEvents(store, sessionId),
     commands,
     files: getFileChanges(store, sessionId),
+    tools: getToolCalls(store, sessionId),
     risks: getRiskFlags(store, sessionId),
     verification: commands.filter((command) => isVerificationCommand(command.command, config))
   };
@@ -385,6 +388,17 @@ function dashboardHtml(): string {
       border-color: var(--line);
       box-shadow: var(--shadow);
     }
+    .tool-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .tool-category {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
     .hidden { display: none; }
     @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
@@ -427,10 +441,12 @@ function dashboardHtml(): string {
         <div class="panel">
           <div class="tabs">
             <button class="tab active" data-tab="risks">Risks</button>
+            <button class="tab" data-tab="tools">Tools</button>
             <button class="tab" data-tab="commands">Commands</button>
             <button class="tab" data-tab="files">Files</button>
           </div>
           <div class="panel-body" id="tab-risks"></div>
+          <div class="panel-body hidden" id="tab-tools"></div>
           <div class="panel-body hidden" id="tab-commands"></div>
           <div class="panel-body hidden" id="tab-files"></div>
         </div>
@@ -512,6 +528,7 @@ function dashboardHtml(): string {
         metric("Events", data.events.length),
         metric("Commands", data.commands.length),
         metric("Files", data.files.length),
+        metric("Tools", data.tools.length),
         metric("Risks", data.risks.length),
         metric("Verification", data.verification.length),
         metric("Tokens", data.usage.totalTokens == null ? "—" : fmt.format(data.usage.totalTokens))
@@ -519,6 +536,7 @@ function dashboardHtml(): string {
       document.getElementById("timeline-count").textContent = data.events.length + " events";
       renderTimeline(data.events);
       renderRisks(data.risks, data.verification);
+      renderTools(data.tools);
       renderCommands(data.commands);
       renderFiles(data.files);
     }
@@ -556,6 +574,13 @@ function dashboardHtml(): string {
         : '<div class="empty">No commands recorded.</div>';
     }
 
+    function renderTools(tools) {
+      const container = document.getElementById("tab-tools");
+      container.innerHTML = tools.length
+        ? '<div class="list">' + tools.map((tool) => '<div class="item tool-row"><div><code>' + escapeHtml(tool.toolName) + '</code><div class="tool-category">' + escapeHtml(tool.category) + (tool.status ? ' · ' + escapeHtml(tool.status) : '') + '</div></div><span class="pill">' + tool.count + '</span></div>').join("") + '</div>'
+        : '<div class="empty">No tool calls recorded.</div>';
+    }
+
     function renderFiles(files) {
       const container = document.getElementById("tab-files");
       container.innerHTML = files.length
@@ -565,7 +590,7 @@ function dashboardHtml(): string {
 
     function selectTab(name) {
       for (const tab of document.querySelectorAll(".tab")) tab.classList.toggle("active", tab.dataset.tab === name);
-      for (const id of ["risks", "commands", "files"]) document.getElementById("tab-" + id).classList.toggle("hidden", id !== name);
+      for (const id of ["risks", "tools", "commands", "files"]) document.getElementById("tab-" + id).classList.toggle("hidden", id !== name);
     }
 
     function metric(label, value) {

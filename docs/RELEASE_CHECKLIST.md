@@ -57,6 +57,18 @@ Status: passed for v0.1.0 public readiness on 2026-06-28. See [v0.1.0 readiness 
 - [x] Direct Claude/Codex adapters are not advertised as implemented until tested.
 - [x] Any adapter-specific fixture has been redacted and reviewed.
 
+## Release Archive Smoke
+
+After creating a GitHub release, verify the generated source archive:
+
+```bash
+bun ./scripts/smoke-release-archive.ts v0.4.0
+```
+
+The archive does not include `.git`, so `repo-report` remains a git-checkout
+workflow. The archive smoke covers install, help, ingest, sessions, report,
+dashboard configuration, and publication scan with synthetic fixtures.
+
 ## Recommended Pre-Public Commands
 
 ```bash

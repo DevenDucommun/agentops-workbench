@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.3.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.3.0)
-- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, usage metadata, native adapter research, and dashboard foundation
+- Public release: [`v0.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.4.0)
+- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex exec ingestion, usage metadata, native adapter research, and dashboard tool mapping
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream parsing: researched, not implemented
@@ -124,6 +124,9 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 The `claude-code-jsonl` and `codex-jsonl` fixtures are normalized export
 examples. The `codex-exec-jsonl` fixture represents the native
 `codex exec --json` stream shape with synthetic data.
+Native Claude Code stream parsing is researched for a future release; public
+fixtures should use synthetic `claude -p --output-format stream-json --verbose`
+captures rather than raw transcript files.
 
 To inspect adapter detection:
 

@@ -45,6 +45,7 @@ The dashboard currently provides:
 - risk and verification summary
 - command drilldown
 - file-change drilldown
+- MCP and tool usage summary
 - token summary when available
 
 It reads from the local SQLite database only. It does not require hosted
@@ -80,7 +81,7 @@ Basic manual verification:
 2. Run `./bin/agentops dashboard`.
 3. Open `http://127.0.0.1:4927`.
 4. Confirm the session list shows `usage-session`.
-5. Confirm the timeline, risks, commands, files, and token metric render.
+5. Confirm the timeline, risks, commands, files, tools, and token metric render.
 
 Automated coverage verifies the dashboard JSON endpoints and HTML shell. Visual
 screenshots remain manual for this foundation release.
