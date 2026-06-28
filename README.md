@@ -150,6 +150,7 @@ Core docs:
 - [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
+- [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
 - [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [CLI reference](docs/CLI.md)
