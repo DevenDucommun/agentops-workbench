@@ -4,9 +4,43 @@
 
 Make coding-agent work reviewable, auditable, and safer to trust.
 
+## Current Status
+
+Public release: `v0.2.0`
+
+Implemented:
+
+- Local CLI ingestion and reporting.
+- Versioned `agentops.event.v1` JSONL schema.
+- SQLite-backed local session store.
+- Risk and evidence checks.
+- Repo-aware Markdown reports.
+- GitHub-ready PR comment Markdown output.
+- Session listing and inspection commands.
+- Sanitized export adapters for AgentOps JSONL, PAI, Claude Code, and Codex.
+- Public-readiness scan, CI, branch protection, GitGuardian checks, secret scanning, and Dependabot security updates.
+
+Current boundary:
+
+- Claude Code and Codex support means normalized, sanitized AgentOps JSONL exports.
+- Native runtime transcript parsing is planned but not implemented.
+- Dashboard is planned but not implemented.
+
+## v0.3 Candidate Focus
+
+The next release should make the project easier to validate against real-world agent workflows while preserving privacy boundaries.
+
+Priority candidates:
+
+- Native Claude Code transcript research and fixture design.
+- Native Codex transcript research and fixture design.
+- Token/cost reporting model for sources that provide usage metadata.
+- Local dashboard foundation backed by the existing SQLite store.
+- Install/package strategy beyond local `./bin/agentops`.
+
 ## Phase 0: Public-Ready Foundation
 
-Status: in progress.
+Status: complete in `v0.1.0`.
 
 Outcomes:
 
@@ -28,6 +62,8 @@ Exit criteria:
 
 ## Phase 1: Stable Ingestion And Schema
 
+Status: substantially complete in `v0.2.0`; ongoing work continues through native adapter research.
+
 Outcomes:
 
 - Versioned normalized event schema.
@@ -46,6 +82,8 @@ Exit criteria:
 
 ## Phase 2: Risk And Evidence Engine
 
+Status: initial implementation complete; rule coverage will continue expanding.
+
 Outcomes:
 
 - Rule registry.
@@ -62,6 +100,8 @@ Exit criteria:
 
 ## Phase 3: PR/Repo Report
 
+Status: complete for local Markdown and GitHub-ready stdout output.
+
 Outcomes:
 
 - Git diff summarizer.
@@ -76,6 +116,8 @@ Exit criteria:
 - Report distinguishes observed agent actions from current working tree state.
 
 ## Phase 4: PAI And Agent Runtime Integrations
+
+Status: PAI-compatible and Claude/Codex sanitized export paths are implemented. Native runtime parsers remain future work.
 
 Outcomes:
 
@@ -92,6 +134,8 @@ Exit criteria:
 - Integration works without requiring PAI to be installed.
 
 ## Phase 5: Dashboard
+
+Status: not started.
 
 Outcomes:
 
@@ -110,6 +154,8 @@ Exit criteria:
 
 ## Phase 6: Standards And Export
 
+Status: not started.
+
 Outcomes:
 
 - JSON export.
@@ -123,6 +169,8 @@ Exit criteria:
 - Standards mapping is documented and versioned.
 
 ## Phase 7: Public Launch
+
+Status: complete in `v0.1.0`, with `v0.2.0` now published.
 
 Outcomes:
 

@@ -1,5 +1,9 @@
 # AgentOps Workbench
 
+[![CI](https://github.com/DevenDucommun/agentops-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/DevenDucommun/agentops-workbench/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/DevenDucommun/agentops-workbench)](https://github.com/DevenDucommun/agentops-workbench/releases)
+[![License](https://img.shields.io/github/license/DevenDucommun/agentops-workbench)](LICENSE)
+
 AgentOps Workbench is a local observability and audit tool for AI coding-agent runs. It helps teams understand what an agent did, what it changed, what evidence supports its final answer, and where the run created risk.
 
 It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other coding-agent workflows through a shared JSONL event schema.
