@@ -40,7 +40,7 @@ In progress:
 
 - Native Claude Code `claude -p --output-format stream-json` adapter and synthetic fixture coverage.
 - Dashboard filtering and tool-map polish.
-- Install/package distribution strategy beyond fresh clone and source archive.
+- Npm source package strategy and package dry-run smoke.
 
 ## v0.4 Focus
 

@@ -6,11 +6,25 @@
   "bin": {
     "agentops": "./bin/agentops"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "fixtures/",
+    "docs/INSTALLATION.md",
+    "docs/CLI.md",
+    "docs/DASHBOARD.md",
+    "docs/ADAPTER_STRATEGY.md",
+    "docs/EVENT_SCHEMA.md",
+    "docs/NATIVE_ADAPTER_RESEARCH.md",
+    "agentops.config.example.json",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "agentops": "bun ./src/cli.ts",
     "typecheck": "tsc --noEmit",
     "scan:public": "./bin/agentops scan-publication",
     "smoke:install": "bun ./scripts/smoke-install.ts",
+    "smoke:package": "bun ./scripts/smoke-package.ts",
     "smoke:release-archive": "bun ./scripts/smoke-release-archive.ts",
     "ci": "bun run typecheck && bun test && bun run scan:public",
     "test": "bun test"

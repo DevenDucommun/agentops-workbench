@@ -80,7 +80,7 @@ bun install --frozen-lockfile
 ./bin/agentops --help
 ```
 
-See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release archive caveats, and future packaging notes.
+See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release archive caveats, and package strategy notes.
 
 ## Current CLI
 
@@ -176,6 +176,7 @@ Core docs:
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [CLI reference](docs/CLI.md)
 - [Installation](docs/INSTALLATION.md)
+- [Packaging strategy](docs/PACKAGING.md)
 - [Dashboard](docs/DASHBOARD.md)
 - [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)

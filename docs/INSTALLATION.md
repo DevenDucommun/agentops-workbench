@@ -77,17 +77,30 @@ This does not work from a source archive because `.git` is not present:
 
 Use a fresh git clone when you need `repo-report`.
 
-## Future Packaging Options
+## Packaging Strategy
 
-Packaging is intentionally deferred until the CLI surface stabilizes further.
+The next distribution path is an npm source package with the existing `agentops`
+bin entry. It is not published yet; publishing should happen only through a
+release checklist decision.
 
-Candidate paths:
+The package still requires Bun at runtime because `bin/agentops` uses:
 
-- npm package with a `bin` entry
-- Bun standalone executable
-- GitHub release artifact containing a tested bundle
+```bash
+#!/usr/bin/env bun
+```
 
-Any future package workflow should include CI or smoke verification equivalent to:
+Validate package contents with:
+
+```bash
+bun run smoke:package
+```
+
+See [Packaging strategy](PACKAGING.md) for the decision, deferred alternatives,
+and package content rules.
+
+Bun standalone executables and dedicated GitHub release assets remain deferred
+options. Any future package workflow should include CI or smoke verification
+equivalent to:
 
 ```bash
 bun run smoke:install
