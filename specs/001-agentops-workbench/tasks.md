@@ -34,20 +34,20 @@
 - [x] Add redaction pipeline.
 - [x] Add payload hash support.
 - [x] Add raw payload retention configuration.
-- [ ] Add fixture for missing timestamps.
-- [ ] Add fixture for malformed records.
-- [ ] Add fixture for risky command/file edits.
+- [x] Add fixture for missing timestamps.
+- [x] Add fixture for malformed records.
+- [x] Add fixture for risky command/file edits.
 
 ## M3 Risk And Evidence Engine
 
 - [ ] Create rule registry.
-- [ ] Add severity taxonomy.
+- [x] Add severity taxonomy.
 - [ ] Add generated-file detector.
 - [ ] Add retry/loop detector.
 - [ ] Add cost/token extractor.
-- [ ] Add config-based suppression support.
+- [x] Add config-based suppression support.
 - [ ] Group report findings by severity.
-- [ ] Add tests for each rule category.
+- [ ] Add tests for every rule category.
 
 ## M4 Repo/PR Mode
 

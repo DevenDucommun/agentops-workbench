@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"risky-session","agent":"synthetic-agent","repo":"agentops-workbench","task":"Synthetic risky session"}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"shell","input":{"cmd":"rm -rf ./dist"},"status":"completed","exitCode":0,"output":"removed dist"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":".env","operation":"edit","linesAdded":1,"linesRemoved":0,"summary":"Synthetic sensitive file edit."}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"deploy/production.yaml","operation":"edit","linesAdded":600,"linesRemoved":25,"summary":"Synthetic deployment config churn."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Completed successfully."}

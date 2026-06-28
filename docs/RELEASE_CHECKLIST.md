@@ -48,6 +48,7 @@ This checklist must pass before making the repository public.
 - [ ] Canonical JSONL fixture is synthetic.
 - [ ] PAI post-hoc export path is documented.
 - [ ] PAI post-hoc export path has a synthetic fixture.
+- [ ] Risk, malformed, and missing-timestamp fixtures are synthetic.
 - [ ] Direct Claude/Codex adapters are not advertised as implemented until tested.
 - [ ] Any adapter-specific fixture has been redacted and reviewed.
 

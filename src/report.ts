@@ -1,7 +1,9 @@
+import type { AgentOpsConfig } from "./config";
+import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
-export function generateMarkdownReport(store: Store, sessionId: string): string {
+export function generateMarkdownReport(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): string {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
@@ -9,7 +11,7 @@ export function generateMarkdownReport(store: Store, sessionId: string): string 
   const commands = getCommands(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command));
+  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
 
   const sections = [

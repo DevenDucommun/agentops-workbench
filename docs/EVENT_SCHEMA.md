@@ -109,3 +109,13 @@ Public fixtures should be synthetic or redacted. Do not include:
 - raw command output from real systems
 
 By default, AgentOps stores raw payload hashes but does not store raw payload JSON.
+
+## Fixture Coverage
+
+Committed fixtures are synthetic and cover:
+
+- normal canonical JSONL: `fixtures/sample-session.jsonl`
+- PAI post-hoc export JSONL: `fixtures/pai-export-session.jsonl`
+- missing timestamps: `fixtures/missing-timestamps-session.jsonl`
+- risky commands/files: `fixtures/risky-session.jsonl`
+- malformed JSONL: `fixtures/malformed-session.jsonl`

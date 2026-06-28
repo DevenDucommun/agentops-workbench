@@ -28,7 +28,13 @@ The CLI should work without config. Config should refine behavior, not be requir
   "evidence": {
     "verificationCommands": ["test", "lint", "typecheck", "build"]
   },
-  "suppressions": []
+  "suppressions": [
+    {
+      "category": "large-churn",
+      "path": "generated/example.ts",
+      "reason": "Generated output is expected for this task type."
+    }
+  ]
 }
 ```
 
@@ -58,7 +64,7 @@ Mitigation: keep v1 config small and document precedence clearly.
 
 Teams can hide useful findings with broad suppressions.
 
-Mitigation: require suppressions to include category, path or command pattern, and reason.
+Mitigation: require suppressions to include a narrow `category`, `path` or `command`, and `reason`.
 
 ### Public Fixture Risk
 
@@ -145,6 +151,26 @@ Recommendation: default for MVP.
 - deterministic analyzer rules
 - explicit suppressions only
 - no network calls
+
+## Suppression Matching
+
+Suppressions are intentionally narrow. A suppression can match by:
+
+- `category`
+- `path`
+- `command`
+
+At least one of those fields must be present. `reason` is recommended for reviewability.
+
+Example:
+
+```json
+{
+  "category": "large-churn",
+  "path": "generated/example.ts",
+  "reason": "Generated output is expected for this task type."
+}
+```
 
 ## Future Config Areas
 

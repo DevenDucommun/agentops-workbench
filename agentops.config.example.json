@@ -13,5 +13,11 @@
   "evidence": {
     "verificationCommands": ["test", "check", "lint", "typecheck", "verify", "build"]
   },
-  "suppressions": []
+  "suppressions": [
+    {
+      "category": "large-churn",
+      "path": "generated/example.ts",
+      "reason": "Synthetic example: generated file churn is expected."
+    }
+  ]
 }

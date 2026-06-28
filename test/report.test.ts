@@ -14,7 +14,7 @@ test("ingests a session and generates a markdown report", () => {
   const fixture = readFileSync("fixtures/sample-session.jsonl", "utf8");
   const transcript = parseJsonlTranscript("fixtures/sample-session.jsonl", fixture);
   const result = ingestTranscript(store, transcript);
-  analyzeSession(store, result.sessionId);
+  analyzeSession(store, result.sessionId, defaultConfig);
 
   const report = generateMarkdownReport(store, "sample-session");
   expect(report).toContain("# AgentOps Session Report");
@@ -37,7 +37,7 @@ test("flags unsupported success claims", () => {
     ].join("\n")
   );
   ingestTranscript(store, transcript);
-  analyzeSession(store, "unsupported");
+  analyzeSession(store, "unsupported", defaultConfig);
 
   const report = generateMarkdownReport(store, "unsupported");
   expect(report).toContain("sensitive-file");
