@@ -38,8 +38,17 @@ jobs:
       - name: Install smoke test
         run: bun run smoke:install
 
+      - name: Package smoke test
+        run: bun run smoke:package
+
+      - name: Packed install smoke test
+        run: bun run smoke:pack-install
+
       - name: Large session smoke test
         run: bun run smoke:large-session
+
+      - name: Dashboard smoke test
+        run: bun run smoke:dashboard
 
       - name: CLI smoke test
         run: |

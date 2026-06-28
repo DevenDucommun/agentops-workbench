@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v0.8.0`
+Current public release: `v0.9.0`
 
 Implemented:
 
@@ -43,6 +43,9 @@ Implemented:
 - Deterministic `agentops.export.v1` JSON export for sessions and repo reports.
 - Hook-envelope JSONL documentation.
 - OpenTelemetry/GenAI standards mapping notes with OTLP export deferred.
+- Packed tarball install smoke, dashboard smoke, and golden report regression
+  coverage.
+- Reusable release template and release checklist.
 - Install smoke, package dry-run smoke, and release archive smoke automation.
 
 Current boundaries:
@@ -195,6 +198,8 @@ Dependencies:
 ### v0.9.0: Packaging, Dashboard Verification, And Release Automation
 
 Tracking issue: [#41](https://github.com/DevenDucommun/agentops-workbench/issues/41)
+
+Status: complete in `v0.9.0`.
 
 Purpose: make installation and release validation boring enough for users
 outside the original development environment.
