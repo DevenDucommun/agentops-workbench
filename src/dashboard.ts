@@ -211,6 +211,24 @@ function dashboardHtml(): string {
       display: grid;
       gap: 8px;
     }
+    .filters {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .filter-control {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 7px 9px;
+      box-shadow: var(--shadow);
+    }
+    .filter-control::placeholder {
+      color: var(--muted);
+    }
     .session-button {
       width: 100%;
       min-height: 86px;
@@ -419,6 +437,12 @@ function dashboardHtml(): string {
         </div>
         <button class="refresh" id="refresh" title="Refresh sessions">↻</button>
       </div>
+      <div class="filters">
+        <input class="filter-control" id="session-filter" type="search" placeholder="Filter sessions">
+        <select class="filter-control" id="adapter-filter">
+          <option value="">All adapters</option>
+        </select>
+      </div>
       <div class="sessions" id="sessions"></div>
     </aside>
     <main class="main">
@@ -454,10 +478,18 @@ function dashboardHtml(): string {
     </main>
   </div>
   <script>
-    const state = { sessions: [], selectedId: null, detail: null };
+    const state = { sessions: [], selectedId: null, detail: null, filterText: "", adapterFilter: "" };
     const fmt = new Intl.NumberFormat("en-US");
 
     document.getElementById("refresh").addEventListener("click", loadSessions);
+    document.getElementById("session-filter").addEventListener("input", (event) => {
+      state.filterText = event.target.value;
+      renderSessions();
+    });
+    document.getElementById("adapter-filter").addEventListener("change", (event) => {
+      state.adapterFilter = event.target.value;
+      renderSessions();
+    });
     for (const tab of document.querySelectorAll(".tab")) {
       tab.addEventListener("click", () => selectTab(tab.dataset.tab));
     }
@@ -469,6 +501,7 @@ function dashboardHtml(): string {
       const payload = await response.json();
       state.sessions = payload.sessions || [];
       if (!state.selectedId && state.sessions.length) state.selectedId = state.sessions[0].id;
+      renderFilters();
       renderSessions();
       if (state.selectedId) await loadSession(state.selectedId);
       if (!state.sessions.length) renderEmpty();
@@ -488,7 +521,12 @@ function dashboardHtml(): string {
         container.innerHTML = '<div class="empty">No sessions found.</div>';
         return;
       }
-      container.innerHTML = state.sessions.map((session) => {
+      const sessions = filteredSessions();
+      if (!sessions.length) {
+        container.innerHTML = '<div class="empty">No matching sessions.</div>';
+        return;
+      }
+      container.innerHTML = sessions.map((session) => {
         const active = session.id === state.selectedId ? " active" : "";
         return '<button class="session-button' + active + '" data-id="' + escapeAttr(session.id) + '">' +
           '<div class="session-title"><span>' + escapeHtml(session.id) + '</span><span class="pill ' + (session.riskCount ? 'risk' : 'ok') + '">' + session.riskCount + ' risks</span></div>' +
@@ -503,6 +541,31 @@ function dashboardHtml(): string {
       for (const button of container.querySelectorAll(".session-button")) {
         button.addEventListener("click", () => loadSession(button.dataset.id));
       }
+    }
+
+    function renderFilters() {
+      const select = document.getElementById("adapter-filter");
+      const adapters = Array.from(new Set(state.sessions.map((session) => session.sourceAdapter || "unknown"))).sort();
+      select.innerHTML = '<option value="">All adapters</option>' + adapters.map((adapter) => '<option value="' + escapeAttr(adapter) + '">' + escapeHtml(adapter) + '</option>').join("");
+      select.value = adapters.includes(state.adapterFilter) ? state.adapterFilter : "";
+      state.adapterFilter = select.value;
+    }
+
+    function filteredSessions() {
+      const query = state.filterText.trim().toLowerCase();
+      return state.sessions.filter((session) => {
+        const adapter = session.sourceAdapter || "unknown";
+        if (state.adapterFilter && adapter !== state.adapterFilter) return false;
+        if (!query) return true;
+        return [
+          session.id,
+          session.task,
+          session.agent,
+          session.model,
+          session.repo,
+          adapter
+        ].some((value) => String(value || "").toLowerCase().includes(query));
+      });
     }
 
     function renderEmpty() {

@@ -105,7 +105,10 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     const htmlResponse = await fetch(server.url);
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get("content-type")).toContain("text/html");
-    expect(await htmlResponse.text()).toContain("AgentOps Workbench");
+    const html = await htmlResponse.text();
+    expect(html).toContain("AgentOps Workbench");
+    expect(html).toContain("session-filter");
+    expect(html).toContain("adapter-filter");
 
     const missingResponse = await fetch(`${server.url}/api/sessions/missing-session`);
     expect(missingResponse.status).toBe(404);

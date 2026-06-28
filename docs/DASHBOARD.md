@@ -41,6 +41,7 @@ Validate the dashboard configuration without starting a long-running server:
 The dashboard currently provides:
 
 - session list
+- session text and adapter filtering
 - session timeline
 - risk and verification summary
 - command drilldown
