@@ -1,6 +1,7 @@
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
+import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
@@ -129,6 +130,31 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return { stdout: report, exitCode: 0 };
     }
 
+    if (command === "export") {
+      const sessionArg = readOption(args, "--session") ?? "latest";
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const format = readOption(args, "--format") ?? "json";
+      const scope = readOption(args, "--scope") ?? "session";
+      const includeRawPayloads = args.includes("--include-raw-payloads");
+      if (format !== "json" || !["session", "repo"].includes(scope)) {
+        return { stderr: "Usage: agentops export --session latest --format json [--scope session|repo]\n", exitCode: 1 };
+      }
+
+      const config = loadConfig(configPath);
+      const store = openStore();
+      const sessionId = getSessionId(store, sessionArg);
+      if (!sessionId) {
+        store.db.close();
+        return { stderr: "No sessions found. Run `agentops ingest <session.jsonl>` first.\n", exitCode: 1 };
+      }
+      const output =
+        scope === "repo"
+          ? generateRepoJsonExport(store, sessionId, getGitChanges(), config, { includeRawPayloads })
+          : generateSessionJsonExport(store, sessionId, config, { includeRawPayloads });
+      store.db.close();
+      return { stdout: output, exitCode: 0 };
+    }
+
     if (command === "dashboard") {
       if (args.includes("--check")) {
         const host = readOption(args, "--host") ?? "127.0.0.1";
@@ -211,6 +237,7 @@ Usage:
   agentops inspect --session latest
   agentops ingest <session.jsonl> --adapter pai-export-jsonl
   agentops report --session latest
+  agentops export --session latest --format json
   agentops repo-report --session latest
   agentops repo-report --session latest --format github
   agentops dashboard

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.8.0 - 2026-06-28
+
+### Added
+
+- `agentops export --session <id> --format json` for deterministic session JSON export.
+- `agentops export --session <id> --format json --scope repo` for repo-aware JSON export.
+- `agentops.export.v1` documentation with privacy defaults and compatibility notes.
+- Sanitized hook-envelope JSONL documentation for future local capture integrations.
+- OpenTelemetry/GenAI standards mapping notes.
+- Export compatibility tests.
+
+### Changed
+
+- OTLP export is explicitly deferred until after `v1.0.0`; future OTLP work should transform `agentops.export.v1`.
+
 ## v0.7.0 - 2026-06-28
 
 ### Added

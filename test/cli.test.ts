@@ -77,6 +77,13 @@ test("ingests then lists and inspects sessions", async () => {
   expect(inspect.stdout).toContain("Claude Code");
   expect(inspect.stdout).toContain("Verification Commands");
   expect(inspect.stdout).toContain("Synthetic Claude Code export completed");
+
+  const exported = await runCli(["export", "--session", "latest", "--format", "json"]);
+  expect(exported.exitCode).toBe(0);
+  const payload = JSON.parse(exported.stdout ?? "") as { schemaVersion: string; kind: string; events: Array<{ rawJson?: string }> };
+  expect(payload.schemaVersion).toBe("agentops.export.v1");
+  expect(payload.kind).toBe("session");
+  expect(payload.events.every((event) => event.rawJson === undefined)).toBe(true);
 });
 
 test("inspect and sessions include usage metadata when available", async () => {
