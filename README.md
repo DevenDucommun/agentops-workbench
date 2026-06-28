@@ -61,6 +61,19 @@ Check public-readiness hygiene:
 ./bin/agentops scan-publication
 ```
 
+## Installation
+
+The recommended install path today is a fresh git clone with Bun:
+
+```bash
+git clone https://github.com/DevenDucommun/agentops-workbench.git
+cd agentops-workbench
+bun install --frozen-lockfile
+./bin/agentops --help
+```
+
+See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release archive caveats, and future packaging notes.
+
 ## Current CLI
 
 Common commands:
@@ -140,6 +153,7 @@ Core docs:
 - [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [CLI reference](docs/CLI.md)
+- [Installation](docs/INSTALLATION.md)
 - [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [Changelog](CHANGELOG.md)
