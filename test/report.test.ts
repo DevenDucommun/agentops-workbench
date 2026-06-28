@@ -200,3 +200,30 @@ test("reports usage from native Codex exec JSONL", () => {
 
   store.db.close();
 });
+
+test("reports usage from native Claude Code stream JSONL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/claude-code-stream-session.jsonl");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "claude-stream-sample", defaultConfig);
+
+  const commands = getCommands(store, "claude-stream-sample");
+  const usage = getUsageSummary(store, "claude-stream-sample");
+  const report = generateMarkdownReport(store, "claude-stream-sample");
+
+  expect(commands.some((command) => command.command === "bun test")).toBe(true);
+  expect(usage.inputTokens).toBe(1000);
+  expect(usage.outputTokens).toBe(180);
+  expect(usage.totalTokens).toBe(1180);
+  expect(usage.costAmount).toBe(0.0123);
+  expect(usage.costCurrency).toBe("USD");
+  expect(report).toContain("## Usage");
+  expect(report).toContain("1,180");
+  expect(report).toContain("Synthetic Claude Code stream fixture completed");
+
+  store.db.close();
+});

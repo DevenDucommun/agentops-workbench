@@ -23,6 +23,7 @@ test("lists adapters and detection diagnostics", async () => {
   const list = await runCli(["adapters"]);
   expect(list.exitCode).toBe(0);
   expect(list.stdout).toContain("claude-code-jsonl");
+  expect(list.stdout).toContain("claude-code-stream-json");
   expect(list.stdout).toContain("codex-jsonl");
   expect(list.stdout).toContain("pai-export-jsonl");
 
@@ -78,4 +79,18 @@ test("ingests native Codex exec JSONL without explicit adapter selection", async
   expect(inspect.stdout).toContain("bun run typecheck");
   expect(inspect.stdout).toContain("Total Tokens");
   expect(inspect.stdout).toContain("1,150");
+});
+
+test("ingests native Claude Code stream JSONL without explicit adapter selection", async () => {
+  const ingest = await runCli(["ingest", "fixtures/claude-code-stream-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+  expect(ingest.stdout).toContain("Adapter: claude-code-stream-json");
+
+  const inspect = await runCli(["inspect", "--session", "claude-stream-sample"]);
+  expect(inspect.exitCode).toBe(0);
+  expect(inspect.stdout).toContain("Claude Code");
+  expect(inspect.stdout).toContain("bun test");
+  expect(inspect.stdout).toContain("Total Tokens");
+  expect(inspect.stdout).toContain("1,180");
+  expect(inspect.stdout).toContain("0.0123 USD");
 });

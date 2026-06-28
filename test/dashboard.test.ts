@@ -74,6 +74,27 @@ test("dashboard API includes tool usage summary", async () => {
   }
 });
 
+test("dashboard API includes Claude stream tool usage summary", async () => {
+  const ingest = await runCli(["ingest", "fixtures/claude-code-stream-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/claude-stream-sample`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      tools: Array<{ toolName: string; category: string; count: number }>;
+    };
+
+    expect(hasTool(detailPayload.tools, "Bash", "shell", 1)).toBe(true);
+    expect(hasTool(detailPayload.tools, "Edit", "file", 1)).toBe(true);
+    expect(hasTool(detailPayload.tools, "mcp__repo__read_file", "mcp", 1)).toBe(true);
+    expect(hasTool(detailPayload.tools, "WebSearch", "web", 1)).toBe(true);
+  } finally {
+    server.stop();
+  }
+});
+
 function hasTool(tools: Array<{ toolName: string; category: string; count: number }>, toolName: string, category: string, count: number): boolean {
   return tools.some((tool) => tool.toolName === toolName && tool.category === category && tool.count === count);
 }

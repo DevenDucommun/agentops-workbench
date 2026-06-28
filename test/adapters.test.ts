@@ -31,6 +31,23 @@ test("detects sanitized Claude Code export JSONL artifacts", () => {
   expect(adapter.id).toBe("claude-code-jsonl");
 });
 
+test("detects and parses native Claude Code stream JSONL streams", () => {
+  const input = loadAdapterInput("fixtures/claude-code-stream-session.jsonl");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("claude-code-stream-json");
+  expect(transcript.session.id).toBe("claude-stream-sample");
+  expect(transcript.session.source).toBe("claude-code");
+  expect(transcript.session.sourceAdapter).toBe("claude-code-stream-json");
+  expect(transcript.session.model).toBe("claude-sonnet-4-5");
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === "bun test")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "file_edit" && event.path === "src/adapters.ts")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.toolName === "mcp__repo__read_file")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.toolName === "WebSearch")).toBe(true);
+  expect(transcript.events.at(-1)?.type).toBe("final_response");
+});
+
 test("detects sanitized Codex export JSONL artifacts", () => {
   const input = loadAdapterInput("fixtures/codex-session.jsonl");
   const adapter = resolveAdapter(input);
