@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-agentops-workbench`  
 **Created**: 2026-06-27  
-**Status**: Draft  
+**Status**: Implemented MVP; maintained as public planning reference  
 **Input**: Build a public-ready local observability and audit tool for coding-agent sessions, with PAI-compatible integration boundaries and private-to-public repo hygiene.
 
 ## User Scenarios
@@ -63,9 +63,21 @@ The maintainer develops privately, then runs publication checks to confirm that 
 - Direct PAI memory access.
 - Raw transcript publication.
 
-## Open Questions
+## Resolved MVP Questions
 
-- Which real agent artifact format should become the first non-synthetic adapter?
-- Should PAI integration live in core or an optional package?
-- What should the report config file be named and where should suppressions live?
-- Which license should be used before public launch?
+- Native Codex `codex exec --json` and Claude Code `stream-json` became the
+  first direct runtime adapters.
+- PAI integration is implemented as a core post-hoc import path for sanitized
+  exported artifacts, not as direct private memory access.
+- Configuration lives in `agentops.config.json`-style local config files, with
+  suppressions and risk/evidence settings documented in `docs/CONFIGURATION.md`.
+- The project is licensed under the repository `LICENSE`.
+
+## Remaining Pre-1.0 Questions
+
+- Which CLI, schema, config, report, and dashboard surfaces are stable enough
+  to freeze at `v1.0.0`?
+- Should npm publishing happen before `v1.0.0`, or remain deferred until after
+  the CLI contract is frozen?
+- Should OTLP/OpenTelemetry export become experimental functionality or remain
+  a documented mapping only?

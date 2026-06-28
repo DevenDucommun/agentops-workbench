@@ -4,7 +4,8 @@
 
 Develop privately, publish cleanly.
 
-AgentOps Workbench is intended to become a public developer tool. The private development repo must be operated as if every committed artifact may later be public.
+AgentOps Workbench is a public developer tool. Local development must still be
+operated as if every committed artifact may be read by external users.
 
 ## Data Classes
 
