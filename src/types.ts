@@ -1,16 +1,21 @@
 export type SessionRecord = {
   type: "session";
+  schemaVersion?: "agentops.event.v1" | string;
   id?: string;
   agent?: string;
   model?: string;
   repo?: string;
   task?: string;
+  source?: string;
   startedAt?: string;
   endedAt?: string;
 };
 
 export type RawEvent = {
+  schemaVersion?: "agentops.event.v1" | string;
   type?: string;
+  source?: string;
+  timestamp?: string;
   role?: string;
   content?: string;
   summary?: string;
@@ -33,6 +38,7 @@ export type ParsedTranscript = {
     Omit<SessionRecord, "type"> & {
       id: string;
       sourcePath: string;
+      sourceAdapter: string;
     };
   events: RawEvent[];
 };
@@ -44,6 +50,7 @@ export type StoredEvent = {
   role: string | null;
   summary: string;
   rawJson: string;
+  rawPayloadHash: string | null;
 };
 
 export type CommandRecord = {

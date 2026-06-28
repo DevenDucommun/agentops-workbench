@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
+import { adapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
-import { parseJsonlTranscript } from "./parser";
+import { loadConfig } from "./config";
 import { generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
 
@@ -21,15 +21,19 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sourcePath = args[0];
       if (!sourcePath) return { stderr: "Usage: agentops ingest <session.jsonl>\n", exitCode: 1 };
 
+      const adapterId = readOption(args, "--adapter");
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const config = loadConfig(configPath);
+      const input = loadAdapterInput(sourcePath);
+      const adapter = resolveAdapter(input, adapterId ?? undefined);
       const store = openStore();
-      const input = readFileSync(sourcePath, "utf8");
-      const transcript = parseJsonlTranscript(sourcePath, input);
-      const result = ingestTranscript(store, transcript);
+      const transcript = adapter.parse(input, config);
+      const result = ingestTranscript(store, transcript, config);
       analyzeSession(store, result.sessionId);
       store.db.close();
 
       return {
-        stdout: `Ingested session ${result.sessionId} (${result.eventCount} events)\nDatabase: ${store.path}\n`,
+        stdout: `Ingested session ${result.sessionId} (${result.eventCount} events)\nAdapter: ${adapter.id}\nDatabase: ${store.path}\n`,
         exitCode: 0
       };
     }
@@ -65,7 +69,11 @@ function help(): string {
 
 Usage:
   agentops ingest <session.jsonl>
+  agentops ingest <session.jsonl> --adapter pai-export-jsonl
   agentops report --session latest
+
+Adapters:
+${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
 
 Environment:
   AGENTOPS_DB  Path to SQLite database. Defaults to .agentops/agentops.db

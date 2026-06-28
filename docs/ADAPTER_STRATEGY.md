@@ -38,6 +38,12 @@ Every source eventually becomes this:
 
 PAI exports sanitized `agentops-event-v1` JSONL after a run. AgentOps ingests that file.
 
+MVP command:
+
+```bash
+agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+```
+
 This is the best first PAI integration because:
 
 - it avoids private PAI memory stores
