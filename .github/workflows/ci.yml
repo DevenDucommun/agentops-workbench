@@ -40,6 +40,7 @@ jobs:
           ./bin/agentops ingest ./fixtures/sample-session.jsonl
           ./bin/agentops ingest ./fixtures/claude-code-session.jsonl
           ./bin/agentops ingest ./fixtures/codex-session.jsonl
+          ./bin/agentops ingest ./fixtures/usage-session.jsonl
           ./bin/agentops adapters > /tmp/agentops-adapters.md
           ./bin/agentops adapters --input ./fixtures/codex-session.jsonl > /tmp/agentops-adapter-detection.md
           ./bin/agentops sessions > /tmp/agentops-sessions.md

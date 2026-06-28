@@ -1,8 +1,8 @@
 import { isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
-import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, listSessions, type Store } from "./store";
-import type { SessionSummary } from "./types";
+import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, listSessions, type Store } from "./store";
+import type { UsageSummary } from "./types";
 
 export function generateSessionList(store: Store, limit = 20): string {
   const sessions = listSessions(store, limit);
@@ -15,10 +15,11 @@ export function generateSessionList(store: Store, limit = 20): string {
     session.repo ?? "unknown",
     String(session.eventCount),
     String(session.riskCount),
+    session.totalTokens === null ? "" : formatInteger(session.totalTokens),
     session.ingestedAt
   ]);
 
-  return `${table(["Session", "Adapter", "Agent", "Repo", "Events", "Risks", "Ingested"], rows)}\n`;
+  return `${table(["Session", "Adapter", "Agent", "Repo", "Events", "Risks", "Tokens", "Ingested"], rows)}\n`;
 }
 
 export function generateSessionInspection(
@@ -33,6 +34,7 @@ export function generateSessionInspection(
   const commands = getCommands(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
+  const usage = getUsageSummary(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
 
@@ -52,7 +54,8 @@ export function generateSessionInspection(
       ["Commands", String(commands.length)],
       ["Files Changed", String(files.length)],
       ["Risk Flags", String(risks.length)],
-      ["Verification Commands", String(verification.length)]
+      ["Verification Commands", String(verification.length)],
+      ...usageRows(usage)
     ]),
     "## Timeline",
     events.length
@@ -107,4 +110,25 @@ function formatChurn(added: number | null, removed: number | null): string {
   if (added !== null) parts.push(`+${added}`);
   if (removed !== null) parts.push(`-${removed}`);
   return parts.length ? ` (${parts.join(" / ")})` : "";
+}
+
+function usageRows(usage: UsageSummary): Array<[string, string]> {
+  const rows: Array<[string, string]> = [];
+  if (usage.inputTokens !== null) rows.push(["Input Tokens", formatInteger(usage.inputTokens)]);
+  if (usage.outputTokens !== null) rows.push(["Output Tokens", formatInteger(usage.outputTokens)]);
+  if (usage.totalTokens !== null) rows.push(["Total Tokens", formatInteger(usage.totalTokens)]);
+  if (usage.costAmount !== null) rows.push(["Cost", formatCost(usage.costAmount, usage.costCurrency)]);
+  return rows;
+}
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatCost(amount: number, currency: string | null): string {
+  const formattedAmount = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6
+  }).format(amount);
+  return currency ? `${formattedAmount} ${currency}` : formattedAmount;
 }

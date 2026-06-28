@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { CommandRecord, FileChangeRecord, ParsedTranscript, RiskFlagRecord, SessionSummary, StoredEvent } from "./types";
+import type { CommandRecord, FileChangeRecord, ParsedTranscript, RawEvent, RiskFlagRecord, SessionSummary, StoredEvent, UsageInput, UsageSummary } from "./types";
 import { extractCommand, extractPath, summarizeEvent } from "./parser";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
@@ -35,6 +35,11 @@ export function migrate(db: Database): void {
       task TEXT,
       started_at TEXT,
       ended_at TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      total_tokens INTEGER,
+      cost_amount REAL,
+      cost_currency TEXT,
       ingested_at TEXT NOT NULL
     );
 
@@ -80,6 +85,11 @@ export function migrate(db: Database): void {
   `);
   addColumnIfMissing(db, "sessions", "schema_version", "TEXT");
   addColumnIfMissing(db, "sessions", "source_adapter", "TEXT");
+  addColumnIfMissing(db, "sessions", "input_tokens", "INTEGER");
+  addColumnIfMissing(db, "sessions", "output_tokens", "INTEGER");
+  addColumnIfMissing(db, "sessions", "total_tokens", "INTEGER");
+  addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
+  addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
 }
 
@@ -90,10 +100,17 @@ export function ingestTranscript(
 ): { sessionId: string; eventCount: number } {
   const { db } = store;
   const session = transcript.session;
+  const usage = deriveUsageSummary(session.usage, transcript.events);
 
   const insertSession = db.query(`
-    INSERT INTO sessions (id, source_path, schema_version, source_adapter, agent, model, repo, task, started_at, ended_at, ingested_at)
-    VALUES ($id, $sourcePath, $schemaVersion, $sourceAdapter, $agent, $model, $repo, $task, $startedAt, $endedAt, $ingestedAt)
+    INSERT INTO sessions (
+      id, source_path, schema_version, source_adapter, agent, model, repo, task, started_at, ended_at,
+      input_tokens, output_tokens, total_tokens, cost_amount, cost_currency, ingested_at
+    )
+    VALUES (
+      $id, $sourcePath, $schemaVersion, $sourceAdapter, $agent, $model, $repo, $task, $startedAt, $endedAt,
+      $inputTokens, $outputTokens, $totalTokens, $costAmount, $costCurrency, $ingestedAt
+    )
   `);
   const insertEvent = db.query(`
     INSERT INTO events (session_id, idx, type, role, summary, raw_payload_hash, raw_json)
@@ -122,6 +139,11 @@ export function ingestTranscript(
       $task: session.task ?? null,
       $startedAt: session.startedAt ?? null,
       $endedAt: session.endedAt ?? null,
+      $inputTokens: usage.inputTokens,
+      $outputTokens: usage.outputTokens,
+      $totalTokens: usage.totalTokens,
+      $costAmount: usage.costAmount,
+      $costCurrency: usage.costCurrency,
       $ingestedAt: new Date().toISOString()
     });
 
@@ -188,6 +210,11 @@ export function getSession(store: Store, sessionId: string) {
         task: string | null;
         started_at: string | null;
         ended_at: string | null;
+        input_tokens: number | null;
+        output_tokens: number | null;
+        total_tokens: number | null;
+        cost_amount: number | null;
+        cost_currency: string | null;
         ingested_at: string;
       }
     | null;
@@ -212,7 +239,8 @@ export function listSessions(store: Store, limit = 20): SessionSummary[] {
         COUNT(DISTINCT events.id) as eventCount,
         COUNT(DISTINCT commands.id) as commandCount,
         COUNT(DISTINCT file_changes.id) as fileChangeCount,
-        COUNT(DISTINCT risk_flags.id) as riskCount
+        COUNT(DISTINCT risk_flags.id) as riskCount,
+        sessions.total_tokens as totalTokens
       FROM sessions
       LEFT JOIN events ON events.session_id = sessions.id
       LEFT JOIN commands ON commands.session_id = sessions.id
@@ -224,6 +252,33 @@ export function listSessions(store: Store, limit = 20): SessionSummary[] {
       `
     )
     .all({ $limit: limit }) as SessionSummary[];
+}
+
+export function getUsageSummary(store: Store, sessionId: string): UsageSummary {
+  const row = store.db
+    .query(
+      `
+      SELECT
+        input_tokens as inputTokens,
+        output_tokens as outputTokens,
+        total_tokens as totalTokens,
+        cost_amount as costAmount,
+        cost_currency as costCurrency
+      FROM sessions
+      WHERE id = $sessionId
+      `
+    )
+    .get({ $sessionId: sessionId }) as UsageSummary | null;
+
+  return (
+    row ?? {
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      costAmount: null,
+      costCurrency: null
+    }
+  );
 }
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
@@ -273,4 +328,108 @@ function addColumnIfMissing(db: Database, table: string, column: string, definit
   if (!columns.some((row) => row.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+function deriveUsageSummary(sessionUsage: UsageInput | undefined, events: RawEvent[]): UsageSummary {
+  const fromSession = normalizeUsage(sessionUsage);
+  if (hasUsage(fromSession)) return withDerivedTotal(fromSession);
+
+  const usageItems = events.map((event) => normalizeUsage(event.usage)).filter(hasUsage);
+  if (usageItems.length === 0) return emptyUsage();
+
+  const summary = usageItems.reduce((accumulator, usage) => mergeUsage(accumulator, usage), emptyUsage());
+  return withDerivedTotal(summary);
+}
+
+function normalizeUsage(usage: UsageInput | undefined): UsageSummary {
+  if (!usage || typeof usage !== "object") return emptyUsage();
+
+  const cost = normalizeCost(usage);
+  return {
+    inputTokens: positiveInteger(usage.inputTokens),
+    outputTokens: positiveInteger(usage.outputTokens),
+    totalTokens: positiveInteger(usage.totalTokens),
+    costAmount: cost.amount,
+    costCurrency: cost.currency
+  };
+}
+
+function normalizeCost(usage: UsageInput): { amount: number | null; currency: string | null } {
+  if (typeof usage.costUsd === "number") return { amount: positiveNumber(usage.costUsd), currency: "USD" };
+  if (typeof usage.costAmount === "number") return { amount: positiveNumber(usage.costAmount), currency: normalizeCurrency(usage.costCurrency) };
+  if (typeof usage.totalCost === "number") return { amount: positiveNumber(usage.totalCost), currency: normalizeCurrency(usage.costCurrency) };
+  if (typeof usage.cost === "number") return { amount: positiveNumber(usage.cost), currency: normalizeCurrency(usage.costCurrency) };
+  if (usage.cost && typeof usage.cost === "object") {
+    return {
+      amount: positiveNumber(usage.cost.amount),
+      currency: normalizeCurrency(usage.cost.currency ?? usage.costCurrency)
+    };
+  }
+  return { amount: null, currency: null };
+}
+
+function mergeUsage(left: UsageSummary, right: UsageSummary): UsageSummary {
+  return {
+    inputTokens: sumNullable(left.inputTokens, right.inputTokens),
+    outputTokens: sumNullable(left.outputTokens, right.outputTokens),
+    totalTokens: sumNullable(left.totalTokens, right.totalTokens),
+    costAmount: sumNullable(left.costAmount, right.costAmount),
+    costCurrency: mergeCurrency(left.costCurrency, right.costCurrency)
+  };
+}
+
+function withDerivedTotal(usage: UsageSummary): UsageSummary {
+  if (usage.totalTokens !== null) return usage;
+  if (usage.inputTokens === null && usage.outputTokens === null) return usage;
+  return {
+    ...usage,
+    totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
+  };
+}
+
+function hasUsage(usage: UsageSummary): boolean {
+  return (
+    usage.inputTokens !== null ||
+    usage.outputTokens !== null ||
+    usage.totalTokens !== null ||
+    usage.costAmount !== null ||
+    usage.costCurrency !== null
+  );
+}
+
+function emptyUsage(): UsageSummary {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    costAmount: null,
+    costCurrency: null
+  };
+}
+
+function positiveInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return Math.round(value);
+}
+
+function positiveNumber(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+function normalizeCurrency(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.trim().toUpperCase();
+}
+
+function sumNullable(left: number | null, right: number | null): number | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left + right;
+}
+
+function mergeCurrency(left: string | null, right: string | null): string | null {
+  if (!left) return right;
+  if (!right || left === right) return left;
+  return "MIXED";
 }

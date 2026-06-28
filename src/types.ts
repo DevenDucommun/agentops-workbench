@@ -9,6 +9,18 @@ export type SessionRecord = {
   source?: string;
   startedAt?: string;
   endedAt?: string;
+  usage?: UsageInput;
+};
+
+export type UsageInput = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  costAmount?: number;
+  costCurrency?: string;
+  costUsd?: number;
+  totalCost?: number;
+  cost?: number | { amount?: number; currency?: string };
 };
 
 export type RawEvent = {
@@ -30,6 +42,7 @@ export type RawEvent = {
   linesRemoved?: number;
   startedAt?: string;
   endedAt?: string;
+  usage?: UsageInput;
   [key: string]: unknown;
 };
 
@@ -69,6 +82,15 @@ export type SessionSummary = {
   commandCount: number;
   fileChangeCount: number;
   riskCount: number;
+  totalTokens: number | null;
+};
+
+export type UsageSummary = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  costAmount: number | null;
+  costCurrency: string | null;
 };
 
 export type CommandRecord = {

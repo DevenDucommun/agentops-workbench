@@ -33,6 +33,7 @@ export function parseJsonlTranscript(sourcePath: string, input: string, options:
       source: normalizedSession?.source,
       startedAt: normalizedSession?.startedAt,
       endedAt: normalizedSession?.endedAt,
+      usage: normalizedSession?.usage,
       sourcePath: resolvedPath,
       sourceAdapter: options.sourceAdapter ?? "agentops-jsonl"
     },

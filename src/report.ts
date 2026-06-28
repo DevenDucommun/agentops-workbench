@@ -1,14 +1,16 @@
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
-import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
+import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
 import type { GitChange } from "./git";
+import type { UsageSummary } from "./types";
 
 type RepoReportData = {
   session: NonNullable<ReturnType<typeof getSession>>;
   commands: ReturnType<typeof getCommands>;
   files: ReturnType<typeof getFileChanges>;
   risks: ReturnType<typeof getRiskFlags>;
+  usage: UsageSummary;
   verification: ReturnType<typeof getCommands>;
   gitChanges: GitChange[];
   observedGitChanges: GitChange[];
@@ -24,6 +26,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
   const commands = getCommands(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
+  const usage = getUsageSummary(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
 
@@ -43,6 +46,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
       ["Files Changed", String(files.length)],
       ["Risk Flags", String(risks.length)]
     ]),
+    ...(hasUsage(usage) ? ["## Usage", usageTable(usage)] : []),
     "## Timeline",
     events.length
       ? events.map((event) => `- ${event.idx}. **${event.type}**${event.role ? ` (${event.role})` : ""}: ${event.summary}`).join("\n")
@@ -101,7 +105,8 @@ export function generateMarkdownRepoReport(
       ["Git Files Observed In Session", String(data.observedGitChanges.length)],
       ["Git Files Not Observed In Session", String(data.unobservedGitChanges.length)],
       ["Risk Flags", String(data.risks.length)],
-      ["Verification Commands", String(data.verification.length)]
+      ["Verification Commands", String(data.verification.length)],
+      ...(hasUsage(data.usage) ? usageRows(data.usage) : [])
     ]),
     "## Current Git Changes",
     data.gitChanges.length
@@ -149,7 +154,8 @@ export function generateGithubRepoComment(
       ["Observed in session", String(data.observedGitChanges.length)],
       ["Not observed in session", String(data.unobservedGitChanges.length)],
       ["Risk flags", String(data.risks.length)],
-      ["Verification commands", String(data.verification.length)]
+      ["Verification commands", String(data.verification.length)],
+      ...(hasUsage(data.usage) ? usageRows(data.usage) : [])
     ]),
     "### Verification",
     data.verification.length
@@ -215,6 +221,7 @@ function buildRepoReportData(
   const commands = getCommands(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
+  const usage = getUsageSummary(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const agentPaths = new Set(files.map((file) => file.path));
   const gitPaths = new Set(gitChanges.map((change) => change.path));
@@ -224,10 +231,40 @@ function buildRepoReportData(
     commands,
     files,
     risks,
+    usage,
     verification,
     gitChanges,
     observedGitChanges: gitChanges.filter((change) => agentPaths.has(change.path)),
     unobservedGitChanges: gitChanges.filter((change) => !agentPaths.has(change.path)),
     agentOnlyFiles: files.filter((file) => !gitPaths.has(file.path))
   };
+}
+
+function hasUsage(usage: UsageSummary): boolean {
+  return usageRows(usage).length > 0;
+}
+
+function usageTable(usage: UsageSummary): string {
+  return table(usageRows(usage));
+}
+
+function usageRows(usage: UsageSummary): Array<[string, string]> {
+  const rows: Array<[string, string]> = [];
+  if (usage.inputTokens !== null) rows.push(["Input Tokens", formatInteger(usage.inputTokens)]);
+  if (usage.outputTokens !== null) rows.push(["Output Tokens", formatInteger(usage.outputTokens)]);
+  if (usage.totalTokens !== null) rows.push(["Total Tokens", formatInteger(usage.totalTokens)]);
+  if (usage.costAmount !== null) rows.push(["Cost", formatCost(usage.costAmount, usage.costCurrency)]);
+  return rows;
+}
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatCost(amount: number, currency: string | null): string {
+  const formattedAmount = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6
+  }).format(amount);
+  return currency ? `${formattedAmount} ${currency}` : formattedAmount;
 }
