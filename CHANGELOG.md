@@ -5,6 +5,7 @@
 ### Added
 
 - Native `claude -p --output-format stream-json` JSONL adapter with synthetic fixture coverage.
+- Dashboard session search and adapter filtering.
 
 ## v0.4.0 - 2026-06-28
 
