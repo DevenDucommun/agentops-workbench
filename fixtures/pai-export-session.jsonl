@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"pai-export-sample","source":"pai","agent":"PAI local agent","model":"local-orchestrated","repo":"agentops-workbench","task":"Summarize a completed coding-agent run","startedAt":"2026-06-27T21:00:00Z","endedAt":"2026-06-27T21:04:00Z"}
+{"schemaVersion":"agentops.event.v1","type":"message","source":"pai","role":"user","content":"Synthetic request: add a small CLI option and verify tests."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","source":"pai","toolName":"shell","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":"4 pass\n0 fail"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","source":"pai","path":"src/cli.ts","operation":"edit","linesAdded":6,"linesRemoved":1,"summary":"Added a synthetic CLI option."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","source":"pai","role":"assistant","content":"Synthetic run completed and verified with bun test."}

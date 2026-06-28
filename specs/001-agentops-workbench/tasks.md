@@ -27,13 +27,13 @@
 
 ## M2 Schema And Adapter Hardening
 
-- [ ] Define versioned normalized event schema.
-- [ ] Document canonical `agentops-event-v1` JSONL.
-- [ ] Add adapter interface.
-- [ ] Move JSONL parser behind adapter interface.
-- [ ] Add redaction pipeline.
-- [ ] Add payload hash support.
-- [ ] Add raw payload retention configuration.
+- [x] Define versioned normalized event schema.
+- [x] Document canonical `agentops-event-v1` JSONL.
+- [x] Add adapter interface.
+- [x] Move JSONL parser behind adapter interface.
+- [x] Add redaction pipeline.
+- [x] Add payload hash support.
+- [x] Add raw payload retention configuration.
 - [ ] Add fixture for missing timestamps.
 - [ ] Add fixture for malformed records.
 - [ ] Add fixture for risky command/file edits.
@@ -62,9 +62,9 @@
 
 - [ ] Define sanitized hook-envelope JSONL format.
 - [ ] Add PAI-compatible post-hoc import docs.
-- [ ] Add PAI-compatible post-hoc import implementation.
+- [x] Add PAI-compatible post-hoc import implementation.
 - [ ] Add direct Claude/Codex adapter research notes after sanitized fixture review.
-- [ ] Add optional PAI fixture generated from synthetic data.
+- [x] Add optional PAI fixture generated from synthetic data.
 - [ ] Add JSON export.
 - [ ] Draft OpenTelemetry mapping table.
 - [ ] Spike OTLP export.

@@ -3,6 +3,9 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { CommandRecord, FileChangeRecord, ParsedTranscript, RiskFlagRecord, StoredEvent } from "./types";
 import { extractCommand, extractPath, summarizeEvent } from "./parser";
+import type { AgentOpsConfig } from "./config";
+import { defaultConfig } from "./config";
+import { sha256 } from "./redaction";
 
 export type Store = {
   db: Database;
@@ -24,6 +27,8 @@ export function migrate(db: Database): void {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       source_path TEXT NOT NULL,
+      schema_version TEXT,
+      source_adapter TEXT,
       agent TEXT,
       model TEXT,
       repo TEXT,
@@ -40,6 +45,7 @@ export function migrate(db: Database): void {
       type TEXT NOT NULL,
       role TEXT,
       summary TEXT NOT NULL,
+      raw_payload_hash TEXT,
       raw_json TEXT NOT NULL
     );
 
@@ -72,19 +78,26 @@ export function migrate(db: Database): void {
       message TEXT NOT NULL
     );
   `);
+  addColumnIfMissing(db, "sessions", "schema_version", "TEXT");
+  addColumnIfMissing(db, "sessions", "source_adapter", "TEXT");
+  addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
 }
 
-export function ingestTranscript(store: Store, transcript: ParsedTranscript): { sessionId: string; eventCount: number } {
+export function ingestTranscript(
+  store: Store,
+  transcript: ParsedTranscript,
+  config: AgentOpsConfig = defaultConfig
+): { sessionId: string; eventCount: number } {
   const { db } = store;
   const session = transcript.session;
 
   const insertSession = db.query(`
-    INSERT INTO sessions (id, source_path, agent, model, repo, task, started_at, ended_at, ingested_at)
-    VALUES ($id, $sourcePath, $agent, $model, $repo, $task, $startedAt, $endedAt, $ingestedAt)
+    INSERT INTO sessions (id, source_path, schema_version, source_adapter, agent, model, repo, task, started_at, ended_at, ingested_at)
+    VALUES ($id, $sourcePath, $schemaVersion, $sourceAdapter, $agent, $model, $repo, $task, $startedAt, $endedAt, $ingestedAt)
   `);
   const insertEvent = db.query(`
-    INSERT INTO events (session_id, idx, type, role, summary, raw_json)
-    VALUES ($sessionId, $idx, $type, $role, $summary, $rawJson)
+    INSERT INTO events (session_id, idx, type, role, summary, raw_payload_hash, raw_json)
+    VALUES ($sessionId, $idx, $type, $role, $summary, $rawPayloadHash, $rawJson)
     RETURNING id
   `);
   const insertCommand = db.query(`
@@ -101,6 +114,8 @@ export function ingestTranscript(store: Store, transcript: ParsedTranscript): { 
     insertSession.run({
       $id: session.id,
       $sourcePath: session.sourcePath,
+      $schemaVersion: session.schemaVersion ?? "agentops.event.v1",
+      $sourceAdapter: session.sourceAdapter,
       $agent: session.agent ?? null,
       $model: session.model ?? null,
       $repo: session.repo ?? null,
@@ -112,13 +127,15 @@ export function ingestTranscript(store: Store, transcript: ParsedTranscript): { 
 
     transcript.events.forEach((event, idx) => {
       const type = event.type ?? inferEventType(event);
+      const rawJson = JSON.stringify(event);
       const row = insertEvent.get({
         $sessionId: session.id,
         $idx: idx + 1,
         $type: type,
         $role: typeof event.role === "string" ? event.role : null,
         $summary: summarizeEvent(event),
-        $rawJson: JSON.stringify(event)
+        $rawPayloadHash: config.privacy.hashRawPayload ? sha256(rawJson) : null,
+        $rawJson: config.privacy.storeRawPayload ? rawJson : ""
       }) as { id: number };
 
       const command = extractCommand(event);
@@ -176,7 +193,9 @@ export function getSession(store: Store, sessionId: string) {
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
   return store.db
-    .query("SELECT id, idx, type, role, summary, raw_json as rawJson FROM events WHERE session_id = $sessionId ORDER BY idx")
+    .query(
+      "SELECT id, idx, type, role, summary, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
+    )
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
 
@@ -212,4 +231,11 @@ function inferEventType(event: Record<string, unknown>): string {
 
 function isFileChangeType(type: string): boolean {
   return ["file_write", "file_edit", "write", "edit", "patch", "apply_patch"].includes(type);
+}
+
+function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+  const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }

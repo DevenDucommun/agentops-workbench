@@ -41,6 +41,13 @@ Run the first implementation slice locally:
 ./bin/agentops report --session latest > report.md
 ```
 
+PAI-compatible post-hoc exports use the same canonical JSONL schema:
+
+```bash
+./bin/agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+./bin/agentops report --session latest > report.md
+```
+
 To use the exact `agentops` command during local development, put the repo's `bin` directory on your path:
 
 ```bash
@@ -60,6 +67,7 @@ These planning artifacts are written for the future public repository:
 - [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
+- [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
