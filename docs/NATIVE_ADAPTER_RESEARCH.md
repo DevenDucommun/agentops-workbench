@@ -253,9 +253,8 @@ bun run ci
 
 ## Roadmap Recommendation
 
-1. Add `codex-exec-jsonl` parser and synthetic fixtures.
+1. Add `codex-exec-jsonl` parser and synthetic fixtures. Status: implemented after `v0.3.0`.
 2. Add `claude-code-stream-json` parser and synthetic fixtures.
 3. Add native parser schema-drift diagnostics and adapter detection hints.
 4. Add optional capture scripts that write JSONL to a local ignored directory.
 5. Revisit hook-stream capture once post-hoc native parsing is stable.
-

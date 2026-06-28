@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
+import { loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { defaultConfig } from "../src/config";
 import { parseJsonlTranscript } from "../src/parser";
 import { generateMarkdownReport } from "../src/report";
@@ -171,6 +172,31 @@ test("derives usage totals from event-level metadata", () => {
   expect(report).toContain("## Usage");
   expect(report).toContain("15");
   expect(report).toContain("0.001 USD");
+
+  store.db.close();
+});
+
+test("reports usage from native Codex exec JSONL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/codex-exec-session.jsonl");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "codex-exec-sample", defaultConfig);
+
+  const commands = getCommands(store, "codex-exec-sample");
+  const usage = getUsageSummary(store, "codex-exec-sample");
+  const report = generateMarkdownReport(store, "codex-exec-sample");
+
+  expect(commands.some((command) => command.command === "bun run typecheck")).toBe(true);
+  expect(usage.inputTokens).toBe(1000);
+  expect(usage.outputTokens).toBe(150);
+  expect(usage.totalTokens).toBe(1150);
+  expect(report).toContain("## Usage");
+  expect(report).toContain("1,150");
+  expect(report).toContain("Synthetic Codex exec adapter fixture completed");
 
   store.db.close();
 });

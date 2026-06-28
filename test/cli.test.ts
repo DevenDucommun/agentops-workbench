@@ -66,3 +66,16 @@ test("inspect and sessions include usage metadata when available", async () => {
   expect(inspect.stdout).toContain("Total Tokens");
   expect(inspect.stdout).toContain("0.0142 USD");
 });
+
+test("ingests native Codex exec JSONL without explicit adapter selection", async () => {
+  const ingest = await runCli(["ingest", "fixtures/codex-exec-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+  expect(ingest.stdout).toContain("Adapter: codex-exec-jsonl");
+
+  const inspect = await runCli(["inspect", "--session", "codex-exec-sample"]);
+  expect(inspect.exitCode).toBe(0);
+  expect(inspect.stdout).toContain("Codex");
+  expect(inspect.stdout).toContain("bun run typecheck");
+  expect(inspect.stdout).toContain("Total Tokens");
+  expect(inspect.stdout).toContain("1,150");
+});

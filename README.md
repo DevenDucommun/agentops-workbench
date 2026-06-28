@@ -13,7 +13,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 - Public release: [`v0.3.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.3.0)
 - Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, usage metadata, native adapter research, and dashboard foundation
 - Runtime model: local CLI, local SQLite, stdout reports
-- Native Claude/Codex transcript parsing: researched, not implemented
+- Native Codex exec JSONL ingestion: implemented
+- Native Claude Code stream parsing: researched, not implemented
 
 ## Problem
 
@@ -95,12 +96,14 @@ See [CLI reference](docs/CLI.md) for command details.
 
 ## Supported Artifacts
 
-AgentOps currently ingests normalized post-hoc JSONL exports:
+AgentOps currently ingests normalized post-hoc JSONL exports plus the first
+native Codex CLI event stream:
 
 - `agentops-jsonl`: canonical `agentops.event.v1` JSONL
 - `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
 - `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export
 - `codex-jsonl`: sanitized Codex AgentOps JSONL export
+- `codex-exec-jsonl`: native `codex exec --json` JSONL stream
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:
 
@@ -114,15 +117,19 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 ```bash
 ./bin/agentops ingest ./fixtures/claude-code-session.jsonl
 ./bin/agentops ingest ./fixtures/codex-session.jsonl
+./bin/agentops ingest ./fixtures/codex-exec-session.jsonl
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
-These fixtures are normalized export examples, not native runtime transcript parsers.
+The `claude-code-jsonl` and `codex-jsonl` fixtures are normalized export
+examples. The `codex-exec-jsonl` fixture represents the native
+`codex exec --json` stream shape with synthetic data.
 
 To inspect adapter detection:
 
 ```bash
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
+./bin/agentops adapters --input ./fixtures/codex-exec-session.jsonl
 ```
 
 ## Privacy And Safety
@@ -190,7 +197,7 @@ Project planning artifacts:
 - Model benchmarking
 - Deep semantic evals
 - Direct modification of agent behavior
-- Native Claude/Codex transcript parsing
+- Native Claude Code transcript parsing
 
 ## Tech Direction
 

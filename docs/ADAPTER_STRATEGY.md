@@ -136,7 +136,7 @@ Build in this order:
 6. `claude-code-stream-json` native adapter for `claude -p --output-format stream-json` captures.
 7. hook-stream adapter for future live capture.
 
-## Implemented Export Adapters
+## Implemented Adapters
 
 The current implementation supports normalized JSONL export artifacts:
 
@@ -144,10 +144,14 @@ The current implementation supports normalized JSONL export artifacts:
 - `pai-export-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "pai"`.
 - `claude-code-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "claude-code"`.
 - `codex-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "codex"`.
+- `codex-exec-jsonl`: native `codex exec --json` JSONL stream.
 
 Use `agentops adapters` to list supported adapters and `agentops adapters --input <file>` to see detection diagnostics for a specific artifact.
 
-These are not native Claude Code or Codex runtime transcript parsers. They intentionally parse the shared AgentOps export schema so public fixtures can remain synthetic and privacy-safe.
+The export adapters intentionally parse the shared AgentOps export schema so
+public fixtures can remain synthetic and privacy-safe. `codex-exec-jsonl` is a
+native Codex stream adapter for explicit `codex exec --json` captures, not a
+private Codex state or transcript-file parser.
 
 ## What Not To Do
 

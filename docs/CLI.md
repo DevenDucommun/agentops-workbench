@@ -25,6 +25,7 @@ Ingests a post-hoc session artifact into the local SQLite store.
 ```bash
 agentops ingest ./fixtures/sample-session.jsonl
 agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+agentops ingest ./fixtures/codex-exec-session.jsonl
 ```
 
 ### `agentops sessions`

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Native `codex exec --json` JSONL adapter with synthetic fixture coverage.
+
 ## v0.3.0 - 2026-06-28
 
 ### Added
