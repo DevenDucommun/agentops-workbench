@@ -64,6 +64,19 @@ agentops repo-report --session latest --format github > pr-comment.md
 
 The GitHub format is stdout-only. It does not post comments.
 
+### `agentops dashboard`
+
+Starts the local dashboard server backed by the same SQLite store as the CLI.
+
+```bash
+agentops dashboard
+agentops dashboard --port 4930
+agentops dashboard --check
+```
+
+The default bind address is `127.0.0.1` and the default port is `4927`. See
+[Dashboard](DASHBOARD.md) for scope and browser verification.
+
 ### `agentops scan-publication`
 
 Runs the baseline public-readiness scan.

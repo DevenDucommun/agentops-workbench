@@ -10,10 +10,10 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.2.0)
-- Current `main`: includes CLI inspection and sanitized Claude/Codex export adapter work
+- Public release: [`v0.3.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.3.0)
+- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, usage metadata, native adapter research, and dashboard foundation
 - Runtime model: local CLI, local SQLite, stdout reports
-- Native Claude/Codex transcript parsing: planned, not implemented
+- Native Claude/Codex transcript parsing: researched, not implemented
 
 ## Problem
 
@@ -46,6 +46,7 @@ bun install --frozen-lockfile
 ./bin/agentops sessions
 ./bin/agentops inspect --session latest
 ./bin/agentops report --session latest > report.md
+./bin/agentops dashboard
 ```
 
 Generate a repo-aware PR report:
@@ -86,6 +87,7 @@ Common commands:
 ./bin/agentops report --session latest > report.md
 ./bin/agentops repo-report --session latest > repo-report.md
 ./bin/agentops repo-report --session latest --format github > pr-comment.md
+./bin/agentops dashboard --check
 ./bin/agentops scan-publication
 ```
 
@@ -155,6 +157,7 @@ Core docs:
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [CLI reference](docs/CLI.md)
 - [Installation](docs/INSTALLATION.md)
+- [Dashboard](docs/DASHBOARD.md)
 - [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [Changelog](CHANGELOG.md)

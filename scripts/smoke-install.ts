@@ -26,6 +26,7 @@ runAndExpect(["agentops", "ingest", "fixtures/usage-session.jsonl"], "Ingested s
 runAndExpect(["agentops", "sessions"], "usage-session");
 runAndExpect(["agentops", "inspect", "--session", "latest"], "Total Tokens");
 runAndExpect(["agentops", "report", "--session", "latest"], "## Usage");
+runAndExpect(["agentops", "dashboard", "--check"], "Dashboard configuration OK");
 runAndExpect(["agentops", "scan-publication"], "Public-readiness scan passed.");
 
 if (!existsSync(dbPath)) {
