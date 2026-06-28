@@ -56,7 +56,7 @@
 - [x] Map file changes to agent events.
 - [x] Add PR-ready Markdown output.
 - [x] Add local-only mode.
-- [ ] Add GitHub comment body output without posting.
+- [x] Add GitHub comment body output without posting.
 
 ## M5 Optional PAI And Standards Integrations
 

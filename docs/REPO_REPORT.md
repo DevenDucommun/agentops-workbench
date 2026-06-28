@@ -5,6 +5,7 @@
 ```bash
 agentops ingest ./fixtures/sample-session.jsonl
 agentops repo-report --session latest > repo-report.md
+agentops repo-report --session latest --format github > pr-comment.md
 ```
 
 ## What It Shows
@@ -25,6 +26,12 @@ Session reports answer "what did the agent do?"
 Repo reports answer "does the current repo diff line up with what the agent did?"
 
 This is the first PR-review-oriented report mode. It remains local-only and does not call GitHub.
+
+## GitHub Comment Format
+
+`--format github` emits a compact Markdown body suitable for a pull request comment.
+
+The command only writes to stdout. It does not post to GitHub.
 
 ## Current Limitations
 
