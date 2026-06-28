@@ -1,0 +1,3 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"missing-timestamps","agent":"synthetic-agent","repo":"agentops-workbench","task":"Synthetic session without timestamps"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Synthetic request without timestamps."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Recorded without timestamps."}

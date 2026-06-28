@@ -29,7 +29,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const store = openStore();
       const transcript = adapter.parse(input, config);
       const result = ingestTranscript(store, transcript, config);
-      analyzeSession(store, result.sessionId);
+      analyzeSession(store, result.sessionId, config);
       store.db.close();
 
       return {
@@ -40,13 +40,15 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
     if (command === "report") {
       const sessionArg = readOption(args, "--session") ?? "latest";
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const config = loadConfig(configPath);
       const store = openStore();
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
         return { stderr: "No sessions found. Run `agentops ingest <session.jsonl>` first.\n", exitCode: 1 };
       }
-      const report = generateMarkdownReport(store, sessionId);
+      const report = generateMarkdownReport(store, sessionId, config);
       store.db.close();
       return { stdout: report, exitCode: 0 };
     }

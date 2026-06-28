@@ -16,7 +16,14 @@ export type AgentOpsConfig = {
   evidence: {
     verificationCommands: string[];
   };
-  suppressions: Array<Record<string, unknown>>;
+  suppressions: RiskSuppression[];
+};
+
+export type RiskSuppression = {
+  category?: string;
+  path?: string;
+  command?: string;
+  reason?: string;
 };
 
 export const defaultConfig: AgentOpsConfig = {
@@ -60,6 +67,11 @@ export function loadConfig(path = "agentops.config.json"): AgentOpsConfig {
       ...defaultConfig.evidence,
       ...parsed.evidence
     },
-    suppressions: parsed.suppressions ?? defaultConfig.suppressions
+    suppressions: normalizeSuppressions(parsed.suppressions)
   };
+}
+
+function normalizeSuppressions(value: unknown): RiskSuppression[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is RiskSuppression => item !== null && typeof item === "object");
 }
