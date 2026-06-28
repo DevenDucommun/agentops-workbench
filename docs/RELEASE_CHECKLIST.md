@@ -30,6 +30,7 @@ This checklist must pass before making the repository public.
 - [ ] Fresh clone can run `bun run ci`.
 - [ ] Fresh clone can run `./bin/agentops ingest ./fixtures/sample-session.jsonl`.
 - [ ] Fresh clone can run `./bin/agentops report --session latest > report.md`.
+- [ ] Fresh clone can run `./bin/agentops repo-report --session latest > repo-report.md`.
 - [ ] README explains the product, current CLI, planning docs, and privacy posture.
 - [ ] Architecture docs explain adapters, storage, analyzers, reports, and PAI boundaries.
 - [ ] Roadmap explains what is built and what is next.

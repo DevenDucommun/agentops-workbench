@@ -39,6 +39,7 @@ Run the first implementation slice locally:
 ```bash
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
 ./bin/agentops report --session latest > report.md
+./bin/agentops repo-report --session latest > repo-report.md
 ```
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:
@@ -69,6 +70,7 @@ These planning artifacts are written for the future public repository:
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
 - [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
+- [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Spec Kit constitution](.specify/memory/constitution.md)

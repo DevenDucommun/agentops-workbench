@@ -1,7 +1,8 @@
 import { adapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { loadConfig } from "./config";
-import { generateMarkdownReport } from "./report";
+import { getGitChanges } from "./git";
+import { generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
 
 type CliResult = {
@@ -53,6 +54,21 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return { stdout: report, exitCode: 0 };
     }
 
+    if (command === "repo-report") {
+      const sessionArg = readOption(args, "--session") ?? "latest";
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const config = loadConfig(configPath);
+      const store = openStore();
+      const sessionId = getSessionId(store, sessionArg);
+      if (!sessionId) {
+        store.db.close();
+        return { stderr: "No sessions found. Run `agentops ingest <session.jsonl>` first.\n", exitCode: 1 };
+      }
+      const report = generateMarkdownRepoReport(store, sessionId, getGitChanges(), config);
+      store.db.close();
+      return { stdout: report, exitCode: 0 };
+    }
+
     return { stderr: `Unknown command: ${command}\n\n${help()}`, exitCode: 1 };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -73,6 +89,7 @@ Usage:
   agentops ingest <session.jsonl>
   agentops ingest <session.jsonl> --adapter pai-export-jsonl
   agentops report --session latest
+  agentops repo-report --session latest
 
 Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}

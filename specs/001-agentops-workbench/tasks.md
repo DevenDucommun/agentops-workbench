@@ -51,11 +51,11 @@
 
 ## M4 Repo/PR Mode
 
-- [ ] Add git diff reader.
-- [ ] Add changed-file summarizer.
-- [ ] Map file changes to agent events.
-- [ ] Add PR-ready Markdown output.
-- [ ] Add local-only mode.
+- [x] Add git diff reader.
+- [x] Add changed-file summarizer.
+- [x] Map file changes to agent events.
+- [x] Add PR-ready Markdown output.
+- [x] Add local-only mode.
 - [ ] Add GitHub comment body output without posting.
 
 ## M5 Optional PAI And Standards Integrations
