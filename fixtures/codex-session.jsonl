@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"codex-sample","source":"codex","agent":"Codex","model":"synthetic-gpt","repo":"agentops-workbench","task":"Synthetic Codex export: harden adapter detection","startedAt":"2026-06-28T05:15:00Z","endedAt":"2026-06-28T05:21:00Z"}
+{"schemaVersion":"agentops.event.v1","type":"message","source":"codex","role":"user","content":"Synthetic request: make adapters easier to inspect."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","source":"codex","toolName":"shell","input":{"cmd":"bun run typecheck"},"status":"completed","exitCode":0,"output":"typecheck passed"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","source":"codex","path":"src/adapters.ts","operation":"edit","linesAdded":36,"linesRemoved":2,"summary":"Added synthetic Codex export adapter detection."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","source":"codex","role":"assistant","content":"Synthetic Codex export completed and typechecked."}

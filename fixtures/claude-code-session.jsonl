@@ -1,0 +1,7 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"claude-code-sample","source":"claude-code","agent":"Claude Code","model":"synthetic-sonnet","repo":"agentops-workbench","task":"Synthetic Claude Code export: add CLI inspection commands","startedAt":"2026-06-28T05:00:00Z","endedAt":"2026-06-28T05:08:00Z"}
+{"schemaVersion":"agentops.event.v1","type":"message","source":"claude-code","role":"user","content":"Synthetic request: add commands to list and inspect sessions."}
+{"schemaVersion":"agentops.event.v1","type":"plan","source":"claude-code","content":"Read the store, add read-only CLI commands, then run tests."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","source":"claude-code","toolName":"functions.exec_command","input":{"cmd":"rg -n \"getSession|listSessions\" src test"},"status":"completed","exitCode":0,"output":"src/store.ts:session helpers"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","source":"claude-code","path":"src/cli.ts","operation":"edit","linesAdded":22,"linesRemoved":1,"summary":"Added synthetic inspect and sessions command handling."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","source":"claude-code","toolName":"functions.exec_command","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":"19 pass\n0 fail"}
+{"schemaVersion":"agentops.event.v1","type":"final_response","source":"claude-code","role":"assistant","content":"Synthetic Claude Code export completed with tests passing."}

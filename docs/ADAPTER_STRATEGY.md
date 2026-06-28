@@ -130,9 +130,22 @@ Build in this order:
 
 1. `agentops-jsonl` canonical fixture adapter.
 2. `pai-export-jsonl` post-hoc adapter, likely identical to canonical JSONL with PAI-specific source metadata.
-3. `codex-transcript` adapter.
-4. `claude-transcript` adapter.
+3. `codex-jsonl` sanitized AgentOps JSONL export adapter.
+4. `claude-code-jsonl` sanitized AgentOps JSONL export adapter.
 5. hook-stream adapter for future live capture.
+
+## Implemented Export Adapters
+
+The current implementation supports normalized JSONL export artifacts:
+
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL.
+- `pai-export-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "pai"`.
+- `claude-code-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "claude-code"`.
+- `codex-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "codex"`.
+
+Use `agentops adapters` to list supported adapters and `agentops adapters --input <file>` to see detection diagnostics for a specific artifact.
+
+These are not native Claude Code or Codex runtime transcript parsers. They intentionally parse the shared AgentOps export schema so public fixtures can remain synthetic and privacy-safe.
 
 ## What Not To Do
 
@@ -142,7 +155,7 @@ Build in this order:
 - Do not persist unredacted raw payloads by default.
 - Do not publish real transcripts as fixtures.
 
-## Open Research Before Direct Adapters
+## Open Research Before Native Direct Adapters
 
 Before implementing direct Claude/Codex adapters, collect sanitized examples of each artifact shape:
 

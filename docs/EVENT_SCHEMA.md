@@ -116,6 +116,8 @@ Committed fixtures are synthetic and cover:
 
 - normal canonical JSONL: `fixtures/sample-session.jsonl`
 - PAI post-hoc export JSONL: `fixtures/pai-export-session.jsonl`
+- Claude Code sanitized export JSONL: `fixtures/claude-code-session.jsonl`
+- Codex sanitized export JSONL: `fixtures/codex-session.jsonl`
 - missing timestamps: `fixtures/missing-timestamps-session.jsonl`
 - risky commands/files: `fixtures/risky-session.jsonl`
 - malformed JSONL: `fixtures/malformed-session.jsonl`

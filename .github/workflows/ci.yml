@@ -38,10 +38,20 @@ jobs:
       - name: CLI smoke test
         run: |
           ./bin/agentops ingest ./fixtures/sample-session.jsonl
+          ./bin/agentops ingest ./fixtures/claude-code-session.jsonl
+          ./bin/agentops ingest ./fixtures/codex-session.jsonl
+          ./bin/agentops adapters > /tmp/agentops-adapters.md
+          ./bin/agentops adapters --input ./fixtures/codex-session.jsonl > /tmp/agentops-adapter-detection.md
+          ./bin/agentops sessions > /tmp/agentops-sessions.md
+          ./bin/agentops inspect --session latest > /tmp/agentops-inspect.md
           ./bin/agentops report --session latest > /tmp/agentops-report.md
           ./bin/agentops repo-report --session latest > /tmp/agentops-repo-report.md
           ./bin/agentops repo-report --session latest --format github > /tmp/agentops-github-comment.md
           ./bin/agentops scan-publication > /tmp/agentops-publication-scan.txt
+          test -s /tmp/agentops-adapters.md
+          test -s /tmp/agentops-adapter-detection.md
+          test -s /tmp/agentops-sessions.md
+          test -s /tmp/agentops-inspect.md
           test -s /tmp/agentops-report.md
           test -s /tmp/agentops-repo-report.md
           test -s /tmp/agentops-github-comment.md

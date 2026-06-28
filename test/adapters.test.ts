@@ -23,3 +23,17 @@ test("parses PAI exports through the shared event schema", () => {
   expect(transcript.session.sourceAdapter).toBe("pai-export-jsonl");
   expect(transcript.events).toHaveLength(4);
 });
+
+test("detects sanitized Claude Code export JSONL artifacts", () => {
+  const input = loadAdapterInput("fixtures/claude-code-session.jsonl");
+  const adapter = resolveAdapter(input);
+
+  expect(adapter.id).toBe("claude-code-jsonl");
+});
+
+test("detects sanitized Codex export JSONL artifacts", () => {
+  const input = loadAdapterInput("fixtures/codex-session.jsonl");
+  const adapter = resolveAdapter(input);
+
+  expect(adapter.id).toBe("codex-jsonl");
+});

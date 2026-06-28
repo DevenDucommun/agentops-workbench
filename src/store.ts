@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { CommandRecord, FileChangeRecord, ParsedTranscript, RiskFlagRecord, StoredEvent } from "./types";
+import type { CommandRecord, FileChangeRecord, ParsedTranscript, RiskFlagRecord, SessionSummary, StoredEvent } from "./types";
 import { extractCommand, extractPath, summarizeEvent } from "./parser";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
@@ -180,6 +180,8 @@ export function getSession(store: Store, sessionId: string) {
     | {
         id: string;
         source_path: string;
+        schema_version: string | null;
+        source_adapter: string | null;
         agent: string | null;
         model: string | null;
         repo: string | null;
@@ -189,6 +191,39 @@ export function getSession(store: Store, sessionId: string) {
         ingested_at: string;
       }
     | null;
+}
+
+export function listSessions(store: Store, limit = 20): SessionSummary[] {
+  return store.db
+    .query(
+      `
+      SELECT
+        sessions.id,
+        sessions.source_path as sourcePath,
+        sessions.schema_version as schemaVersion,
+        sessions.source_adapter as sourceAdapter,
+        sessions.agent,
+        sessions.model,
+        sessions.repo,
+        sessions.task,
+        sessions.started_at as startedAt,
+        sessions.ended_at as endedAt,
+        sessions.ingested_at as ingestedAt,
+        COUNT(DISTINCT events.id) as eventCount,
+        COUNT(DISTINCT commands.id) as commandCount,
+        COUNT(DISTINCT file_changes.id) as fileChangeCount,
+        COUNT(DISTINCT risk_flags.id) as riskCount
+      FROM sessions
+      LEFT JOIN events ON events.session_id = sessions.id
+      LEFT JOIN commands ON commands.session_id = sessions.id
+      LEFT JOIN file_changes ON file_changes.session_id = sessions.id
+      LEFT JOIN risk_flags ON risk_flags.session_id = sessions.id
+      GROUP BY sessions.id
+      ORDER BY sessions.ingested_at DESC, sessions.rowid DESC
+      LIMIT $limit
+      `
+    )
+    .all({ $limit: limit }) as SessionSummary[];
 }
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
