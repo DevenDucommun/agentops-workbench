@@ -1,6 +1,7 @@
 import { isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
+import { generateMarkdownReport } from "./report";
 import {
   getCommands,
   getEvents,
@@ -78,7 +79,14 @@ function handleDashboardRequest(request: Request, store: Store, config: AgentOps
     return jsonResponse({ sessions: listSessions(store, limit).map(toDashboardSessionSummary) });
   }
   if (url.pathname.startsWith("/api/sessions/")) {
-    const sessionId = decodeURIComponent(url.pathname.replace("/api/sessions/", ""));
+    const sessionPath = url.pathname.replace("/api/sessions/", "");
+    const isReport = sessionPath.endsWith("/report");
+    const sessionId = decodeURIComponent(isReport ? sessionPath.slice(0, -"/report".length) : sessionPath);
+    if (isReport) {
+      const session = getSession(store, sessionId);
+      if (!session) return jsonResponse({ error: "Session not found" }, 404);
+      return markdownResponse(generateMarkdownReport(store, sessionId, config));
+    }
     const detail = getDashboardSession(store, sessionId, config);
     if (!detail) return jsonResponse({ error: "Session not found" }, 404);
     return jsonResponse(detail);
@@ -133,6 +141,15 @@ function htmlResponse(value: string): Response {
   return new Response(value, {
     headers: {
       "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function markdownResponse(value: string): Response {
+  return new Response(value, {
+    headers: {
+      "content-type": "text/markdown; charset=utf-8",
       "cache-control": "no-store"
     }
   });
@@ -206,6 +223,25 @@ function dashboardHtml(): string {
       height: 34px;
       cursor: pointer;
       box-shadow: var(--shadow);
+    }
+    .header-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+    }
+    .action-button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 7px 10px;
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      white-space: nowrap;
     }
     .sessions {
       display: grid;
@@ -452,6 +488,9 @@ function dashboardHtml(): string {
           <p class="subtle" id="session-task">Ingest a session, then refresh this dashboard.</p>
           <div class="meta" id="session-meta"></div>
         </div>
+        <div class="header-actions">
+          <a class="action-button hidden" id="report-link" href="#" target="_blank" rel="noreferrer">Markdown report</a>
+        </div>
       </section>
       <section class="metric-grid" id="metrics"></section>
       <section class="grid">
@@ -572,13 +611,18 @@ function dashboardHtml(): string {
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops ingest first.</div>';
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
+      document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';
       document.getElementById("tab-commands").innerHTML = '<div class="empty">No commands.</div>';
       document.getElementById("tab-files").innerHTML = '<div class="empty">No file changes.</div>';
+      document.getElementById("report-link").classList.add("hidden");
     }
 
     function renderDetail() {
       const data = state.detail;
       const session = data.session;
+      const reportLink = document.getElementById("report-link");
+      reportLink.href = "/api/sessions/" + encodeURIComponent(session.id) + "/report";
+      reportLink.classList.remove("hidden");
       document.getElementById("session-heading").textContent = session.id;
       document.getElementById("session-task").textContent = session.task || "Untitled task";
       document.getElementById("session-meta").innerHTML = [

@@ -51,6 +51,8 @@ test("generates GitHub-ready repo comment without posting", () => {
 
   expect(report).toContain("## AgentOps Workbench Report");
   expect(report).toContain("**Status:** High-risk findings present");
+  expect(report).toContain("#### High Severity");
+  expect(report).toContain("#### Medium Severity");
   expect(report).toContain("Generated locally by AgentOps Workbench");
   expect(report).toContain("<details><summary>Commands run</summary>");
 

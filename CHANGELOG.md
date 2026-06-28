@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0 - 2026-06-28
+
+### Added
+
+- Safe capture guide for native Codex JSONL, Claude Code stream JSON, and PAI/KAI-style post-hoc exports.
+- Dashboard Markdown report export for selected sessions.
+- Specific evidence-claim flags for missing test, lint, typecheck, and build command evidence.
+
+### Changed
+
+- Markdown reports now group risk flags by severity.
+- Documented that generated-file and retry/loop detectors remain in the `v0.7.0` hardening milestone pending broader fixture coverage.
+
 ## v0.5.0 - 2026-06-28
 
 ### Added

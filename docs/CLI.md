@@ -2,6 +2,9 @@
 
 AgentOps Workbench is local-first. Commands read session artifacts from disk, store normalized data in SQLite, and write reports to stdout.
 
+For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
+[Capture guide](CAPTURE_GUIDE.md).
+
 ## Commands
 
 ### `agentops adapters`

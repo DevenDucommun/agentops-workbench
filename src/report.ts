@@ -75,9 +75,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
       ? verification.map((command) => `- \`${command.command}\``).join("\n")
       : "- No test, lint, typecheck, or verification command recorded.",
     "## Risk Flags",
-    risks.length
-      ? risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
-      : "- No risk flags detected.",
+    formatRiskFlags(risks),
     "## Final Outcome",
     final ? final.summary : "No final response recorded."
   ];
@@ -119,9 +117,7 @@ export function generateMarkdownRepoReport(
       ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No test, lint, typecheck, build, or verification command recorded.",
     "## Risk Flags",
-    data.risks.length
-      ? data.risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
-      : "- No risk flags detected.",
+    formatRiskFlags(data.risks),
     "## Commands Run",
     data.commands.length
       ? data.commands.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
@@ -162,9 +158,7 @@ export function generateGithubRepoComment(
       ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No verification command recorded.",
     "### Risk Flags",
-    data.risks.length
-      ? data.risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
-      : "- No risk flags detected.",
+    formatRiskFlags(data.risks, 4),
     "### Git Changes Not Observed In Session",
     data.unobservedGitChanges.length
       ? data.unobservedGitChanges.map((change) => `- \`${change.path}\``).join("\n")
@@ -184,6 +178,25 @@ function table(rows: Array<[string, string]>): string {
 
 function escapeTable(value: string): string {
   return value.replaceAll("|", "\\|").replace(/\r?\n/g, " ");
+}
+
+function formatRiskFlags(risks: ReturnType<typeof getRiskFlags>, headingDepth = 3): string {
+  if (!risks.length) return "- No risk flags detected.";
+
+  const headings = {
+    high: "High Severity",
+    medium: "Medium Severity",
+    low: "Low Severity"
+  };
+  const headingPrefix = "#".repeat(headingDepth);
+  const sections = [];
+  for (const severity of ["high", "medium", "low"] as const) {
+    const group = risks.filter((risk) => risk.severity === severity);
+    if (!group.length) continue;
+    sections.push(`${headingPrefix} ${headings[severity]}`);
+    sections.push(group.map((risk) => `- **${risk.category}**: ${risk.message}`).join("\n"));
+  }
+  return sections.join("\n\n");
 }
 
 function formatChurn(added: number | null, removed: number | null): string {
