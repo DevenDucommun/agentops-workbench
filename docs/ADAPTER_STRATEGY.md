@@ -138,6 +138,9 @@ Build in this order:
 
 ## Implemented Adapters
 
+These adapter identifiers are stable in `v1.0.0`; see
+[Compatibility policy](COMPATIBILITY.md) for the support matrix and boundaries.
+
 The current implementation supports normalized JSONL export artifacts:
 
 - `agentops-jsonl`: canonical `agentops.event.v1` JSONL.

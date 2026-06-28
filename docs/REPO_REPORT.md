@@ -2,6 +2,9 @@
 
 `repo-report` compares an ingested agent session with the current local git diff.
 
+The Markdown repo report and GitHub-format stdout output are stable local
+report surfaces in `v1.0.0`. The command does not post comments or call GitHub.
+
 ```bash
 agentops ingest ./fixtures/sample-session.jsonl
 agentops repo-report --session latest > repo-report.md

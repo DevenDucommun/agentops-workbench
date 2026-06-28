@@ -15,6 +15,10 @@ Publicly safe conclusions:
 - AgentOps should not read private PAI memory stores.
 - AgentOps can consume sanitized exported session artifacts produced by PAI or any other local agent runtime.
 
+The stable `v1.0.0` PAI boundary is post-hoc sanitized artifact ingestion. See
+[Compatibility policy](COMPATIBILITY.md). AgentOps does not read, modify, or
+publish private PAI memory.
+
 Private details intentionally excluded:
 
 - memory contents

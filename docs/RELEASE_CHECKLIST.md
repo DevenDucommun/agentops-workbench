@@ -3,8 +3,9 @@
 This checklist must pass before every public release. See
 [Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
 
-Status: reusable as of `v0.9.0`; v0.1.0 public readiness passed on
-2026-06-28. See [v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
+Status: reusable and exercised through `v1.0.0`; v0.1.0 public readiness
+passed on 2026-06-28. See
+[v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
 
 ## Repository State
 

@@ -73,11 +73,13 @@ The maintainer develops privately, then runs publication checks to confirm that 
   suppressions and risk/evidence settings documented in `docs/CONFIGURATION.md`.
 - The project is licensed under the repository `LICENSE`.
 
-## Remaining Pre-1.0 Questions
+## 1.0 Decisions
 
-- Which CLI, schema, config, report, and dashboard surfaces are stable enough
-  to freeze at `v1.0.0`?
-- Should npm publishing happen before `v1.0.0`, or remain deferred until after
-  the CLI contract is frozen?
-- Should OTLP/OpenTelemetry export become experimental functionality or remain
-  a documented mapping only?
+- Stable surfaces are documented in `docs/COMPATIBILITY.md`: CLI commands,
+  `agentops.event.v1`, `agentops.export.v1`, `agentops.config.v1`, reports,
+  supported adapters, migrations, and privacy defaults.
+- Npm publishing remains deferred after `v1.0.0`; the repository keeps
+  `"private": true` until a future release checklist explicitly approves
+  publication.
+- OTLP/OpenTelemetry export remains a documented mapping only. JSON export is
+  the stable portable data format.

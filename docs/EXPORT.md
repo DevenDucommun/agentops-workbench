@@ -63,5 +63,6 @@ Do not publish exports that include raw payloads.
 
 ## Compatibility
 
-`agentops.export.v1` is a pre-1.0 contract. Changes before `v1.0.0` should be
-documented in this file and covered by export tests.
+`agentops.export.v1` is stable in `v1.0.0`. Compatible changes may add optional
+fields, but exports should remain deterministic and private-data-safe by
+default. See [Compatibility policy](COMPATIBILITY.md).

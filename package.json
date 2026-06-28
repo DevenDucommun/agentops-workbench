@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -12,7 +12,10 @@
     "fixtures/",
     "docs/INSTALLATION.md",
     "docs/CLI.md",
+    "docs/COMPATIBILITY.md",
+    "docs/CONFIGURATION.md",
     "docs/DASHBOARD.md",
+    "docs/REPO_REPORT.md",
     "docs/CAPTURE_GUIDE.md",
     "docs/EXPORT.md",
     "docs/HOOK_ENVELOPE.md",

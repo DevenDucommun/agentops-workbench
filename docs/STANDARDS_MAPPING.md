@@ -5,8 +5,8 @@ concepts and OpenTelemetry/GenAI-style fields.
 
 ## Status
 
-Status for `v0.8.0`: documented mapping only. OTLP export is deferred until
-after `v1.0.0` unless a concrete integration need appears.
+Status for `v1.0.0`: documented mapping only. OTLP export remains deferred
+until a concrete integration need appears.
 
 Reason:
 
@@ -33,7 +33,7 @@ Reason:
 
 ## Export Decision
 
-`agentops.export.v1` is the canonical portable format before `v1.0.0`.
+`agentops.export.v1` is the canonical portable format in `v1.0.0`.
 
 OTLP export is deferred. A future exporter should transform
 `agentops.export.v1` rather than reading private transcript artifacts directly.

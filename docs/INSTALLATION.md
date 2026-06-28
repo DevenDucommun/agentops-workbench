@@ -111,3 +111,6 @@ equivalent to:
 ```bash
 bun run smoke:install
 ```
+
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.0.0` command,
+adapter, schema, and packaging boundaries.

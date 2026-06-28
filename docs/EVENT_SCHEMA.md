@@ -4,6 +4,10 @@ Current schema version: `agentops.event.v1`
 
 AgentOps Workbench uses JSONL as its first interchange format. Each line is one JSON object. The first record should be a `session` record, followed by event records.
 
+`agentops.event.v1` is stable in `v1.0.0`. Compatible changes may add optional
+fields, but breaking changes require a new major version or migration path. See
+[Compatibility policy](COMPATIBILITY.md).
+
 ## Session Record
 
 ```json
