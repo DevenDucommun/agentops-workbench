@@ -75,6 +75,7 @@ fixtures.
 ```bash
 bun install --frozen-lockfile
 bun run ci
+bun run smoke:large-session
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
 ./bin/agentops report --session latest > /tmp/agentops-report.md
 ./bin/agentops repo-report --session latest > /tmp/agentops-repo-report.md

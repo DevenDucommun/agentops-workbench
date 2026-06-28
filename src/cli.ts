@@ -1,6 +1,6 @@
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
-import { loadConfig } from "./config";
+import { formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
 import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
@@ -55,6 +55,16 @@ export async function runCli(argv: string[]): Promise<CliResult> {
         artifactHint: detection.reason
       }));
       return { stdout: formatAdapterList(rows), exitCode: 0 };
+    }
+
+    if (command === "config") {
+      if (!args.includes("--check")) {
+        return { stderr: "Usage: agentops config --check [--config agentops.config.json]\n", exitCode: 1 };
+      }
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const result = validateConfigFile(configPath);
+      const output = formatConfigValidationResult(result);
+      return result.errors.length ? { stderr: output, exitCode: 1 } : { stdout: output, exitCode: 0 };
     }
 
     if (command === "sessions") {
@@ -196,6 +206,7 @@ Usage:
   agentops ingest <session.jsonl>
   agentops adapters
   agentops adapters --input <session.jsonl>
+  agentops config --check
   agentops sessions
   agentops inspect --session latest
   agentops ingest <session.jsonl> --adapter pai-export-jsonl

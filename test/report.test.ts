@@ -114,6 +114,72 @@ test("can retain redacted raw payloads when configured", () => {
   store.db.close();
 });
 
+test("redacts credential-like and local-environment data in retained payloads", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const syntheticEmail = `operator${"@"}example.test`;
+  const syntheticLocalPath = `/${"Users"}/example/.codex/auth.json`;
+  const syntheticAwsKey = `AKIA${"1234567890ABCDEF"}`;
+  const syntheticOpenAiKey = `sk-${"abcdefghijklmnopqrstuvwxyz123456"}`;
+  const syntheticGithubToken = `ghp_${"abcdefghijklmnopqrstuvwxyz123456"}`;
+  const syntheticSlackToken = `xoxb-${"1234567890-abcdefghijklmnop"}`;
+  const syntheticPrivateKey = `-----BEGIN ${"OPENSSH "}PRIVATE KEY-----\nsynthetic\n-----END ${"OPENSSH "}PRIVATE KEY-----`;
+  const config = {
+    ...defaultConfig,
+    privacy: {
+      ...defaultConfig.privacy,
+      storeRawPayload: true
+    }
+  };
+  const transcript = parseJsonlTranscript(
+    "redaction-fixture.jsonl",
+    [
+      JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "redaction-fixture" }),
+      JSON.stringify({
+        schemaVersion: "agentops.event.v1",
+        type: "tool_call",
+        input: {
+          cmd: "printenv",
+          nested: {
+            owner: syntheticEmail,
+            authPath: syntheticLocalPath,
+            apiKey: syntheticOpenAiKey
+          }
+        },
+        output: [syntheticAwsKey, syntheticGithubToken, syntheticSlackToken, syntheticPrivateKey].join("\n")
+      })
+    ].join("\n"),
+    { config }
+  );
+
+  ingestTranscript(store, transcript, config);
+
+  const rawPayloads = getEvents(store, "redaction-fixture").map((event) => event.rawJson).join("\n");
+  const commandOutput = getCommands(store, "redaction-fixture")[0]?.output ?? "";
+
+  for (const sensitiveValue of [
+    syntheticEmail,
+    syntheticLocalPath,
+    syntheticAwsKey,
+    syntheticOpenAiKey,
+    syntheticGithubToken,
+    syntheticSlackToken,
+    syntheticPrivateKey
+  ]) {
+    expect(rawPayloads).not.toContain(sensitiveValue);
+    expect(commandOutput).not.toContain(sensitiveValue);
+  }
+  expect(rawPayloads).toContain("[REDACTED:email]");
+  expect(rawPayloads).toContain("[REDACTED:local-path]");
+  expect(rawPayloads).toContain("[REDACTED:openai-style-key]");
+  expect(commandOutput).toContain("[REDACTED:aws-access-key]");
+  expect(commandOutput).toContain("[REDACTED:github-token]");
+  expect(commandOutput).toContain("[REDACTED:slack-token]");
+  expect(commandOutput).toContain("[REDACTED:private-key]");
+
+  store.db.close();
+});
+
 test("reports optional usage metadata when present", () => {
   const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
   const store = openStore(join(dir, "agentops.db"));

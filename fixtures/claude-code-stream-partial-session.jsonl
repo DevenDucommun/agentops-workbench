@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"claude-partial-sample"}
+{"type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"bun test"}}]}}

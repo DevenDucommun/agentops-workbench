@@ -38,16 +38,24 @@ jobs:
       - name: Install smoke test
         run: bun run smoke:install
 
+      - name: Large session smoke test
+        run: bun run smoke:large-session
+
       - name: CLI smoke test
         run: |
+          ./bin/agentops config --check > /tmp/agentops-config-check.txt
           ./bin/agentops ingest ./fixtures/sample-session.jsonl
           ./bin/agentops ingest ./fixtures/claude-code-session.jsonl
           ./bin/agentops ingest ./fixtures/codex-session.jsonl
           ./bin/agentops ingest ./fixtures/codex-exec-session.jsonl
+          ./bin/agentops ingest ./fixtures/codex-exec-edge-session.jsonl
+          ./bin/agentops ingest ./fixtures/claude-code-stream-edge-session.jsonl
           ./bin/agentops ingest ./fixtures/usage-session.jsonl
           ./bin/agentops adapters > /tmp/agentops-adapters.md
           ./bin/agentops adapters --input ./fixtures/codex-session.jsonl > /tmp/agentops-adapter-detection.md
           ./bin/agentops adapters --input ./fixtures/codex-exec-session.jsonl > /tmp/agentops-codex-exec-detection.md
+          ./bin/agentops adapters --input ./fixtures/codex-exec-edge-session.jsonl > /tmp/agentops-codex-exec-edge-detection.md
+          ./bin/agentops adapters --input ./fixtures/claude-code-stream-edge-session.jsonl > /tmp/agentops-claude-edge-detection.md
           ./bin/agentops sessions > /tmp/agentops-sessions.md
           ./bin/agentops inspect --session latest > /tmp/agentops-inspect.md
           ./bin/agentops report --session latest > /tmp/agentops-report.md
@@ -55,9 +63,12 @@ jobs:
           ./bin/agentops repo-report --session latest --format github > /tmp/agentops-github-comment.md
           ./bin/agentops dashboard --check > /tmp/agentops-dashboard-check.txt
           ./bin/agentops scan-publication > /tmp/agentops-publication-scan.txt
+          test -s /tmp/agentops-config-check.txt
           test -s /tmp/agentops-adapters.md
           test -s /tmp/agentops-adapter-detection.md
           test -s /tmp/agentops-codex-exec-detection.md
+          test -s /tmp/agentops-codex-exec-edge-detection.md
+          test -s /tmp/agentops-claude-edge-detection.md
           test -s /tmp/agentops-sessions.md
           test -s /tmp/agentops-inspect.md
           test -s /tmp/agentops-report.md

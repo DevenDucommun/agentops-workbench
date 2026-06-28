@@ -32,6 +32,18 @@ agentops ingest ./fixtures/claude-code-stream-session.jsonl
 agentops ingest ./fixtures/codex-exec-session.jsonl
 ```
 
+### `agentops config --check`
+
+Validates the local config file without ingesting a session.
+
+```bash
+agentops config --check
+agentops config --check --config ./agentops.config.json
+```
+
+The command catches malformed suppressions and risky raw-payload settings such
+as storing raw payloads without redaction and payload hashes.
+
 ### `agentops sessions`
 
 Lists recently ingested sessions.

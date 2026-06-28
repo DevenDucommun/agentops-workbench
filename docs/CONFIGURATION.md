@@ -10,6 +10,12 @@ agentops.config.json
 
 The CLI should work without config. Config should refine behavior, not be required for the happy path.
 
+Validate config changes with:
+
+```bash
+./bin/agentops config --check
+```
+
 ## Initial Config Surface
 
 ```json
@@ -64,7 +70,9 @@ Mitigation: keep v1 config small and document precedence clearly.
 
 Teams can hide useful findings with broad suppressions.
 
-Mitigation: require suppressions to include a narrow `category`, `path` or `command`, and `reason`.
+Mitigation: require suppressions to include a narrow `category`, `path` or
+`command`, and `reason`. `agentops config --check` fails if a suppression omits
+these fields.
 
 ### Public Fixture Risk
 
@@ -92,7 +100,8 @@ Expected MVP performance:
 
 - small sessions: effectively instant
 - hundreds of events: SQLite transaction should remain fast
-- thousands of events: still reasonable if inserts are batched
+- thousands of events: still reasonable if inserts are batched; `bun run
+  smoke:large-session` currently validates a 2,500-event synthetic session
 - large command outputs: redaction/scanning may dominate runtime
 
 ## Storage Tradeoffs
@@ -161,6 +170,7 @@ Suppressions are intentionally narrow. A suppression can match by:
 - `command`
 
 At least one of those fields must be present. `reason` is recommended for reviewability.
+As of `v0.7.0`, `reason` is required by `agentops config --check`.
 
 Example:
 
