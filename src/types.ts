@@ -53,6 +53,24 @@ export type StoredEvent = {
   rawPayloadHash: string | null;
 };
 
+export type SessionSummary = {
+  id: string;
+  sourcePath: string;
+  schemaVersion: string | null;
+  sourceAdapter: string | null;
+  agent: string | null;
+  model: string | null;
+  repo: string | null;
+  task: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  ingestedAt: string;
+  eventCount: number;
+  commandCount: number;
+  fileChangeCount: number;
+  riskCount: number;
+};
+
 export type CommandRecord = {
   id: number;
   eventId: number | null;

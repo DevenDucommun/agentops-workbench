@@ -38,6 +38,9 @@ Run the first implementation slice locally:
 
 ```bash
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
+./bin/agentops adapters
+./bin/agentops sessions
+./bin/agentops inspect --session latest
 ./bin/agentops report --session latest > report.md
 ./bin/agentops repo-report --session latest > repo-report.md
 ./bin/agentops repo-report --session latest --format github > pr-comment.md
@@ -50,6 +53,16 @@ PAI-compatible post-hoc exports use the same canonical JSONL schema:
 ./bin/agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
 ./bin/agentops report --session latest > report.md
 ```
+
+Synthetic Claude Code and Codex exports are also represented as sanitized AgentOps JSONL:
+
+```bash
+./bin/agentops ingest ./fixtures/claude-code-session.jsonl
+./bin/agentops ingest ./fixtures/codex-session.jsonl
+./bin/agentops adapters --input ./fixtures/codex-session.jsonl
+```
+
+These fixtures are normalized export examples, not native runtime transcript parsers.
 
 To use the exact `agentops` command during local development, put the repo's `bin` directory on your path:
 
@@ -78,6 +91,7 @@ These planning artifacts are written for the future public repository:
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
 - [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
+- [CLI reference](docs/CLI.md)
 - [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)

@@ -1,7 +1,8 @@
-import { adapters, loadAdapterInput, resolveAdapter } from "./adapters";
+import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { loadConfig } from "./config";
 import { getGitChanges } from "./git";
+import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
@@ -25,7 +26,6 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
       const adapterId = readOption(args, "--adapter");
       const configPath = readOption(args, "--config") ?? "agentops.config.json";
-      const format = readOption(args, "--format") ?? "markdown";
       const config = loadConfig(configPath);
       const input = loadAdapterInput(sourcePath);
       const adapter = resolveAdapter(input, adapterId ?? undefined);
@@ -39,6 +39,43 @@ export async function runCli(argv: string[]): Promise<CliResult> {
         stdout: `Ingested session ${result.sessionId} (${result.eventCount} events)\nAdapter: ${adapter.id}\nDatabase: ${store.path}\n`,
         exitCode: 0
       };
+    }
+
+    if (command === "adapters") {
+      const sourcePath = readOption(args, "--input");
+      if (!sourcePath) return { stdout: formatAdapterList(adapters), exitCode: 0 };
+
+      const input = loadAdapterInput(sourcePath);
+      const rows = detectAdapters(input).map(({ adapter, detection }) => ({
+        id: adapter.id,
+        displayName: detection.matched ? `${adapter.displayName} (${Math.round(detection.confidence * 100)}%)` : adapter.displayName,
+        artifactHint: detection.reason
+      }));
+      return { stdout: formatAdapterList(rows), exitCode: 0 };
+    }
+
+    if (command === "sessions") {
+      const limit = Number(readOption(args, "--limit") ?? "20");
+      if (!Number.isInteger(limit) || limit < 1) return { stderr: "Usage: agentops sessions --limit <positive-number>\n", exitCode: 1 };
+      const store = openStore();
+      const output = generateSessionList(store, limit);
+      store.db.close();
+      return { stdout: output, exitCode: 0 };
+    }
+
+    if (command === "inspect") {
+      const sessionArg = readOption(args, "--session") ?? "latest";
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const config = loadConfig(configPath);
+      const store = openStore();
+      const sessionId = getSessionId(store, sessionArg);
+      if (!sessionId) {
+        store.db.close();
+        return { stderr: "No sessions found. Run `agentops ingest <session.jsonl>` first.\n", exitCode: 1 };
+      }
+      const output = generateSessionInspection(store, sessionId, config);
+      store.db.close();
+      return { stdout: output, exitCode: 0 };
     }
 
     if (command === "report") {
@@ -106,6 +143,10 @@ function help(): string {
 
 Usage:
   agentops ingest <session.jsonl>
+  agentops adapters
+  agentops adapters --input <session.jsonl>
+  agentops sessions
+  agentops inspect --session latest
   agentops ingest <session.jsonl> --adapter pai-export-jsonl
   agentops report --session latest
   agentops repo-report --session latest
