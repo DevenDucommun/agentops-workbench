@@ -50,6 +50,12 @@ bun install --frozen-lockfile
 ./bin/agentops dashboard
 ```
 
+## Dashboard Preview
+
+The local dashboard reads from SQLite and can be demoed with synthetic fixtures:
+
+![AgentOps Workbench dashboard showing synthetic Codex exec fixture data](docs/assets/dashboard-v0.4.0.png)
+
 Generate a repo-aware PR report:
 
 ```bash
