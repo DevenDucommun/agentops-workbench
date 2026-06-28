@@ -2,6 +2,7 @@ import { adapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { loadConfig } from "./config";
 import { getGitChanges } from "./git";
+import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
 
@@ -78,6 +79,15 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return { stdout: report, exitCode: 0 };
     }
 
+    if (command === "scan-publication") {
+      const findings = scanPublication();
+      const output = formatPublicationScanResult(findings);
+      if (findings.length > 0) {
+        return { stderr: output, exitCode: 1 };
+      }
+      return { stdout: output, exitCode: 0 };
+    }
+
     return { stderr: `Unknown command: ${command}\n\n${help()}`, exitCode: 1 };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -100,6 +110,7 @@ Usage:
   agentops report --session latest
   agentops repo-report --session latest
   agentops repo-report --session latest --format github
+  agentops scan-publication
 
 Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}

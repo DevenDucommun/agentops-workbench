@@ -13,7 +13,7 @@ This checklist must pass before making the repository public.
 
 ## Public Safety
 
-- [ ] `bun run scan:public` passes.
+- [ ] `./bin/agentops scan-publication` passes.
 - [ ] No local SQLite databases are tracked.
 - [ ] No `.agentops/` contents are tracked.
 - [ ] No `.agents/` contents are tracked.
@@ -31,6 +31,8 @@ This checklist must pass before making the repository public.
 - [ ] Fresh clone can run `./bin/agentops ingest ./fixtures/sample-session.jsonl`.
 - [ ] Fresh clone can run `./bin/agentops report --session latest > report.md`.
 - [ ] Fresh clone can run `./bin/agentops repo-report --session latest > repo-report.md`.
+- [ ] Fresh clone can run `./bin/agentops repo-report --session latest --format github > pr-comment.md`.
+- [ ] Fresh clone can run `./bin/agentops scan-publication`.
 - [ ] README explains the product, current CLI, planning docs, and privacy posture.
 - [ ] Architecture docs explain adapters, storage, analyzers, reports, and PAI boundaries.
 - [ ] Roadmap explains what is built and what is next.
@@ -60,7 +62,12 @@ bun install --frozen-lockfile
 bun run ci
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
 ./bin/agentops report --session latest > /tmp/agentops-report.md
+./bin/agentops repo-report --session latest > /tmp/agentops-repo-report.md
+./bin/agentops repo-report --session latest --format github > /tmp/agentops-pr-comment.md
+./bin/agentops scan-publication
 test -s /tmp/agentops-report.md
+test -s /tmp/agentops-repo-report.md
+test -s /tmp/agentops-pr-comment.md
 ```
 
 ```bash

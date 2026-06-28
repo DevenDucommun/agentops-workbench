@@ -41,6 +41,7 @@ Run the first implementation slice locally:
 ./bin/agentops report --session latest > report.md
 ./bin/agentops repo-report --session latest > repo-report.md
 ./bin/agentops repo-report --session latest --format github > pr-comment.md
+./bin/agentops scan-publication
 ```
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:
@@ -59,6 +60,12 @@ agentops report --session latest > report.md
 ```
 
 The default SQLite database lives at `.agentops/agentops.db`. Override it with `AGENTOPS_DB=/path/to/agentops.db`.
+
+Before making a branch or release public, run:
+
+```bash
+./bin/agentops scan-publication
+```
 
 ## Planning And Architecture
 
