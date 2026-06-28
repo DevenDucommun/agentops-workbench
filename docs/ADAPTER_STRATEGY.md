@@ -132,7 +132,9 @@ Build in this order:
 2. `pai-export-jsonl` post-hoc adapter, likely identical to canonical JSONL with PAI-specific source metadata.
 3. `codex-jsonl` sanitized AgentOps JSONL export adapter.
 4. `claude-code-jsonl` sanitized AgentOps JSONL export adapter.
-5. hook-stream adapter for future live capture.
+5. `codex-exec-jsonl` native adapter for `codex exec --json` captures.
+6. `claude-code-stream-json` native adapter for `claude -p --output-format stream-json` captures.
+7. hook-stream adapter for future live capture.
 
 ## Implemented Export Adapters
 
@@ -157,6 +159,8 @@ These are not native Claude Code or Codex runtime transcript parsers. They inten
 
 ## Open Research Before Native Direct Adapters
 
+Native adapter research is documented in [Native adapter research](NATIVE_ADAPTER_RESEARCH.md).
+
 Before implementing direct Claude/Codex adapters, collect sanitized examples of each artifact shape:
 
 - completed simple edit
@@ -167,3 +171,8 @@ Before implementing direct Claude/Codex adapters, collect sanitized examples of 
 - risky file edit
 
 Each fixture must pass the publication checklist before being committed.
+
+Research recommendation: prefer explicit machine-readable streams first
+(`codex exec --json` and `claude -p --output-format stream-json`) and keep raw
+transcript-file parsing experimental until sanitized fixture reviews prove it is
+safe.

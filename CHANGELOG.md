@@ -6,6 +6,7 @@
 
 - Optional token and cost usage metadata ingestion, storage, and report rendering.
 - Installation strategy documentation and install smoke verification.
+- Native Claude Code and Codex adapter research with recommended CLI JSONL targets.
 
 ## v0.2.0 - 2026-06-28
 
