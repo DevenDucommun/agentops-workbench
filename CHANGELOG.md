@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+## v0.3.0 - 2026-06-28
+
 ### Added
 
 - Optional token and cost usage metadata ingestion, storage, and report rendering.
 - Installation strategy documentation and install smoke verification.
 - Native Claude Code and Codex adapter research with recommended CLI JSONL targets.
+- Local dashboard foundation with SQLite-backed session, timeline, risk, command, and file views.
 
 ## v0.2.0 - 2026-06-28
 

@@ -51,6 +51,7 @@ jobs:
           ./bin/agentops report --session latest > /tmp/agentops-report.md
           ./bin/agentops repo-report --session latest > /tmp/agentops-repo-report.md
           ./bin/agentops repo-report --session latest --format github > /tmp/agentops-github-comment.md
+          ./bin/agentops dashboard --check > /tmp/agentops-dashboard-check.txt
           ./bin/agentops scan-publication > /tmp/agentops-publication-scan.txt
           test -s /tmp/agentops-adapters.md
           test -s /tmp/agentops-adapter-detection.md
@@ -59,4 +60,5 @@ jobs:
           test -s /tmp/agentops-report.md
           test -s /tmp/agentops-repo-report.md
           test -s /tmp/agentops-github-comment.md
+          test -s /tmp/agentops-dashboard-check.txt
           test -s /tmp/agentops-publication-scan.txt

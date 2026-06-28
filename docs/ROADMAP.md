@@ -6,7 +6,7 @@ Make coding-agent work reviewable, auditable, and safer to trust.
 
 ## Current Status
 
-Public release: `v0.2.0`
+Public release: `v0.3.0`
 
 Implemented:
 
@@ -19,18 +19,19 @@ Implemented:
 - Session listing and inspection commands.
 - Sanitized export adapters for AgentOps JSONL, PAI, Claude Code, and Codex.
 - Public-readiness scan, CI, branch protection, GitGuardian checks, secret scanning, and Dependabot security updates.
+- Local dashboard foundation backed by SQLite.
 
 Current boundary:
 
 - Claude Code and Codex support means normalized, sanitized AgentOps JSONL exports.
 - Native runtime transcript parsing is planned but not implemented.
-- Dashboard is planned but not implemented.
+- Dashboard foundation is implemented; richer visualization remains future work.
 
-## v0.3 Candidate Focus
+## v0.3 Focus
 
-The next release should make the project easier to validate against real-world agent workflows while preserving privacy boundaries.
+This release makes the project easier to validate against real-world agent workflows while preserving privacy boundaries.
 
-Priority candidates:
+Delivered:
 
 - Native Claude Code transcript research and fixture design.
 - Native Codex transcript research and fixture design.
@@ -62,7 +63,7 @@ Exit criteria:
 
 ## Phase 1: Stable Ingestion And Schema
 
-Status: substantially complete in `v0.2.0`; ongoing work continues through native adapter research.
+Status: substantially complete in `v0.2.0`; native adapter research is documented in `v0.3.0`.
 
 Outcomes:
 
@@ -135,7 +136,7 @@ Exit criteria:
 
 ## Phase 5: Dashboard
 
-Status: not started.
+Status: foundation implemented for `v0.3.0`; richer visualization remains future work.
 
 Outcomes:
 
@@ -170,7 +171,7 @@ Exit criteria:
 
 ## Phase 7: Public Launch
 
-Status: complete in `v0.1.0`, with `v0.2.0` now published.
+Status: complete in `v0.1.0`, with `v0.3.0` now published.
 
 Outcomes:
 

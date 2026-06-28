@@ -6,11 +6,14 @@ import { formatAdapterList, generateSessionInspection, generateSessionList } fro
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
+import { startDashboardServer, type DashboardServer } from "./dashboard";
 
 type CliResult = {
   stdout?: string;
   stderr?: string;
   exitCode: number;
+  keepAlive?: Promise<void>;
+  cleanup?: () => void;
 };
 
 export async function runCli(argv: string[]): Promise<CliResult> {
@@ -116,6 +119,29 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return { stdout: report, exitCode: 0 };
     }
 
+    if (command === "dashboard") {
+      if (args.includes("--check")) {
+        const host = readOption(args, "--host") ?? "127.0.0.1";
+        const port = parsePort(readOption(args, "--port"));
+        const store = openStore();
+        const databasePath = store.path;
+        store.db.close();
+        return {
+          stdout: `Dashboard configuration OK\nHost: ${host}\nPort: ${port}\nDatabase: ${databasePath}\n`,
+          exitCode: 0
+        };
+      }
+
+      const host = readOption(args, "--host") ?? "127.0.0.1";
+      const port = parsePort(readOption(args, "--port"));
+      const server = startDashboardServer({ host, port });
+      return {
+        stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,
+        exitCode: 0,
+        keepAlive: waitForShutdown(server)
+      };
+    }
+
     if (command === "scan-publication") {
       const findings = scanPublication();
       const output = formatPublicationScanResult(findings);
@@ -130,6 +156,31 @@ export async function runCli(argv: string[]): Promise<CliResult> {
     const message = error instanceof Error ? error.message : String(error);
     return { stderr: `${message}\n`, exitCode: 1 };
   }
+}
+
+function parsePort(value: string | null): number {
+  if (value === null) return 4927;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    throw new Error("Usage: agentops dashboard --port <1-65535>");
+  }
+  return parsed;
+}
+
+function waitForShutdown(server: DashboardServer): Promise<void> {
+  return new Promise((resolve) => {
+    let stopped = false;
+    const keepAlive = setInterval(() => undefined, 60_000);
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(keepAlive);
+      server.stop();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
 }
 
 function readOption(args: string[], name: string): string | null {
@@ -151,6 +202,7 @@ Usage:
   agentops report --session latest
   agentops repo-report --session latest
   agentops repo-report --session latest --format github
+  agentops dashboard
   agentops scan-publication
 
 Adapters:
@@ -165,5 +217,9 @@ if (import.meta.main) {
   const result = await runCli(process.argv.slice(2));
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  if (result.keepAlive) {
+    await result.keepAlive;
+  }
+  result.cleanup?.();
   process.exit(result.exitCode);
 }
