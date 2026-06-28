@@ -6,6 +6,7 @@
 
 - Native `claude -p --output-format stream-json` JSONL adapter with synthetic fixture coverage.
 - Dashboard session search and adapter filtering.
+- Npm source package strategy, explicit package contents, and package dry-run smoke.
 
 ## v0.4.0 - 2026-06-28
 

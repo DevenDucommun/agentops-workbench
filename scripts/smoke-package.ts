@@ -1,0 +1,79 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+
+type PackFile = {
+  path: string;
+};
+
+type PackResult = {
+  files: PackFile[];
+};
+
+const repoRoot = resolve(import.meta.dir, "..");
+const cacheDir = mkdtempSync(join(tmpdir(), "agentops-npm-cache-"));
+const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+  cwd: repoRoot,
+  env: {
+    ...process.env,
+    npm_config_cache: cacheDir
+  },
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"]
+});
+
+if (result.status !== 0) {
+  fail(`npm pack dry run failed:\n${result.stderr || result.stdout}`);
+}
+
+const pack = parsePackOutput(result.stdout);
+const files = new Set(pack.files.map((file) => file.path));
+
+for (const required of [
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "CHANGELOG.md",
+  "bin/agentops",
+  "src/cli.ts",
+  "src/adapters.ts",
+  "src/claudeStream.ts",
+  "src/codexExec.ts",
+  "fixtures/sample-session.jsonl",
+  "fixtures/claude-code-stream-session.jsonl",
+  "docs/INSTALLATION.md",
+  "docs/CLI.md"
+]) {
+  if (!files.has(required)) fail(`Package dry run is missing required file: ${required}`);
+}
+
+for (const excluded of [
+  ".github/workflows/ci.yml",
+  ".specify/memory/constitution.md",
+  "specs/001-agentops-workbench/spec.md",
+  "test/cli.test.ts",
+  "report.md",
+  "docs/assets/dashboard-v0.4.0.png"
+]) {
+  if (files.has(excluded)) fail(`Package dry run includes excluded file: ${excluded}`);
+}
+
+console.log(`Package smoke passed with ${files.size} files.`);
+
+function parsePackOutput(stdout: string): PackResult {
+  const jsonStart = stdout.indexOf("[");
+  if (jsonStart === -1) fail(`npm pack did not return JSON output:\n${stdout}`);
+  const parsed = JSON.parse(stdout.slice(jsonStart)) as unknown;
+  if (!Array.isArray(parsed) || !parsed[0] || typeof parsed[0] !== "object") {
+    fail(`Unexpected npm pack JSON output:\n${stdout}`);
+  }
+  const pack = parsed[0] as Partial<PackResult>;
+  if (!Array.isArray(pack.files)) fail(`npm pack JSON output did not include files:\n${stdout}`);
+  return { files: pack.files };
+}
+
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
+}
