@@ -55,6 +55,9 @@ Requirements:
 - bounded payload size
 - explicit user opt-in
 
+The proposed public hook-envelope shape is documented in
+[Hook Envelope JSONL](HOOK_ENVELOPE.md).
+
 ### Mode 3: Report Handoff
 
 AgentOps produces Markdown or JSON reports that PAI can use later as project context.

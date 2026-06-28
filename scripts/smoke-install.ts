@@ -35,6 +35,8 @@ runAndExpect(["agentops", "ingest", "fixtures/usage-session.jsonl"], "Ingested s
 runAndExpect(["agentops", "sessions"], "usage-session");
 runAndExpect(["agentops", "inspect", "--session", "latest"], "Total Tokens");
 runAndExpect(["agentops", "report", "--session", "latest"], "## Usage");
+runAndExpect(["agentops", "export", "--session", "latest", "--format", "json"], "agentops.export.v1");
+runAndExpect(["agentops", "export", "--session", "latest", "--format", "json", "--scope", "repo"], "\"git\"");
 runAndExpect(["agentops", "dashboard", "--check"], "Dashboard configuration OK");
 runAndExpect(["agentops", "scan-publication"], "Public-readiness scan passed.");
 

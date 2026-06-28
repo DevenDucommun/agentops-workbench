@@ -147,6 +147,9 @@ Public fixtures should be synthetic or redacted. Do not include:
 
 By default, AgentOps stores raw payload hashes but does not store raw payload JSON.
 
+Portable session/repo JSON exports use `agentops.export.v1`, documented in
+[JSON export](EXPORT.md).
+
 ## Fixture Coverage
 
 Committed fixtures are synthetic and cover:

@@ -70,6 +70,18 @@ Generates a Markdown report for one session.
 agentops report --session latest > report.md
 ```
 
+### `agentops export`
+
+Exports stored data as deterministic JSON.
+
+```bash
+agentops export --session latest --format json > agentops-session.json
+agentops export --session latest --format json --scope repo > agentops-repo.json
+```
+
+By default, exports omit raw payload JSON and local source artifact paths. See
+[JSON export](EXPORT.md).
+
 ### `agentops repo-report`
 
 Compares the session against the current local git diff.

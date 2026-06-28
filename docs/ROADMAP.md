@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v0.7.0`
+Current public release: `v0.8.0`
 
 Implemented:
 
@@ -40,6 +40,9 @@ Implemented:
 - Native Claude Code and Codex edge fixture coverage plus unsupported-shape
   diagnostics.
 - Redaction, migration, and large-session smoke coverage.
+- Deterministic `agentops.export.v1` JSON export for sessions and repo reports.
+- Hook-envelope JSONL documentation.
+- OpenTelemetry/GenAI standards mapping notes with OTLP export deferred.
 - Install smoke, package dry-run smoke, and release archive smoke automation.
 
 Current boundaries:
@@ -158,6 +161,8 @@ Dependencies:
 ### v0.8.0: Export And Standards
 
 Tracking issue: [#40](https://github.com/DevenDucommun/agentops-workbench/issues/40)
+
+Status: complete in `v0.8.0`.
 
 Purpose: make AgentOps data portable without weakening the local-first privacy
 posture.
