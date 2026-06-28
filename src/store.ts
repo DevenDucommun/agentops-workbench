@@ -1,7 +1,18 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { CommandRecord, FileChangeRecord, ParsedTranscript, RawEvent, RiskFlagRecord, SessionSummary, StoredEvent, UsageInput, UsageSummary } from "./types";
+import type {
+  CommandRecord,
+  FileChangeRecord,
+  ParsedTranscript,
+  RawEvent,
+  RiskFlagRecord,
+  SessionSummary,
+  StoredEvent,
+  ToolCallRecord,
+  UsageInput,
+  UsageSummary
+} from "./types";
 import { extractCommand, extractPath, summarizeEvent } from "./parser";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
@@ -74,6 +85,15 @@ export function migrate(db: Database): void {
       lines_removed INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS tool_calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+      tool_name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      status TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS risk_flags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -125,6 +145,10 @@ export function ingestTranscript(
     INSERT INTO file_changes (session_id, event_id, path, operation, lines_added, lines_removed)
     VALUES ($sessionId, $eventId, $path, $operation, $linesAdded, $linesRemoved)
   `);
+  const insertToolCall = db.query(`
+    INSERT INTO tool_calls (session_id, event_id, tool_name, category, status)
+    VALUES ($sessionId, $eventId, $toolName, $category, $status)
+  `);
 
   db.transaction(() => {
     db.query("DELETE FROM sessions WHERE id = $id").run({ $id: session.id });
@@ -161,6 +185,17 @@ export function ingestTranscript(
       }) as { id: number };
 
       const command = extractCommand(event);
+      const toolName = extractToolName(event, command);
+      if (toolName) {
+        insertToolCall.run({
+          $sessionId: session.id,
+          $eventId: row.id,
+          $toolName: toolName,
+          $category: categorizeTool(toolName, type),
+          $status: typeof event.status === "string" ? event.status : null
+        });
+      }
+
       if (command) {
         insertCommand.run({
           $sessionId: session.id,
@@ -313,6 +348,26 @@ export function getRiskFlags(store: Store, sessionId: string): RiskFlagRecord[] 
     .all({ $sessionId: sessionId }) as RiskFlagRecord[];
 }
 
+export function getToolCalls(store: Store, sessionId: string): ToolCallRecord[] {
+  return store.db
+    .query(
+      `
+      SELECT
+        MIN(id) as id,
+        MIN(event_id) as eventId,
+        tool_name as toolName,
+        category,
+        status,
+        COUNT(*) as count
+      FROM tool_calls
+      WHERE session_id = $sessionId
+      GROUP BY tool_name, category, status
+      ORDER BY count DESC, tool_name
+      `
+    )
+    .all({ $sessionId: sessionId }) as ToolCallRecord[];
+}
+
 function inferEventType(event: Record<string, unknown>): string {
   if (extractCommand(event)) return "command";
   if (extractPath(event)) return "file_read";
@@ -321,6 +376,20 @@ function inferEventType(event: Record<string, unknown>): string {
 
 function isFileChangeType(type: string): boolean {
   return ["file_write", "file_edit", "write", "edit", "patch", "apply_patch"].includes(type);
+}
+
+function extractToolName(event: RawEvent, command: string | null): string | null {
+  if (typeof event.toolName === "string" && event.toolName.trim()) return event.toolName.trim();
+  if (command) return "shell";
+  return null;
+}
+
+function categorizeTool(toolName: string, eventType: string): ToolCallRecord["category"] {
+  if (toolName === "shell" || toolName === "Bash" || toolName === "functions.exec_command" || eventType === "command") return "shell";
+  if (toolName === "web_search" || toolName.toLowerCase().includes("web_search")) return "web";
+  if (toolName.startsWith("mcp__")) return "mcp";
+  if (["Read", "Write", "Edit", "MultiEdit", "apply_patch"].includes(toolName) || eventType.startsWith("file_")) return "file";
+  return "other";
 }
 
 function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {

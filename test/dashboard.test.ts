@@ -54,6 +54,30 @@ test("dashboard API reads sessions from SQLite", async () => {
   }
 });
 
+test("dashboard API includes tool usage summary", async () => {
+  const ingest = await runCli(["ingest", "fixtures/codex-exec-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/codex-exec-sample`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      tools: Array<{ toolName: string; category: string; count: number }>;
+    };
+
+    expect(hasTool(detailPayload.tools, "shell", "shell", 1)).toBe(true);
+    expect(hasTool(detailPayload.tools, "mcp__repo__read_file", "mcp", 1)).toBe(true);
+    expect(hasTool(detailPayload.tools, "web_search", "web", 1)).toBe(true);
+  } finally {
+    server.stop();
+  }
+});
+
+function hasTool(tools: Array<{ toolName: string; category: string; count: number }>, toolName: string, category: string, count: number): boolean {
+  return tools.some((tool) => tool.toolName === toolName && tool.category === category && tool.count === count);
+}
+
 test("dashboard serves local HTML shell and 404s missing sessions", async () => {
   const server = startDashboardServer({ port: 0 });
   try {

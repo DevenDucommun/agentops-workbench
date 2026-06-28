@@ -87,6 +87,20 @@ Decision: implement the first native Claude adapter against captured
 direct transcript-file parsing experimental until a fixture review proves the
 format and redaction path are safe.
 
+For the next Claude fixture pass, prefer CLI stream output over transcript-file
+fixtures. A synthetic `claude -p --output-format stream-json --verbose` fixture
+can represent session initialization, assistant messages, tool calls, tool
+results, final output, and usage metadata without storing real local transcript
+paths. A second optional fixture can add `--include-hook-events` once the base
+stream parser is stable. Hook-rich data is valuable for lifecycle analysis, but
+it also increases schema breadth because it includes permission, Stop,
+subagent, MCP, and tool-batch envelopes.
+
+Do not use `transcript_path` as the first public fixture source. It is useful
+for local debugging, but it points at private Claude Code state that can contain
+raw prompts, assistant text, file contents, command output, repo paths, and
+environment-specific metadata.
+
 Sources:
 
 - Claude Code CLI reference: https://docs.anthropic.com/en/docs/claude-code/cli-reference.md
@@ -159,6 +173,15 @@ Open questions before implementation:
 - Determine whether hook lifecycle events should be parsed by the same adapter
   or a separate `claude-code-hook-jsonl` adapter.
 - Build fixtures without storing real transcript paths or raw file content.
+
+Fixture recommendation:
+
+1. `fixtures/claude-code-stream-session.jsonl`: base synthetic stream fixture
+   from the print-mode shape.
+2. `fixtures/claude-code-hook-session.jsonl`: later hook-envelope fixture, only
+   after the base stream parser and redaction checks are stable.
+3. Keep any real captured Claude output in ignored local scratch paths until it
+   has been converted into synthetic or fully redacted test data.
 
 ### `agentops-hook-stream`
 
@@ -253,7 +276,7 @@ bun run ci
 
 ## Roadmap Recommendation
 
-1. Add `codex-exec-jsonl` parser and synthetic fixtures. Status: implemented after `v0.3.0`.
+1. Add `codex-exec-jsonl` parser and synthetic fixtures. Status: implemented in `v0.4.0`.
 2. Add `claude-code-stream-json` parser and synthetic fixtures.
 3. Add native parser schema-drift diagnostics and adapter detection hints.
 4. Add optional capture scripts that write JSONL to a local ignored directory.

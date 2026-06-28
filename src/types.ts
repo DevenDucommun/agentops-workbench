@@ -118,3 +118,12 @@ export type RiskFlagRecord = {
   category: string;
   message: string;
 };
+
+export type ToolCallRecord = {
+  id: number;
+  eventId: number | null;
+  toolName: string;
+  category: "shell" | "file" | "mcp" | "web" | "other";
+  status: string | null;
+  count: number;
+};
