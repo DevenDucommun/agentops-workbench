@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"codex-exec-sample"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item-plan","type":"plan_update","text":"Inspect adapter behavior, add a native Codex exec parser, and run verification.","status":"completed"}}
+{"type":"item.completed","item":{"id":"item-command","type":"command_execution","command":"bun run typecheck","status":"completed","exit_code":0,"output":"typecheck passed"}}
+{"type":"item.completed","item":{"id":"item-file","type":"file_change","path":"src/adapters.ts","operation":"edit","lines_added":42,"lines_removed":3,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item-mcp","type":"mcp_tool_call","tool_name":"mcp__repo__read_file","arguments":{"path":"src/adapters.ts"},"status":"completed","result":"synthetic adapter source read"}}
+{"type":"item.completed","item":{"id":"item-search","type":"web_search","query":"official Codex exec JSONL event documentation","status":"completed"}}
+{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":200,"output_tokens":120,"reasoning_output_tokens":30}}
+{"type":"item.completed","item":{"id":"item-final","type":"agent_message","text":"Synthetic Codex exec adapter fixture completed and typechecked.","status":"completed"}}

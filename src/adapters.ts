@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { AgentOpsConfig } from "./config";
+import { parseCodexExecJsonl } from "./codexExec";
 import { parseJsonlTranscript } from "./parser";
 import type { ParsedTranscript } from "./types";
 
@@ -85,6 +86,25 @@ export const codexJsonlAdapter: Adapter = {
   }
 };
 
+export const codexExecJsonlAdapter: Adapter = {
+  id: "codex-exec-jsonl",
+  displayName: "Codex Exec JSONL",
+  artifactHint: "Native codex exec --json JSONL stream",
+  detect(input) {
+    const first = firstJsonRecord(input.content);
+    if (first?.type === "thread.started" && typeof first.thread_id === "string") {
+      return { matched: true, confidence: 1, reason: "found Codex thread.started event" };
+    }
+    if (first?.type === "turn.started" || first?.type === "item.completed" || first?.type === "item.started") {
+      return { matched: true, confidence: 0.65, reason: "found Codex exec event stream shape" };
+    }
+    return { matched: false, confidence: 0, reason: "no Codex exec event stream markers found" };
+  },
+  parse(input, config) {
+    return parseCodexExecJsonl(input.sourcePath, input.content, config);
+  }
+};
+
 export const paiExportJsonlAdapter: Adapter = {
   id: "pai-export-jsonl",
   displayName: "PAI Export JSONL",
@@ -107,7 +127,7 @@ export const paiExportJsonlAdapter: Adapter = {
   }
 };
 
-export const adapters = [claudeCodeJsonlAdapter, codexJsonlAdapter, paiExportJsonlAdapter, agentOpsJsonlAdapter];
+export const adapters = [codexExecJsonlAdapter, claudeCodeJsonlAdapter, codexJsonlAdapter, paiExportJsonlAdapter, agentOpsJsonlAdapter];
 
 export function detectAdapters(input: AdapterInput): Array<{ adapter: Adapter; detection: AdapterDetection }> {
   return adapters

@@ -24,7 +24,8 @@ Implemented:
 Current boundary:
 
 - Claude Code and Codex support means normalized, sanitized AgentOps JSONL exports.
-- Native runtime transcript parsing is planned but not implemented.
+- Native Codex `codex exec --json` ingestion is implemented after `v0.3.0`.
+- Native Claude Code runtime parsing remains planned but not implemented.
 - Dashboard foundation is implemented; richer visualization remains future work.
 
 ## v0.3 Focus

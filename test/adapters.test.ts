@@ -37,3 +37,19 @@ test("detects sanitized Codex export JSONL artifacts", () => {
 
   expect(adapter.id).toBe("codex-jsonl");
 });
+
+test("detects and parses native Codex exec JSONL streams", () => {
+  const input = loadAdapterInput("fixtures/codex-exec-session.jsonl");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("codex-exec-jsonl");
+  expect(transcript.session.id).toBe("codex-exec-sample");
+  expect(transcript.session.source).toBe("codex");
+  expect(transcript.session.sourceAdapter).toBe("codex-exec-jsonl");
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === "bun run typecheck")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "file_edit" && event.path === "src/adapters.ts")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.toolName === "mcp__repo__read_file")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.toolName === "web_search")).toBe(true);
+  expect(transcript.events.at(-1)?.type).toBe("final_response");
+});
