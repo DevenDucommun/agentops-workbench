@@ -6,7 +6,7 @@ Make coding-agent work reviewable, auditable, and safer to trust.
 
 ## Current Status
 
-Public release: `v0.4.0`
+Public release: `v0.5.0`
 
 Implemented:
 
@@ -36,7 +36,7 @@ Current boundary:
 This release expands native runtime ingestion and starts packaging/dashboard
 polish.
 
-In progress:
+Delivered:
 
 - Native Claude Code `claude -p --output-format stream-json` adapter and synthetic fixture coverage.
 - Dashboard filtering and tool-map polish.
