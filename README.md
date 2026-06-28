@@ -40,6 +40,7 @@ Run the first implementation slice locally:
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
 ./bin/agentops report --session latest > report.md
 ./bin/agentops repo-report --session latest > repo-report.md
+./bin/agentops repo-report --session latest --format github > pr-comment.md
 ```
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:

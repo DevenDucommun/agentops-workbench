@@ -4,6 +4,18 @@ import { isVerificationCommand } from "./analyzer";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 import type { GitChange } from "./git";
 
+type RepoReportData = {
+  session: NonNullable<ReturnType<typeof getSession>>;
+  commands: ReturnType<typeof getCommands>;
+  files: ReturnType<typeof getFileChanges>;
+  risks: ReturnType<typeof getRiskFlags>;
+  verification: ReturnType<typeof getCommands>;
+  gitChanges: GitChange[];
+  observedGitChanges: GitChange[];
+  unobservedGitChanges: GitChange[];
+  agentOnlyFiles: ReturnType<typeof getFileChanges>;
+};
+
 export function generateMarkdownReport(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): string {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -75,51 +87,86 @@ export function generateMarkdownRepoReport(
   gitChanges: GitChange[],
   config: AgentOpsConfig = defaultConfig
 ): string {
-  const session = getSession(store, sessionId);
-  if (!session) throw new Error(`Session not found: ${sessionId}`);
-
-  const commands = getCommands(store, sessionId);
-  const files = getFileChanges(store, sessionId);
-  const risks = getRiskFlags(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const agentPaths = new Set(files.map((file) => file.path));
-  const gitPaths = new Set(gitChanges.map((change) => change.path));
-  const observedGitChanges = gitChanges.filter((change) => agentPaths.has(change.path));
-  const unobservedGitChanges = gitChanges.filter((change) => !agentPaths.has(change.path));
-  const agentOnlyFiles = files.filter((file) => !gitPaths.has(file.path));
+  const data = buildRepoReportData(store, sessionId, gitChanges, config);
 
   const sections = [
     "# AgentOps Repo Report",
     "## Review Summary",
     table([
-      ["Session", session.id],
-      ["Task", session.task ?? "Unknown"],
-      ["Repo", session.repo ?? "Unknown"],
-      ["Git Changed Files", String(gitChanges.length)],
-      ["Agent Files Touched", String(files.length)],
-      ["Git Files Observed In Session", String(observedGitChanges.length)],
-      ["Git Files Not Observed In Session", String(unobservedGitChanges.length)],
-      ["Risk Flags", String(risks.length)],
-      ["Verification Commands", String(verification.length)]
+      ["Session", data.session.id],
+      ["Task", data.session.task ?? "Unknown"],
+      ["Repo", data.session.repo ?? "Unknown"],
+      ["Git Changed Files", String(data.gitChanges.length)],
+      ["Agent Files Touched", String(data.files.length)],
+      ["Git Files Observed In Session", String(data.observedGitChanges.length)],
+      ["Git Files Not Observed In Session", String(data.unobservedGitChanges.length)],
+      ["Risk Flags", String(data.risks.length)],
+      ["Verification Commands", String(data.verification.length)]
     ]),
     "## Current Git Changes",
-    gitChanges.length
-      ? gitChanges.map((change) => `- \`${change.path}\` - ${change.status}${formatGitChurn(change)}`).join("\n")
+    data.gitChanges.length
+      ? data.gitChanges.map((change) => `- \`${change.path}\` - ${change.status}${formatGitChurn(change)}`).join("\n")
       : "- No git changes detected.",
     "## Session Coverage",
-    coverageSummary(observedGitChanges, unobservedGitChanges, agentOnlyFiles),
+    coverageSummary(data.observedGitChanges, data.unobservedGitChanges, data.agentOnlyFiles),
     "## Verification Evidence",
-    verification.length
-      ? verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
+    data.verification.length
+      ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No test, lint, typecheck, build, or verification command recorded.",
     "## Risk Flags",
-    risks.length
-      ? risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
+    data.risks.length
+      ? data.risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
       : "- No risk flags detected.",
     "## Commands Run",
-    commands.length
-      ? commands.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
+    data.commands.length
+      ? data.commands.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No commands recorded."
+  ];
+
+  return `${sections.join("\n\n")}\n`;
+}
+
+export function generateGithubRepoComment(
+  store: Store,
+  sessionId: string,
+  gitChanges: GitChange[],
+  config: AgentOpsConfig = defaultConfig
+): string {
+  const data = buildRepoReportData(store, sessionId, gitChanges, config);
+  const status = data.risks.some((risk) => risk.severity === "high")
+    ? "High-risk findings present"
+    : data.risks.length > 0
+      ? "Review recommended"
+      : "No risk flags detected";
+
+  const sections = [
+    "## AgentOps Workbench Report",
+    `**Status:** ${status}`,
+    table([
+      ["Session", data.session.id],
+      ["Task", data.session.task ?? "Unknown"],
+      ["Git changed files", String(data.gitChanges.length)],
+      ["Observed in session", String(data.observedGitChanges.length)],
+      ["Not observed in session", String(data.unobservedGitChanges.length)],
+      ["Risk flags", String(data.risks.length)],
+      ["Verification commands", String(data.verification.length)]
+    ]),
+    "### Verification",
+    data.verification.length
+      ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
+      : "- No verification command recorded.",
+    "### Risk Flags",
+    data.risks.length
+      ? data.risks.map((risk) => `- **${risk.severity} / ${risk.category}**: ${risk.message}`).join("\n")
+      : "- No risk flags detected.",
+    "### Git Changes Not Observed In Session",
+    data.unobservedGitChanges.length
+      ? data.unobservedGitChanges.map((change) => `- \`${change.path}\``).join("\n")
+      : "- None.",
+    `<details><summary>Commands run</summary>\n\n${
+      data.commands.length ? data.commands.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n") : "- None."
+    }\n\n</details>`,
+    "_Generated locally by AgentOps Workbench. This command does not post to GitHub._"
   ];
 
   return `${sections.join("\n\n")}\n`;
@@ -154,4 +201,33 @@ function coverageSummary(observed: GitChange[], unobserved: GitChange[], agentOn
   sections.push("### Agent-Touched Files Not In Current Git Diff");
   sections.push(agentOnly.length ? agentOnly.map((file) => `- \`${file.path}\` - ${file.operation}`).join("\n") : "- None.");
   return sections.join("\n\n");
+}
+
+function buildRepoReportData(
+  store: Store,
+  sessionId: string,
+  gitChanges: GitChange[],
+  config: AgentOpsConfig
+): RepoReportData {
+  const session = getSession(store, sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  const commands = getCommands(store, sessionId);
+  const files = getFileChanges(store, sessionId);
+  const risks = getRiskFlags(store, sessionId);
+  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const agentPaths = new Set(files.map((file) => file.path));
+  const gitPaths = new Set(gitChanges.map((change) => change.path));
+
+  return {
+    session,
+    commands,
+    files,
+    risks,
+    verification,
+    gitChanges,
+    observedGitChanges: gitChanges.filter((change) => agentPaths.has(change.path)),
+    unobservedGitChanges: gitChanges.filter((change) => !agentPaths.has(change.path)),
+    agentOnlyFiles: files.filter((file) => !gitPaths.has(file.path))
+  };
 }

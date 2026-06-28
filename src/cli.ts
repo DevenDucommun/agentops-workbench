@@ -2,7 +2,7 @@ import { adapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { loadConfig } from "./config";
 import { getGitChanges } from "./git";
-import { generateMarkdownRepoReport, generateMarkdownReport } from "./report";
+import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSessionId, ingestTranscript, openStore } from "./store";
 
 type CliResult = {
@@ -24,6 +24,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
       const adapterId = readOption(args, "--adapter");
       const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const format = readOption(args, "--format") ?? "markdown";
       const config = loadConfig(configPath);
       const input = loadAdapterInput(sourcePath);
       const adapter = resolveAdapter(input, adapterId ?? undefined);
@@ -57,6 +58,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
     if (command === "repo-report") {
       const sessionArg = readOption(args, "--session") ?? "latest";
       const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const format = readOption(args, "--format") ?? "markdown";
       const config = loadConfig(configPath);
       const store = openStore();
       const sessionId = getSessionId(store, sessionArg);
@@ -64,7 +66,14 @@ export async function runCli(argv: string[]): Promise<CliResult> {
         store.db.close();
         return { stderr: "No sessions found. Run `agentops ingest <session.jsonl>` first.\n", exitCode: 1 };
       }
-      const report = generateMarkdownRepoReport(store, sessionId, getGitChanges(), config);
+      if (!["markdown", "github"].includes(format)) {
+        store.db.close();
+        return { stderr: "Usage: agentops repo-report --format markdown|github\n", exitCode: 1 };
+      }
+      const report =
+        format === "github"
+          ? generateGithubRepoComment(store, sessionId, getGitChanges(), config)
+          : generateMarkdownRepoReport(store, sessionId, getGitChanges(), config);
       store.db.close();
       return { stdout: report, exitCode: 0 };
     }
@@ -90,6 +99,7 @@ Usage:
   agentops ingest <session.jsonl> --adapter pai-export-jsonl
   agentops report --session latest
   agentops repo-report --session latest
+  agentops repo-report --session latest --format github
 
 Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
