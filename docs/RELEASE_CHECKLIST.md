@@ -1,8 +1,10 @@
 # Release Checklist
 
-This checklist must pass before making the repository public.
+This checklist must pass before every public release. See
+[Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
 
-Status: passed for v0.1.0 public readiness on 2026-06-28. See [v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
+Status: reusable as of `v0.9.0`; v0.1.0 public readiness passed on
+2026-06-28. See [v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
 
 ## Repository State
 
@@ -30,6 +32,11 @@ Status: passed for v0.1.0 public readiness on 2026-06-28. See [v0.1.0 readiness 
 - [x] Fresh clone can run `bun install`.
 - [x] Fresh clone can run `bun test`.
 - [x] Fresh clone can run `bun run ci`.
+- [x] Fresh clone can run `bun run smoke:install`.
+- [x] Fresh clone can run `bun run smoke:package`.
+- [x] Fresh clone can run `bun run smoke:pack-install`.
+- [x] Fresh clone can run `bun run smoke:large-session`.
+- [x] Fresh clone can run `bun run smoke:dashboard`.
 - [x] Fresh clone can run `./bin/agentops ingest ./fixtures/sample-session.jsonl`.
 - [x] Fresh clone can run `./bin/agentops report --session latest > report.md`.
 - [x] Fresh clone can run `./bin/agentops repo-report --session latest > repo-report.md`.

@@ -1,11 +1,12 @@
 # Packaging Strategy
 
-Status: initial strategy for `v0.5.0`.
+Status: source-package strategy validated for `v0.9.0`.
 
 ## Decision
 
-Use an npm source package as the next distribution path, but do not publish it
-until a release checklist explicitly approves publishing.
+Use an npm source package as the next distribution path. Publishing remains
+deferred through `v1.0.0`; the repository keeps `"private": true` intentionally
+until a release checklist explicitly approves npm publication.
 
 The package should expose the existing `agentops` bin entry and continue to run
 with Bun:
@@ -63,6 +64,15 @@ The package smoke uses `npm pack --dry-run --json` with a temporary npm cache
 and checks that required runtime files are included while repository-only files
 are excluded.
 
+Run:
+
+```bash
+bun run smoke:pack-install
+```
+
+to create a real npm tarball locally, extract it, and smoke the CLI from the
+packed package contents.
+
 Keep using:
 
 ```bash
@@ -70,3 +80,9 @@ bun run smoke:install
 ```
 
 to verify the clone/PATH-based install path.
+
+## Platform Coverage
+
+CI currently runs on Ubuntu with Bun `1.3.14`. macOS is exercised manually in
+local development. Windows support is not claimed before `v1.0.0`; it should be
+documented or added explicitly before npm publication.

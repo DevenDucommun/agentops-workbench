@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -29,6 +29,8 @@
     "scan:public": "./bin/agentops scan-publication",
     "smoke:install": "bun ./scripts/smoke-install.ts",
     "smoke:package": "bun ./scripts/smoke-package.ts",
+    "smoke:pack-install": "bun ./scripts/smoke-pack-install.ts",
+    "smoke:dashboard": "bun ./scripts/smoke-dashboard.ts",
     "smoke:large-session": "bun ./scripts/smoke-large-session.ts",
     "smoke:release-archive": "bun ./scripts/smoke-release-archive.ts",
     "ci": "bun run typecheck && bun test && bun run scan:public",

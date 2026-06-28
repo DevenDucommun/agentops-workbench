@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.0 - 2026-06-28
+
+### Added
+
+- Packed npm tarball install smoke that runs the CLI from extracted package contents.
+- Dashboard smoke script covering the HTML shell, session API, usage summary, and Markdown report endpoint.
+- Golden Markdown report regression fixture and test.
+- Reusable release template.
+
+### Changed
+
+- CI now runs package smoke, packed install smoke, large-session smoke, and dashboard smoke.
+- Packaging strategy now explicitly defers npm publication through `v1.0.0` and keeps `"private": true` intentional.
+- Release checklist is reusable for every release instead of being tied to initial public readiness.
+
 ## v0.8.0 - 2026-06-28
 
 ### Added
