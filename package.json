@@ -9,7 +9,7 @@
   "scripts": {
     "agentops": "bun ./src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "scan:public": "bun ./scripts/public-readiness.ts",
+    "scan:public": "./bin/agentops scan-publication",
     "ci": "bun run typecheck && bun test && bun run scan:public",
     "test": "bun test"
   },
