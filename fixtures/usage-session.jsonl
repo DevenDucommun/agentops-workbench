@@ -1,0 +1,4 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"usage-session","agent":"synthetic-agent","model":"synthetic-model","repo":"agentops-workbench","task":"Synthetic session with usage metadata","usage":{"inputTokens":1200,"outputTokens":340,"cost":{"amount":0.0142,"currency":"USD"}}}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Synthetic request with usage metadata."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"shell","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":"23 pass\n0 fail"}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Synthetic session completed with usage metadata."}

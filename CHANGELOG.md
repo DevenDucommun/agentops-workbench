@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- Optional token and cost usage metadata ingestion, storage, and report rendering.
 
 ## v0.2.0 - 2026-06-28
 

@@ -49,3 +49,20 @@ test("ingests then lists and inspects sessions", async () => {
   expect(inspect.stdout).toContain("Verification Commands");
   expect(inspect.stdout).toContain("Synthetic Claude Code export completed");
 });
+
+test("inspect and sessions include usage metadata when available", async () => {
+  const ingest = await runCli(["ingest", "fixtures/usage-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const sessions = await runCli(["sessions"]);
+  expect(sessions.exitCode).toBe(0);
+  expect(sessions.stdout).toContain("usage-session");
+  expect(sessions.stdout).toContain("1,540");
+
+  const inspect = await runCli(["inspect", "--session", "usage-session"]);
+  expect(inspect.exitCode).toBe(0);
+  expect(inspect.stdout).toContain("Input Tokens");
+  expect(inspect.stdout).toContain("Output Tokens");
+  expect(inspect.stdout).toContain("Total Tokens");
+  expect(inspect.stdout).toContain("0.0142 USD");
+});

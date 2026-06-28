@@ -36,6 +36,7 @@ Recommended fields:
 - `task`
 - `startedAt`
 - `endedAt`
+- `usage`
 
 ## Event Records
 
@@ -49,6 +50,7 @@ Common fields:
 - `content`
 - `summary`
 - `status`
+- `usage`
 
 Supported MVP event types:
 
@@ -96,6 +98,41 @@ Supported MVP event types:
 }
 ```
 
+## Usage Metadata
+
+Usage metadata is optional. Sources that provide token or cost data can attach a `usage` object to the session record. If no session-level usage is present, AgentOps can derive totals from event-level `usage` objects.
+
+```json
+{
+  "schemaVersion": "agentops.event.v1",
+  "type": "session",
+  "id": "usage-example",
+  "usage": {
+    "inputTokens": 1200,
+    "outputTokens": 340,
+    "totalTokens": 1540,
+    "cost": {
+      "amount": 0.0142,
+      "currency": "USD"
+    }
+  }
+}
+```
+
+Supported usage fields:
+
+- `inputTokens`
+- `outputTokens`
+- `totalTokens`
+- `costAmount`
+- `costCurrency`
+- `costUsd`
+- `totalCost`
+- `cost.amount`
+- `cost.currency`
+
+If `totalTokens` is omitted but input/output token counts are present, AgentOps derives the total.
+
 ## Privacy Rules
 
 Public fixtures should be synthetic or redacted. Do not include:
@@ -118,6 +155,7 @@ Committed fixtures are synthetic and cover:
 - PAI post-hoc export JSONL: `fixtures/pai-export-session.jsonl`
 - Claude Code sanitized export JSONL: `fixtures/claude-code-session.jsonl`
 - Codex sanitized export JSONL: `fixtures/codex-session.jsonl`
+- usage metadata: `fixtures/usage-session.jsonl`
 - missing timestamps: `fixtures/missing-timestamps-session.jsonl`
 - risky commands/files: `fixtures/risky-session.jsonl`
 - malformed JSONL: `fixtures/malformed-session.jsonl`
