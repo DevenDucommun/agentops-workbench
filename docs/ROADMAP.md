@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v0.9.0`
+Current public release: `v1.0.0`
 
 Implemented:
 
@@ -47,6 +47,8 @@ Implemented:
   coverage.
 - Reusable release template and release checklist.
 - Install smoke, package dry-run smoke, and release archive smoke automation.
+- Stable compatibility policy for schemas, adapters, CLI commands, config,
+  reports, exports, migrations, and privacy defaults.
 
 Current boundaries:
 
@@ -234,6 +236,8 @@ Dependencies:
 ### v1.0.0: Stable Local Agent Review Tool
 
 Tracking issue: [#39](https://github.com/DevenDucommun/agentops-workbench/issues/39)
+
+Status: complete in `v1.0.0`.
 
 Purpose: freeze the practical contract and publish a stable public release.
 

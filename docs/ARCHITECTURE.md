@@ -34,7 +34,7 @@ normalized event stream
 
 ### CLI
 
-The CLI is the primary stable interface before 1.0.
+The CLI is the primary stable interface in `v1.0.0`.
 
 Implemented commands include:
 
@@ -44,13 +44,13 @@ Implemented commands include:
 - `agentops inspect --session <id|latest>`
 - `agentops report --session latest`
 - `agentops report --session <id>`
-- `agentops scan-publication`
 - `agentops repo-report`
-
-Planned pre-1.0 commands:
-
-- `agentops export --format markdown|json|otlp`
-- `agentops doctor`
+- `agentops repo-report --format github`
+- `agentops export --format json`
+- `agentops config --check`
+- `agentops dashboard --check`
+- `agentops dashboard`
+- `agentops scan-publication`
 
 ### Ingestion Adapters
 
@@ -171,7 +171,8 @@ Report sections:
 
 ### Dashboard
 
-The dashboard is a later layer over the local store. It should not drive schema design before the CLI/report workflow is proven.
+The dashboard is a local layer over the same SQLite store used by the CLI. Its
+browser endpoints are implementation details, not a remote API contract.
 
 Dashboard views:
 

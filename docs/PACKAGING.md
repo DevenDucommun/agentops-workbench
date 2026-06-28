@@ -1,12 +1,12 @@
 # Packaging Strategy
 
-Status: source-package strategy validated for `v0.9.0`.
+Status: source-package strategy validated for `v1.0.0`.
 
 ## Decision
 
 Use an npm source package as the next distribution path. Publishing remains
-deferred through `v1.0.0`; the repository keeps `"private": true` intentionally
-until a release checklist explicitly approves npm publication.
+deferred after `v1.0.0`; the repository keeps `"private": true` intentionally
+until a future release checklist explicitly approves npm publication.
 
 The package should expose the existing `agentops` bin entry and continue to run
 with Bun:
@@ -84,5 +84,5 @@ to verify the clone/PATH-based install path.
 ## Platform Coverage
 
 CI currently runs on Ubuntu with Bun `1.3.14`. macOS is exercised manually in
-local development. Windows support is not claimed before `v1.0.0`; it should be
+local development. Windows support is not claimed in `v1.0.0`; it should be
 documented or added explicitly before npm publication.

@@ -3,6 +3,10 @@
 AgentOps Workbench includes a local dashboard foundation backed by the same
 SQLite store used by the CLI.
 
+The dashboard is supported as a local UI in `v1.0.0`. Its browser JSON
+endpoints remain local implementation details, not a stable remote API. See
+[Compatibility policy](COMPATIBILITY.md).
+
 ## Start
 
 Ingest a synthetic session:

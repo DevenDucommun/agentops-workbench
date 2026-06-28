@@ -16,6 +16,9 @@ Validate config changes with:
 ./bin/agentops config --check
 ```
 
+`agentops.config.v1` is stable in `v1.0.0`. New config keys should be optional
+and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
+
 ## Initial Config Surface
 
 ```json

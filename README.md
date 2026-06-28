@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.9.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.9.0)
-- Current `main`: includes CLI inspection, config validation, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter hardening, JSON export, dashboard tool mapping, dashboard Markdown report export, stronger evidence-claim checks, and release automation smoke coverage
+- Public release: [`v1.0.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.0.0)
+- Current `main`: stable local review workflow with documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -117,6 +117,9 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.0.0`
+surfaces and experimental boundaries.
+
 ## Supported Artifacts
 
 AgentOps currently ingests normalized post-hoc JSONL exports plus native Claude
@@ -185,6 +188,7 @@ Core docs:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap to 1.0](docs/ROADMAP.md)
+- [Compatibility policy](docs/COMPATIBILITY.md)
 - [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.0 - 2026-06-28
+
+### Added
+
+- Stable compatibility policy for schemas, adapters, CLI commands, config,
+  reports, exports, migrations, and privacy defaults.
+- Clone smoke coverage for session reports, repo reports, GitHub-format repo
+  reports, JSON export, adapter fixture detection, and dashboard checks.
+
+### Changed
+
+- Package metadata now reports `1.0.0` while npm publication remains deferred
+  and `"private": true` stays intentional.
+- README, roadmap, CLI, adapter, schema, export, config, packaging, dashboard,
+  and PAI docs now point to the same stable/experimental support boundaries.
+
 ## v0.9.0 - 2026-06-28
 
 ### Added

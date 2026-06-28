@@ -99,16 +99,16 @@
 
 ## M9 1.0 Stabilization Backlog
 
-- [ ] Add safe capture guide for native Claude Code and Codex streams.
-- [ ] Add dashboard Markdown report export.
-- [ ] Expand unsupported evidence-claim detection.
-- [ ] Add adapter schema-drift diagnostics.
-- [ ] Add config validation command or mode.
-- [ ] Add migration tests for older SQLite schemas.
-- [ ] Add JSON export.
-- [ ] Draft OpenTelemetry mapping table.
-- [ ] Decide npm package publishing path.
-- [ ] Add package smoke to CI if stable.
-- [ ] Add dashboard browser or screenshot smoke.
-- [ ] Add report golden/snapshot tests.
-- [ ] Document stable `v1.0.0` compatibility policy.
+- [x] Add safe capture guide for native Claude Code and Codex streams.
+- [x] Add dashboard Markdown report export.
+- [x] Expand unsupported evidence-claim detection.
+- [x] Add adapter schema-drift diagnostics.
+- [x] Add config validation command or mode.
+- [x] Add migration tests for older SQLite schemas.
+- [x] Add JSON export.
+- [x] Draft OpenTelemetry mapping table.
+- [x] Decide npm package publishing path.
+- [x] Add package smoke to CI if stable.
+- [x] Add dashboard browser or screenshot smoke.
+- [x] Add report golden/snapshot tests.
+- [x] Document stable `v1.0.0` compatibility policy.
