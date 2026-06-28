@@ -21,8 +21,10 @@ const env = {
 runAndExpect(["agentops", "--help"], "AgentOps Workbench");
 runAndExpect(["agentops", "adapters"], "agentops-jsonl");
 runAndExpect(["agentops", "adapters", "--input", "fixtures/codex-session.jsonl"], "Codex Export JSONL");
+runAndExpect(["agentops", "adapters", "--input", "fixtures/claude-code-stream-session.jsonl"], "Claude Code Stream JSON");
 runAndExpect(["agentops", "adapters", "--input", "fixtures/codex-exec-session.jsonl"], "Codex Exec JSONL");
 runAndExpect(["agentops", "ingest", "fixtures/sample-session.jsonl"], "Ingested session sample-session");
+runAndExpect(["agentops", "ingest", "fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample");
 runAndExpect(["agentops", "ingest", "fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample");
 runAndExpect(["agentops", "ingest", "fixtures/usage-session.jsonl"], "Ingested session usage-session");
 runAndExpect(["agentops", "sessions"], "usage-session");

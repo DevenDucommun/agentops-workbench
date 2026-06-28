@@ -19,6 +19,7 @@ Implemented:
 - Session listing and inspection commands.
 - Sanitized export adapters for AgentOps JSONL, PAI, Claude Code, and Codex.
 - Native Codex `codex exec --json` ingestion.
+- Native Claude Code `stream-json` ingestion.
 - Public-readiness scan, CI, branch protection, GitGuardian checks, secret scanning, and Dependabot security updates.
 - Local dashboard foundation backed by SQLite.
 - Dashboard MCP/tool usage map.
@@ -26,9 +27,20 @@ Implemented:
 
 Current boundary:
 
-- Claude Code and Codex support means normalized, sanitized AgentOps JSONL exports.
-- Native Claude Code runtime parsing remains planned but not implemented.
+- Claude Code and Codex support includes normalized, sanitized AgentOps JSONL exports plus explicit native CLI JSONL streams.
+- Raw Claude Code transcript-file parsing remains out of scope.
 - Dashboard foundation is implemented with tool usage summary; richer visualization remains future work.
+
+## v0.5 Focus
+
+This release expands native runtime ingestion and starts packaging/dashboard
+polish.
+
+In progress:
+
+- Native Claude Code `claude -p --output-format stream-json` adapter and synthetic fixture coverage.
+- Dashboard filtering and tool-map polish.
+- Install/package distribution strategy beyond fresh clone and source archive.
 
 ## v0.4 Focus
 
@@ -133,13 +145,14 @@ Exit criteria:
 
 ## Phase 4: PAI And Agent Runtime Integrations
 
-Status: PAI-compatible and Claude/Codex sanitized export paths are implemented. Native runtime parsers remain future work.
+Status: PAI-compatible and Claude/Codex sanitized export paths are implemented. Native Codex exec and Claude stream JSON parsers are implemented for explicit CLI JSONL artifacts.
 
 Outcomes:
 
 - Public adapter interface for local agent-session exporters.
 - Optional PAI-compatible post-hoc import path.
 - Direct Claude/Codex adapter strategy after sanitized fixture review.
+- Native Codex and Claude CLI JSONL stream adapters.
 - Optional hook-envelope JSONL writer.
 - Clear documentation that PAI private memory stores are out of scope.
 

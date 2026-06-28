@@ -11,10 +11,10 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 ## Status
 
 - Public release: [`v0.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.4.0)
-- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex exec ingestion, usage metadata, native adapter research, and dashboard tool mapping
+- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter research, and dashboard tool mapping
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
-- Native Claude Code stream parsing: researched, not implemented
+- Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
 
 ## Problem
 
@@ -108,6 +108,7 @@ native Codex CLI event stream:
 - `agentops-jsonl`: canonical `agentops.event.v1` JSONL
 - `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
 - `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export
+- `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream
 - `codex-jsonl`: sanitized Codex AgentOps JSONL export
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
 
@@ -122,6 +123,7 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 
 ```bash
 ./bin/agentops ingest ./fixtures/claude-code-session.jsonl
+./bin/agentops ingest ./fixtures/claude-code-stream-session.jsonl
 ./bin/agentops ingest ./fixtures/codex-session.jsonl
 ./bin/agentops ingest ./fixtures/codex-exec-session.jsonl
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
@@ -130,14 +132,15 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 The `claude-code-jsonl` and `codex-jsonl` fixtures are normalized export
 examples. The `codex-exec-jsonl` fixture represents the native
 `codex exec --json` stream shape with synthetic data.
-Native Claude Code stream parsing is researched for a future release; public
-fixtures should use synthetic `claude -p --output-format stream-json --verbose`
-captures rather than raw transcript files.
+The `claude-code-stream-json` fixture represents the native
+`claude -p --output-format stream-json --verbose` stream shape with synthetic
+data. Raw Claude transcript-file parsing remains out of scope.
 
 To inspect adapter detection:
 
 ```bash
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
+./bin/agentops adapters --input ./fixtures/claude-code-stream-session.jsonl
 ./bin/agentops adapters --input ./fixtures/codex-exec-session.jsonl
 ```
 
@@ -206,7 +209,7 @@ Project planning artifacts:
 - Model benchmarking
 - Deep semantic evals
 - Direct modification of agent behavior
-- Native Claude Code transcript parsing
+- Raw Claude Code transcript-file parsing
 
 ## Tech Direction
 

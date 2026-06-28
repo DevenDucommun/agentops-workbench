@@ -35,7 +35,9 @@ if (!existsSync(checkoutDir)) {
 runAndExpect(["bun", "install", "--frozen-lockfile"], "Saved lockfile", { cwd: checkoutDir, allowNoExpectedText: true });
 runAndExpect(["./bin/agentops", "--help"], "AgentOps Workbench", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters"], "codex-exec-jsonl", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "adapters", "--input", "./fixtures/claude-code-stream-session.jsonl"], "Claude Code Stream JSON", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "ingest", "./fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "ingest", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", { cwd: checkoutDir });
@@ -96,4 +98,3 @@ function fail(message: string): never {
   console.error(message);
   process.exit(1);
 }
-

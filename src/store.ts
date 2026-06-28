@@ -386,9 +386,9 @@ function extractToolName(event: RawEvent, command: string | null): string | null
 
 function categorizeTool(toolName: string, eventType: string): ToolCallRecord["category"] {
   if (toolName === "shell" || toolName === "Bash" || toolName === "functions.exec_command" || eventType === "command") return "shell";
-  if (toolName === "web_search" || toolName.toLowerCase().includes("web_search")) return "web";
+  if (["web_search", "WebSearch", "WebFetch"].includes(toolName) || toolName.toLowerCase().includes("web_search")) return "web";
   if (toolName.startsWith("mcp__")) return "mcp";
-  if (["Read", "Write", "Edit", "MultiEdit", "apply_patch"].includes(toolName) || eventType.startsWith("file_")) return "file";
+  if (["Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "apply_patch"].includes(toolName) || eventType.startsWith("file_")) return "file";
   return "other";
 }
 

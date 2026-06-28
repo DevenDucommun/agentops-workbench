@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { AgentOpsConfig } from "./config";
+import { parseClaudeCodeStreamJsonl } from "./claudeStream";
 import { parseCodexExecJsonl } from "./codexExec";
 import { parseJsonlTranscript } from "./parser";
 import type { ParsedTranscript } from "./types";
@@ -105,6 +106,28 @@ export const codexExecJsonlAdapter: Adapter = {
   }
 };
 
+export const claudeCodeStreamJsonlAdapter: Adapter = {
+  id: "claude-code-stream-json",
+  displayName: "Claude Code Stream JSON",
+  artifactHint: "Native claude -p --output-format stream-json JSONL stream",
+  detect(input) {
+    const first = firstJsonRecord(input.content);
+    if (first?.type === "system" && first?.subtype === "init" && typeof first.session_id === "string") {
+      return { matched: true, confidence: 1, reason: "found Claude Code stream init event" };
+    }
+    if (
+      typeof first?.session_id === "string" &&
+      (first?.type === "assistant" || first?.type === "user" || first?.type === "result")
+    ) {
+      return { matched: true, confidence: 0.7, reason: "found Claude Code stream message shape" };
+    }
+    return { matched: false, confidence: 0, reason: "no Claude Code stream-json markers found" };
+  },
+  parse(input, config) {
+    return parseClaudeCodeStreamJsonl(input.sourcePath, input.content, config);
+  }
+};
+
 export const paiExportJsonlAdapter: Adapter = {
   id: "pai-export-jsonl",
   displayName: "PAI Export JSONL",
@@ -127,7 +150,14 @@ export const paiExportJsonlAdapter: Adapter = {
   }
 };
 
-export const adapters = [codexExecJsonlAdapter, claudeCodeJsonlAdapter, codexJsonlAdapter, paiExportJsonlAdapter, agentOpsJsonlAdapter];
+export const adapters = [
+  codexExecJsonlAdapter,
+  claudeCodeStreamJsonlAdapter,
+  claudeCodeJsonlAdapter,
+  codexJsonlAdapter,
+  paiExportJsonlAdapter,
+  agentOpsJsonlAdapter
+];
 
 export function detectAdapters(input: AdapterInput): Array<{ adapter: Adapter; detection: AdapterDetection }> {
   return adapters

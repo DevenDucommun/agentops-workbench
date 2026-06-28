@@ -143,15 +143,16 @@ The current implementation supports normalized JSONL export artifacts:
 - `agentops-jsonl`: canonical `agentops.event.v1` JSONL.
 - `pai-export-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "pai"`.
 - `claude-code-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "claude-code"`.
+- `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream.
 - `codex-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "codex"`.
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream.
 
 Use `agentops adapters` to list supported adapters and `agentops adapters --input <file>` to see detection diagnostics for a specific artifact.
 
 The export adapters intentionally parse the shared AgentOps export schema so
-public fixtures can remain synthetic and privacy-safe. `codex-exec-jsonl` is a
-native Codex stream adapter for explicit `codex exec --json` captures, not a
-private Codex state or transcript-file parser.
+public fixtures can remain synthetic and privacy-safe. `codex-exec-jsonl` and
+`claude-code-stream-json` are native stream adapters for explicit CLI JSONL
+captures, not private state or transcript-file parsers.
 
 ## What Not To Do
 

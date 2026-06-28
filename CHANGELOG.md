@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Native `claude -p --output-format stream-json` JSONL adapter with synthetic fixture coverage.
+
 ## v0.4.0 - 2026-06-28
 
 ### Added
