@@ -75,7 +75,8 @@ Requirements:
 
 ## Adapter Contract
 
-A future PAI adapter should implement the same ingestion contract as every other adapter:
+The implemented PAI-compatible post-hoc adapter follows the same ingestion
+contract as every other adapter:
 
 - input: file path, stream, or exported artifact
 - output: normalized event stream

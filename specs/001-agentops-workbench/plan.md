@@ -7,7 +7,8 @@
 - Interface: CLI first.
 - Primary output: Markdown report.
 - Test framework: Bun test.
-- Public posture: private development repo intended for public release.
+- Public posture: public repo with local-first privacy boundaries and synthetic
+  public fixtures.
 
 ## Architecture Decisions
 
@@ -87,6 +88,16 @@ The normalized event model should be compatible with future OTLP export, but MVP
 - Local web UI over SQLite.
 - Timeline, risk/evidence, files, commands, and tool map.
 
+### M7: 1.0 Stabilization
+
+- Safe capture documentation.
+- Adapter drift diagnostics.
+- Config validation and suppression guardrails.
+- JSON export and standards mapping decision.
+- Packaging and release automation decision.
+- Dashboard verification baseline.
+- Stable CLI/schema/config/report compatibility policy.
+
 ## Risks And Mitigations
 
 - Risk: leaking private transcript data. Mitigation: synthetic fixtures, ignore rules, redaction pipeline, public-release scans.
@@ -102,3 +113,4 @@ The normalized event model should be compatible with future OTLP export, but MVP
 - public-readiness grep.
 - fixture determinism check.
 - manual review of generated report.
+- install, package, and release archive smoke tests.

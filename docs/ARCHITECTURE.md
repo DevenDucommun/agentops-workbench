@@ -26,7 +26,7 @@ normalized event stream
         +--> outputs
                - Markdown session report
                - PR/repo report
-               - future dashboard/API
+               - local dashboard/API
                - future OTLP/OpenTelemetry export
 ```
 
@@ -34,19 +34,21 @@ normalized event stream
 
 ### CLI
 
-The CLI is the primary interface through MVP.
+The CLI is the primary stable interface before 1.0.
 
-Initial commands:
+Implemented commands include:
 
 - `agentops ingest <session.jsonl>`
+- `agentops adapters`
+- `agentops sessions`
+- `agentops inspect --session <id|latest>`
 - `agentops report --session latest`
 - `agentops report --session <id>`
-
-Planned commands:
-
-- `agentops inspect <session>`
 - `agentops scan-publication`
 - `agentops repo-report`
+
+Planned pre-1.0 commands:
+
 - `agentops export --format markdown|json|otlp`
 - `agentops doctor`
 
@@ -54,16 +56,20 @@ Planned commands:
 
 Adapters parse runner-specific artifacts into the normalized event model.
 
-Initial adapter:
+Implemented adapters:
 
 - `jsonl`: synthetic/sanitized session fixture format for stable tests.
+- `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export.
+- `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export.
+- `claude-code-stream-json`: native Claude Code stream JSON from explicit CLI
+  capture.
+- `codex-jsonl`: sanitized Codex AgentOps JSONL export.
+- `codex-exec-jsonl`: native Codex exec JSONL from explicit CLI capture.
 
-Candidate adapters:
+Candidate future adapters:
 
-- Claude Code exported session logs.
-- KAI session artifacts, if the format is safe to document publicly.
-- Codex/Codex-like transcripts.
-- Hook-stream adapter for real-time capture.
+- Hook-envelope adapter for bounded local capture.
+- OTLP/OpenTelemetry export adapter.
 
 Adapter rules:
 

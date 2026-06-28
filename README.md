@@ -167,7 +167,7 @@ AGENTOPS_DB=/path/to/agentops.db ./bin/agentops sessions
 Core docs:
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
+- [Roadmap to 1.0](docs/ROADMAP.md)
 - [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
