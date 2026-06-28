@@ -2,7 +2,14 @@
 
 AgentOps Workbench is a local observability and audit tool for AI coding-agent runs. It helps teams understand what an agent did, what it changed, what evidence supports its final answer, and where the run created risk.
 
-The first target is Claude Code / KAI-style workflows, but the data model should stay generic enough to support other agent runners later.
+It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other coding-agent workflows through a shared JSONL event schema.
+
+## Status
+
+- Public release: [`v0.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.1.0)
+- Current `main`: includes early v0.2 CLI inspection and sanitized Claude/Codex export adapter work
+- Runtime model: local CLI, local SQLite, stdout reports
+- Native Claude/Codex transcript parsing: planned, not implemented
 
 ## Problem
 
@@ -18,23 +25,41 @@ Engineering leaders need a compact answer to:
 - Where did it retry, stall, or change direction?
 - Is the output good enough to trust?
 
-## Initial Scope
+## Quickstart
 
-Build a local-first CLI that ingests agent session artifacts and emits a Markdown report.
+Requirements:
 
-Do not start with a web dashboard. Start with a reliable event model and useful reports.
+- [Bun](https://bun.sh/)
+- Git
 
-## MVP
+Run locally:
 
-1. Ingest one Claude/KAI transcript or session log.
-2. Parse tool calls, shell commands, file edits, tests, and final response.
-3. Store normalized events in SQLite.
-4. Run basic risk and evidence checks.
-5. Generate a Markdown report for the session.
+```bash
+git clone https://github.com/DevenDucommun/agentops-workbench.git
+cd agentops-workbench
+bun install --frozen-lockfile
+./bin/agentops ingest ./fixtures/sample-session.jsonl
+./bin/agentops sessions
+./bin/agentops inspect --session latest
+./bin/agentops report --session latest > report.md
+```
+
+Generate a repo-aware PR report:
+
+```bash
+./bin/agentops repo-report --session latest > repo-report.md
+./bin/agentops repo-report --session latest --format github > pr-comment.md
+```
+
+Check public-readiness hygiene:
+
+```bash
+./bin/agentops scan-publication
+```
 
 ## Current CLI
 
-Run the first implementation slice locally:
+Common commands:
 
 ```bash
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
@@ -46,6 +71,17 @@ Run the first implementation slice locally:
 ./bin/agentops repo-report --session latest --format github > pr-comment.md
 ./bin/agentops scan-publication
 ```
+
+See [CLI reference](docs/CLI.md) for command details.
+
+## Supported Artifacts
+
+AgentOps currently ingests normalized post-hoc JSONL exports:
+
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL
+- `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
+- `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export
+- `codex-jsonl`: sanitized Codex AgentOps JSONL export
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:
 
@@ -64,25 +100,33 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 
 These fixtures are normalized export examples, not native runtime transcript parsers.
 
-To use the exact `agentops` command during local development, put the repo's `bin` directory on your path:
+To inspect adapter detection:
 
 ```bash
-export PATH="$PWD/bin:$PATH"
-agentops ingest ./fixtures/sample-session.jsonl
-agentops report --session latest > report.md
+./bin/agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
-The default SQLite database lives at `.agentops/agentops.db`. Override it with `AGENTOPS_DB=/path/to/agentops.db`.
+## Privacy And Safety
 
-Before making a branch or release public, run:
+AgentOps is local-first by design:
+
+- The default SQLite database lives at `.agentops/agentops.db`.
+- `.agentops/`, `.agents/`, local databases, and env files are ignored by git.
+- Raw payload storage is disabled by default.
+- Raw payload hashes are stored by default.
+- Redaction runs before storage by default.
+- Public fixtures are synthetic.
+- `agentops scan-publication` provides a baseline public-readiness check.
+
+Override the database path when needed:
 
 ```bash
-./bin/agentops scan-publication
+AGENTOPS_DB=/path/to/agentops.db ./bin/agentops sessions
 ```
 
 ## Planning And Architecture
 
-These planning artifacts are written for the future public repository:
+Core docs:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
@@ -94,6 +138,10 @@ These planning artifacts are written for the future public repository:
 - [CLI reference](docs/CLI.md)
 - [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
+- [Changelog](CHANGELOG.md)
+
+Project planning artifacts:
+
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Spec Kit constitution](.specify/memory/constitution.md)
 - [MVP spec](specs/001-agentops-workbench/spec.md)
@@ -112,7 +160,7 @@ These planning artifacts are written for the future public repository:
 - Cost/token summary, when available
 - Final outcome assessment
 
-## Non-Goals For MVP
+## Non-Goals For Current Releases
 
 - Hosted SaaS
 - Multi-user auth
@@ -120,6 +168,7 @@ These planning artifacts are written for the future public repository:
 - Model benchmarking
 - Deep semantic evals
 - Direct modification of agent behavior
+- Native Claude/Codex transcript parsing
 
 ## Tech Direction
 
@@ -128,6 +177,21 @@ These planning artifacts are written for the future public repository:
 - Markdown report output first
 - Optional web dashboard later
 - Adapter-based ingestion for Claude Code, KAI, and future runners
+
+## Development
+
+```bash
+bun install --frozen-lockfile
+bun run ci
+```
+
+To use the exact `agentops` command during local development, put the repo's `bin` directory on your path:
+
+```bash
+export PATH="$PWD/bin:$PATH"
+agentops ingest ./fixtures/sample-session.jsonl
+agentops report --session latest > report.md
+```
 
 ## Resume Story
 
