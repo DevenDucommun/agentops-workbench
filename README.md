@@ -10,7 +10,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.4.0)
+- Public release: [`v0.5.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.5.0)
 - Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter research, and dashboard tool mapping
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
@@ -102,8 +102,8 @@ See [CLI reference](docs/CLI.md) for command details.
 
 ## Supported Artifacts
 
-AgentOps currently ingests normalized post-hoc JSONL exports plus the first
-native Codex CLI event stream:
+AgentOps currently ingests normalized post-hoc JSONL exports plus native Claude
+Code and Codex CLI event streams:
 
 - `agentops-jsonl`: canonical `agentops.event.v1` JSONL
 - `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
