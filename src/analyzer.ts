@@ -10,11 +10,44 @@ type RiskFlag = {
   message: string;
 };
 
+type EvidenceClaimRule = {
+  category: string;
+  claimPattern: RegExp;
+  commandPattern: RegExp;
+  label: string;
+};
+
 const destructiveCommandPattern = /\b(rm\s+-rf|git\s+reset\s+--hard|git\s+clean\s+-fd|drop\s+database|truncate\s+table|mkfs|chmod\s+-R\s+777|sudo\s+rm)\b/i;
 const permissionCommandPattern = /\b(chmod|chown|setfacl)\b/i;
 const secretPattern = /\b(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----)\b/;
 const credentialRedactionPattern = /\[REDACTED:(aws-access-key|openai-style-key|github-token|slack-token|private-key)\]/;
 const privacyRedactionPattern = /\[REDACTED:(email|local-path)\]/;
+const evidenceClaimRules: EvidenceClaimRule[] = [
+  {
+    category: "missing-test-evidence",
+    label: "test",
+    claimPattern: /\b(test|tests|test suite|unit tests|integration tests)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|green)\b[\s\S]{0,80}\b(test|tests|test suite)\b/i,
+    commandPattern: /\b(pytest|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|cargo\s+test|go\s+test|make\s+test|gmake\s+test|mvn\s+test|gradle\s+test)\b/i
+  },
+  {
+    category: "missing-lint-evidence",
+    label: "lint",
+    claimPattern: /\b(lint|linting|eslint)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(lint|linting|eslint)\b/i,
+    commandPattern: /\b(eslint|bun\s+(?:run\s+)?lint|npm\s+(?:run\s+)?lint|pnpm\s+(?:run\s+)?lint|yarn\s+(?:run\s+)?lint|make\s+lint|gmake\s+lint)\b/i
+  },
+  {
+    category: "missing-typecheck-evidence",
+    label: "typecheck",
+    claimPattern: /\b(typecheck|type check|type-check|type checking|tsc)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(typecheck|type check|type-check|type checking|tsc)\b/i,
+    commandPattern: /\b(tsc|bun\s+(?:run\s+)?(?:typecheck|type-check)|npm\s+(?:run\s+)?(?:typecheck|type-check)|pnpm\s+(?:run\s+)?(?:typecheck|type-check)|yarn\s+(?:run\s+)?(?:typecheck|type-check)|make\s+(?:typecheck|type-check)|gmake\s+(?:typecheck|type-check))\b/i
+  },
+  {
+    category: "missing-build-evidence",
+    label: "build",
+    claimPattern: /\b(build|built|compile|compiled|compilation)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified|complete(?:d)?)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(build|compile|compilation)\b/i,
+    commandPattern: /\b(bun\s+(?:run\s+)?build|npm\s+(?:run\s+)?build|pnpm\s+(?:run\s+)?build|yarn\s+(?:run\s+)?build|cargo\s+build|go\s+build|make\s+build|gmake\s+build|mvn\s+(?:package|compile)|gradle\s+build)\b/i
+  }
+];
 
 export function analyzeSession(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): void {
   const db = store.db;
@@ -98,13 +131,24 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
 
   const ranVerification = commands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
-  if (finalEvent && claimsSuccess(finalEvent.summary) && !ranVerification) {
-    flags.push({
-      eventId: finalEvent.id,
-      severity: "medium",
-      category: "unsupported-success-claim",
-      message: "Final response claims success, but no test/lint/check command was recorded."
-    });
+  if (finalEvent) {
+    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalEvent.summary, commands.map((command) => command.command));
+    for (const claim of unsupportedEvidenceClaims) {
+      flags.push({
+        eventId: finalEvent.id,
+        severity: "medium",
+        category: claim.category,
+        message: `Final response claims ${claim.label} success, but no matching ${claim.label} command was recorded.`
+      });
+    }
+    if (claimsSuccess(finalEvent.summary) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
+      flags.push({
+        eventId: finalEvent.id,
+        severity: "medium",
+        category: "unsupported-success-claim",
+        message: "Final response claims success, but no test/lint/check command was recorded."
+      });
+    }
   }
 
   for (const event of events) {
@@ -157,6 +201,10 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
   const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
   const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
   return pattern.test(command);
+}
+
+function findUnsupportedEvidenceClaims(value: string, commands: string[]): EvidenceClaimRule[] {
+  return evidenceClaimRules.filter((rule) => rule.claimPattern.test(value) && !commands.some((command) => rule.commandPattern.test(command)));
 }
 
 function claimsSuccess(value: string): boolean {

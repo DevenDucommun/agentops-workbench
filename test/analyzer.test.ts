@@ -42,6 +42,48 @@ test("supports narrow config suppressions", () => {
   store.db.close();
 });
 
+test("flags specific evidence claims without matching commands", () => {
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "evidence-claims" },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun test" }, status: "completed", exitCode: 0 },
+    {
+      schemaVersion: "agentops.event.v1",
+      type: "final_response",
+      content: "Tests passed. Lint is clean, typecheck passed, and the build completed successfully."
+    }
+  ]);
+  analyzeSession(store, "evidence-claims", defaultConfig);
+
+  const categories = getRiskFlags(store, "evidence-claims").map((flag) => flag.category);
+  expect(categories).not.toContain("missing-test-evidence");
+  expect(categories).toContain("missing-lint-evidence");
+  expect(categories).toContain("missing-typecheck-evidence");
+  expect(categories).toContain("missing-build-evidence");
+  expect(categories).not.toContain("unsupported-success-claim");
+
+  store.db.close();
+});
+
+test("accepts specific evidence claims with matching commands", () => {
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "supported-claims" },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun test" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun run lint" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun run typecheck" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun run build" }, status: "completed", exitCode: 0 },
+    {
+      schemaVersion: "agentops.event.v1",
+      type: "final_response",
+      content: "Tests passed. Lint is clean, typecheck passed, and the build completed successfully."
+    }
+  ]);
+  analyzeSession(store, "supported-claims", defaultConfig);
+
+  expect(getRiskFlags(store, "supported-claims")).toEqual([]);
+
+  store.db.close();
+});
+
 test("accepts missing timestamps", () => {
   const store = openFixture("fixtures/missing-timestamps-session.jsonl");
   analyzeSession(store, "missing-timestamps", defaultConfig);
@@ -59,6 +101,14 @@ function openFixture(path: string) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-analyzer-test-"));
   const store = openStore(join(dir, "agentops.db"));
   const transcript = parseJsonlTranscript(path, readFileSync(path, "utf8"));
+  ingestTranscript(store, transcript, defaultConfig);
+  return store;
+}
+
+function openInlineFixture(events: unknown[]) {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-analyzer-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const transcript = parseJsonlTranscript("inline.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
   ingestTranscript(store, transcript, defaultConfig);
   return store;
 }

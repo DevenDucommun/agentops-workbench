@@ -44,6 +44,8 @@ test("flags unsupported success claims", () => {
   const report = generateMarkdownReport(store, "unsupported");
   expect(report).toContain("sensitive-file");
   expect(report).toContain("unsupported-success-claim");
+  expect(report).toContain("### High Severity");
+  expect(report).toContain("### Medium Severity");
 
   store.db.close();
 });

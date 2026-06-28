@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -13,6 +13,7 @@
     "docs/INSTALLATION.md",
     "docs/CLI.md",
     "docs/DASHBOARD.md",
+    "docs/CAPTURE_GUIDE.md",
     "docs/ADAPTER_STRATEGY.md",
     "docs/EVENT_SCHEMA.md",
     "docs/NATIVE_ADAPTER_RESEARCH.md",

@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v0.5.0`
+Current public release: `v0.6.0`
 
 Implemented:
 
@@ -31,6 +31,11 @@ Implemented:
 - Local dashboard backed by SQLite, including session filtering, timeline,
   risk/evidence summaries, command/file drilldowns, usage summary, and
   MCP/tool usage map.
+- Dashboard Markdown report export for selected sessions.
+- Safe capture guide for native Claude Code, Codex, and PAI/KAI-style
+  post-hoc artifacts.
+- Specific missing-evidence flags for test, lint, typecheck, and build claims.
+- Markdown report risk grouping by severity.
 - Install smoke, package dry-run smoke, and release archive smoke automation.
 
 Current boundaries:
@@ -71,8 +76,10 @@ live agent control, or raw private transcript ingestion.
 
 Tracking issue: [#37](https://github.com/DevenDucommun/agentops-workbench/issues/37)
 
-Purpose: make the current product easier to use safely and make the analyzer
-more honest about unsupported claims.
+Status: complete in `v0.6.0`.
+
+Purpose: make the product easier to use safely and make the analyzer more
+honest about unsupported claims.
 
 Scope:
 
@@ -87,6 +94,10 @@ Scope:
   cases or document why they are deferred.
 - Spec Kit and planning docs synchronized with the actual public `v0.5.0`
   product state.
+
+Decision for this release: generated-file and retry/loop detectors remain in
+the `v0.7.0` hardening milestone. They need fixture coverage for source-specific
+adapter shapes before they can be implemented without noisy false positives.
 
 Exit criteria:
 

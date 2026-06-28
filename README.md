@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v0.5.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.5.0)
-- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter research, and dashboard tool mapping
+- Public release: [`v0.6.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v0.6.0)
+- Current `main`: includes CLI inspection, sanitized Claude/Codex export adapter work, native Codex/Claude stream ingestion, usage metadata, native adapter research, dashboard tool mapping, dashboard Markdown report export, and stronger evidence-claim checks
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -172,6 +172,7 @@ Core docs:
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
 - [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
+- [Capture guide](docs/CAPTURE_GUIDE.md)
 - [Event schema](docs/EVENT_SCHEMA.md)
 - [Configuration strategy](docs/CONFIGURATION.md)
 - [CLI reference](docs/CLI.md)

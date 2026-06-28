@@ -109,10 +109,34 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("AgentOps Workbench");
     expect(html).toContain("session-filter");
     expect(html).toContain("adapter-filter");
+    expect(html).toContain("report-link");
+    expect(html).toContain("Markdown report");
 
     const missingResponse = await fetch(`${server.url}/api/sessions/missing-session`);
     expect(missingResponse.status).toBe(404);
     expect(await missingResponse.json()).toEqual({ error: "Session not found" });
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard serves markdown reports for sessions", async () => {
+  const ingest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const reportResponse = await fetch(`${server.url}/api/sessions/sample-session/report`);
+    expect(reportResponse.status).toBe(200);
+    expect(reportResponse.headers.get("content-type")).toContain("text/markdown");
+    const report = await reportResponse.text();
+    expect(report).toContain("# AgentOps Session Report");
+    expect(report).toContain("sample-session");
+    expect(report).toContain("`bun test`");
+
+    const missingReport = await fetch(`${server.url}/api/sessions/missing-session/report`);
+    expect(missingReport.status).toBe(404);
+    expect(await missingReport.json()).toEqual({ error: "Session not found" });
   } finally {
     server.stop();
   }
