@@ -5,6 +5,7 @@
 ### Added
 
 - Optional token and cost usage metadata ingestion, storage, and report rendering.
+- Installation strategy documentation and install smoke verification.
 
 ## v0.2.0 - 2026-06-28
 

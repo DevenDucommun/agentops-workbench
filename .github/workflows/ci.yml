@@ -35,6 +35,9 @@ jobs:
       - name: Public-readiness scan
         run: ./bin/agentops scan-publication
 
+      - name: Install smoke test
+        run: bun run smoke:install
+
       - name: CLI smoke test
         run: |
           ./bin/agentops ingest ./fixtures/sample-session.jsonl
