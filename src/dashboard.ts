@@ -59,6 +59,60 @@ type DashboardEvidenceBundle = {
   events: DashboardPublicEvent[];
 };
 
+type DashboardComparison = {
+  schemaVersion: "agentops.comparison.v1";
+  kind: "session-comparison";
+  compatible: {
+    sameRepo: boolean;
+    message: string | null;
+  };
+  base: DashboardComparisonSession;
+  target: DashboardComparisonSession;
+  deltas: DashboardComparisonDeltas;
+  risks: DashboardComparisonRisk[];
+  files: DashboardComparisonSetDiff;
+  commands: DashboardComparisonSetDiff;
+  verification: DashboardComparisonSetDiff;
+};
+
+type DashboardComparisonSession = {
+  id: string;
+  task: string | null;
+  repo: string | null;
+  readiness: DashboardMergeReadiness["status"];
+  riskCount: number;
+  highRiskCount: number;
+  mediumRiskCount: number;
+  verificationCount: number;
+  fileCount: number;
+  commandCount: number;
+  totalTokens: number | null;
+};
+
+type DashboardComparisonDeltas = {
+  riskCount: number;
+  highRiskCount: number;
+  mediumRiskCount: number;
+  verificationCount: number;
+  fileCount: number;
+  commandCount: number;
+  totalTokens: number | null;
+};
+
+type DashboardComparisonRisk = {
+  severity: RiskFlagRecord["severity"];
+  category: string;
+  baseCount: number;
+  targetCount: number;
+  delta: number;
+};
+
+type DashboardComparisonSetDiff = {
+  baseOnly: string[];
+  targetOnly: string[];
+  common: string[];
+};
+
 type DashboardDecision = {
   mergeReadiness: DashboardMergeReadiness;
   evidence: DashboardEvidenceRow[];
@@ -165,6 +219,15 @@ function handleDashboardRequest(request: Request, store: Store, config: AgentOps
     const limit = positiveLimit(url.searchParams.get("limit"));
     return jsonResponse({ sessions: listSessions(store, limit).map(toDashboardSessionSummary) });
   }
+  if (url.pathname === "/api/compare") {
+    const baseId = url.searchParams.get("base");
+    const targetId = url.searchParams.get("target");
+    if (!baseId || !targetId) return jsonResponse({ error: "Missing base or target session" }, 400);
+    if (baseId === targetId) return jsonResponse({ error: "Choose two different sessions" }, 400);
+    const comparison = getDashboardComparison(store, baseId, targetId, config);
+    if (!comparison) return jsonResponse({ error: "Session not found" }, 404);
+    return jsonResponse(comparison);
+  }
   if (url.pathname.startsWith("/api/sessions/")) {
     const sessionPath = url.pathname.replace("/api/sessions/", "");
     const isReport = sessionPath.endsWith("/report");
@@ -185,6 +248,112 @@ function handleDashboardRequest(request: Request, store: Store, config: AgentOps
     return jsonResponse(detail);
   }
   return new Response("Not found\n", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+
+function getDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
+  const base = getDashboardSession(store, baseId, config);
+  const target = getDashboardSession(store, targetId, config);
+  if (!base || !target) return null;
+
+  return {
+    schemaVersion: "agentops.comparison.v1",
+    kind: "session-comparison",
+    compatible: comparisonCompatibility(base.session.repo, target.session.repo),
+    base: toComparisonSession(base),
+    target: toComparisonSession(target),
+    deltas: {
+      riskCount: target.risks.length - base.risks.length,
+      highRiskCount: target.riskDrilldown.totals.high - base.riskDrilldown.totals.high,
+      mediumRiskCount: target.riskDrilldown.totals.medium - base.riskDrilldown.totals.medium,
+      verificationCount: target.verification.length - base.verification.length,
+      fileCount: target.files.length - base.files.length,
+      commandCount: target.commands.length - base.commands.length,
+      totalTokens: nullableDelta(base.usage.totalTokens, target.usage.totalTokens)
+    },
+    risks: compareRisks(base.risks, target.risks),
+    files: compareSets(
+      base.files.map((file) => file.path),
+      target.files.map((file) => file.path)
+    ),
+    commands: compareSets(
+      base.commands.map((command) => command.command),
+      target.commands.map((command) => command.command)
+    ),
+    verification: compareSets(
+      base.verification.map((command) => command.command),
+      target.verification.map((command) => command.command)
+    )
+  };
+}
+
+function comparisonCompatibility(baseRepo: string | null, targetRepo: string | null): DashboardComparison["compatible"] {
+  if (!baseRepo || !targetRepo) return { sameRepo: true, message: null };
+  if (baseRepo === targetRepo) return { sameRepo: true, message: null };
+  return {
+    sameRepo: false,
+    message: `Sessions are from different repos: ${baseRepo} and ${targetRepo}.`
+  };
+}
+
+function toComparisonSession(detail: DashboardSessionDetail): DashboardComparisonSession {
+  return {
+    id: detail.session.id,
+    task: detail.session.task,
+    repo: detail.session.repo,
+    readiness: detail.decision.mergeReadiness.status,
+    riskCount: detail.risks.length,
+    highRiskCount: detail.riskDrilldown.totals.high,
+    mediumRiskCount: detail.riskDrilldown.totals.medium,
+    verificationCount: detail.verification.length,
+    fileCount: detail.files.length,
+    commandCount: detail.commands.length,
+    totalTokens: detail.usage.totalTokens
+  };
+}
+
+function compareRisks(base: RiskFlagRecord[], target: RiskFlagRecord[]): DashboardComparisonRisk[] {
+  const counts = new Map<string, { severity: RiskFlagRecord["severity"]; category: string; baseCount: number; targetCount: number }>();
+  for (const risk of base) {
+    const key = `${risk.severity}/${risk.category}`;
+    const row = counts.get(key) ?? { severity: risk.severity, category: risk.category, baseCount: 0, targetCount: 0 };
+    row.baseCount += 1;
+    counts.set(key, row);
+  }
+  for (const risk of target) {
+    const key = `${risk.severity}/${risk.category}`;
+    const row = counts.get(key) ?? { severity: risk.severity, category: risk.category, baseCount: 0, targetCount: 0 };
+    row.targetCount += 1;
+    counts.set(key, row);
+  }
+  return Array.from(counts.values())
+    .map((row) => ({ ...row, delta: row.targetCount - row.baseCount }))
+    .sort((left, right) => severityRank(left.severity) - severityRank(right.severity) || left.category.localeCompare(right.category));
+}
+
+function compareSets(baseValues: string[], targetValues: string[]): DashboardComparisonSetDiff {
+  const base = uniqueSorted(baseValues);
+  const target = uniqueSorted(targetValues);
+  const baseSet = new Set(base);
+  const targetSet = new Set(target);
+  return {
+    baseOnly: base.filter((value) => !targetSet.has(value)),
+    targetOnly: target.filter((value) => !baseSet.has(value)),
+    common: base.filter((value) => targetSet.has(value))
+  };
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+}
+
+function nullableDelta(base: number | null, target: number | null): number | null {
+  return base === null || target === null ? null : target - base;
+}
+
+function severityRank(severity: RiskFlagRecord["severity"]): number {
+  if (severity === "high") return 0;
+  if (severity === "medium") return 1;
+  return 2;
 }
 
 function getDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
@@ -595,6 +764,16 @@ function dashboardHtml(): string {
     .filter-control::placeholder {
       color: var(--muted);
     }
+    .compare-select {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 6px 9px;
+      box-shadow: var(--shadow);
+      max-width: 220px;
+    }
     .session-button {
       width: 100%;
       min-height: 86px;
@@ -741,6 +920,52 @@ function dashboardHtml(): string {
     }
     .pill.missing { color: var(--risk); background: var(--risk-soft); }
     .pill.neutral { color: var(--muted); background: #edf1f5; }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    .comparison-metric {
+      border: 1px solid #edf1f5;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .comparison-value {
+      font-size: 18px;
+      font-weight: 750;
+      margin-top: 4px;
+    }
+    .delta.good { color: var(--ok); }
+    .delta.bad { color: var(--risk); }
+    .delta.neutral { color: var(--muted); }
+    .comparison-lists {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .mini-list {
+      border: 1px solid #edf1f5;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      min-width: 0;
+    }
+    .mini-list h4 {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .mini-list ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .mini-list li {
+      margin-bottom: 5px;
+      overflow-wrap: anywhere;
+    }
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
@@ -897,8 +1122,10 @@ function dashboardHtml(): string {
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .decision-grid { grid-template-columns: 1fr; }
       .evidence-row { grid-template-columns: 1fr; }
+      .comparison-grid, .comparison-lists { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .header { grid-template-columns: 1fr; }
+      .header-actions { justify-content: start; flex-wrap: wrap; }
     }
   </style>
 </head>
@@ -928,12 +1155,16 @@ function dashboardHtml(): string {
           <div class="meta" id="session-meta"></div>
         </div>
         <div class="header-actions">
+          <select class="compare-select hidden" id="compare-select">
+            <option value="">Compare with</option>
+          </select>
           <a class="action-button hidden" id="report-link" href="#" target="_blank" rel="noreferrer">Markdown report</a>
           <a class="action-button hidden" id="evidence-link" href="#" target="_blank" rel="noreferrer">JSON evidence</a>
         </div>
       </section>
       <section class="metric-grid" id="metrics"></section>
       <section class="decision-grid" id="decision"></section>
+      <section class="panel hidden" id="comparison"></section>
       <section class="grid">
         <div class="panel">
           <div class="panel-head">
@@ -958,7 +1189,7 @@ function dashboardHtml(): string {
     </main>
   </div>
   <script>
-    const state = { sessions: [], selectedId: null, detail: null, filterText: "", adapterFilter: "" };
+    const state = { sessions: [], selectedId: null, detail: null, filterText: "", adapterFilter: "", compareId: "" };
     const fmt = new Intl.NumberFormat("en-US");
 
     document.getElementById("refresh").addEventListener("click", loadSessions);
@@ -969,6 +1200,11 @@ function dashboardHtml(): string {
     document.getElementById("adapter-filter").addEventListener("change", (event) => {
       state.adapterFilter = event.target.value;
       renderSessions();
+    });
+    document.getElementById("compare-select").addEventListener("change", async (event) => {
+      state.compareId = event.target.value;
+      if (state.compareId) await loadComparison();
+      else renderComparison(null);
     });
     for (const tab of document.querySelectorAll(".tab")) {
       tab.addEventListener("click", () => selectTab(tab.dataset.tab));
@@ -1051,6 +1287,7 @@ function dashboardHtml(): string {
     function renderEmpty() {
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("decision").innerHTML = "";
+      renderComparison(null);
       document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops ingest first.</div>';
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
       document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';
@@ -1058,6 +1295,7 @@ function dashboardHtml(): string {
       document.getElementById("tab-files").innerHTML = '<div class="empty">No file changes.</div>';
       document.getElementById("report-link").classList.add("hidden");
       document.getElementById("evidence-link").classList.add("hidden");
+      document.getElementById("compare-select").classList.add("hidden");
     }
 
     function renderDetail() {
@@ -1087,12 +1325,97 @@ function dashboardHtml(): string {
         metric("Tokens", data.usage.totalTokens == null ? "—" : fmt.format(data.usage.totalTokens))
       ].join("");
       renderDecision(data.decision);
+      renderCompareSelect(session.id);
+      if (state.compareId) loadComparison();
+      else renderComparison(null);
       document.getElementById("timeline-count").textContent = data.events.length + " events";
       renderTimeline(data.events);
       renderRisks(data.riskDrilldown, data.verification);
       renderTools(data.tools);
       renderCommands(data.commands);
       renderFiles(data.files);
+    }
+
+    async function loadComparison() {
+      if (!state.selectedId || !state.compareId) {
+        renderComparison(null);
+        return;
+      }
+      const response = await fetch("/api/compare?base=" + encodeURIComponent(state.compareId) + "&target=" + encodeURIComponent(state.selectedId));
+      if (!response.ok) {
+        renderComparison({ error: "Comparison unavailable." });
+        return;
+      }
+      renderComparison(await response.json());
+    }
+
+    function renderCompareSelect(selectedId) {
+      const select = document.getElementById("compare-select");
+      const options = state.sessions.filter((session) => session.id !== selectedId);
+      if (!options.length) {
+        state.compareId = "";
+        select.classList.add("hidden");
+        renderComparison(null);
+        return;
+      }
+      if (state.compareId === selectedId || !options.some((session) => session.id === state.compareId)) state.compareId = "";
+      select.innerHTML = '<option value="">Compare with</option>' + options.map((session) => '<option value="' + escapeAttr(session.id) + '">' + escapeHtml(session.id) + '</option>').join("");
+      select.value = state.compareId;
+      select.classList.remove("hidden");
+    }
+
+    function renderComparison(comparison) {
+      const container = document.getElementById("comparison");
+      if (!comparison) {
+        container.classList.add("hidden");
+        container.innerHTML = "";
+        return;
+      }
+      container.classList.remove("hidden");
+      if (comparison.error) {
+        container.innerHTML = '<div class="panel-body"><div class="empty">' + escapeHtml(comparison.error) + '</div></div>';
+        return;
+      }
+      container.innerHTML =
+        '<div class="panel-head"><h3>Run Comparison</h3><span class="subtle">' + escapeHtml(comparison.base.id) + ' to ' + escapeHtml(comparison.target.id) + '</span></div>' +
+        '<div class="panel-body">' +
+          '<div class="comparison-grid">' +
+            comparisonMetric("Readiness", comparison.base.readiness + " to " + comparison.target.readiness, "neutral") +
+            comparisonMetric("Risks", comparison.target.riskCount, deltaClass(comparison.deltas.riskCount, true), comparison.deltas.riskCount) +
+            comparisonMetric("High risks", comparison.target.highRiskCount, deltaClass(comparison.deltas.highRiskCount, true), comparison.deltas.highRiskCount) +
+            comparisonMetric("Verification", comparison.target.verificationCount, deltaClass(comparison.deltas.verificationCount, false), comparison.deltas.verificationCount) +
+            comparisonMetric("Files", comparison.target.fileCount, deltaClass(comparison.deltas.fileCount, true), comparison.deltas.fileCount) +
+            comparisonMetric("Commands", comparison.target.commandCount, deltaClass(comparison.deltas.commandCount, true), comparison.deltas.commandCount) +
+            comparisonMetric("Tokens", comparison.target.totalTokens == null ? "—" : fmt.format(comparison.target.totalTokens), deltaClass(comparison.deltas.totalTokens, true), comparison.deltas.totalTokens) +
+          '</div>' +
+          '<div class="comparison-lists">' +
+            (comparison.compatible.sameRepo ? "" : '<div class="mini-list"><h4>Compatibility</h4><div class="subtle">' + escapeHtml(comparison.compatible.message || "Sessions may not be comparable.") + '</div></div>') +
+            miniList("Target-only files", comparison.files.targetOnly) +
+            miniList("Target-only verification", comparison.verification.targetOnly) +
+            miniList("Risk changes", comparison.risks.filter((risk) => risk.delta !== 0).map((risk) => risk.severity + " / " + risk.category + " " + formatSigned(risk.delta))) +
+          '</div>' +
+        '</div>';
+    }
+
+    function comparisonMetric(label, value, deltaClassName, delta) {
+      const deltaHtml = delta == null ? "" : '<div class="delta ' + deltaClassName + '">' + formatSigned(delta) + '</div>';
+      return '<div class="comparison-metric"><div class="metric-label">' + escapeHtml(label) + '</div><div class="comparison-value">' + escapeHtml(String(value)) + '</div>' + deltaHtml + '</div>';
+    }
+
+    function miniList(label, values) {
+      const body = values.length ? '<ul>' + values.slice(0, 6).map((value) => '<li>' + escapeHtml(value) + '</li>').join("") + '</ul>' : '<div class="subtle">No changes.</div>';
+      return '<div class="mini-list"><h4>' + escapeHtml(label) + '</h4>' + body + '</div>';
+    }
+
+    function deltaClass(delta, lowerIsBetter) {
+      if (delta == null || delta === 0) return "neutral";
+      const improved = lowerIsBetter ? delta < 0 : delta > 0;
+      return improved ? "good" : "bad";
+    }
+
+    function formatSigned(value) {
+      if (value == null) return "";
+      return value > 0 ? "+" + value : String(value);
     }
 
     function renderDecision(decision) {
