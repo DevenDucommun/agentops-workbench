@@ -38,6 +38,7 @@ type DashboardSessionDetail = {
   risks: RiskFlagRecord[];
   verification: CommandRecord[];
   decision: DashboardDecision;
+  riskDrilldown: DashboardRiskDrilldown;
 };
 
 type DashboardSessionRecord = Omit<NonNullable<ReturnType<typeof getSession>>, "source_path">;
@@ -71,6 +72,45 @@ type DashboardEvidenceRow = {
   riskCategory: string | null;
   riskMessage: string | null;
 };
+
+type DashboardRiskDrilldown = {
+  totals: {
+    high: number;
+    medium: number;
+    low: number;
+    total: number;
+  };
+  groups: DashboardRiskGroup[];
+};
+
+type DashboardRiskGroup = {
+  severity: RiskFlagRecord["severity"];
+  category: string;
+  count: number;
+  risks: DashboardRiskItem[];
+};
+
+type DashboardRiskItem = {
+  id: number;
+  severity: RiskFlagRecord["severity"];
+  category: string;
+  message: string;
+  event: DashboardRiskEvent | null;
+  command: DashboardRiskCommand | null;
+  file: DashboardRiskFile | null;
+  evidence: DashboardRiskEvidence | null;
+};
+
+type DashboardRiskEvent = Pick<StoredEvent, "id" | "idx" | "type" | "summary">;
+
+type DashboardRiskCommand = Pick<CommandRecord, "id" | "eventId" | "command" | "status" | "exitCode">;
+
+type DashboardRiskFile = Pick<FileChangeRecord, "id" | "eventId" | "path" | "operation" | "linesAdded" | "linesRemoved">;
+
+type DashboardRiskEvidence = Pick<
+  DashboardEvidenceRow,
+  "id" | "label" | "claimed" | "evidenceFound" | "status" | "command" | "riskCategory" | "riskMessage"
+>;
 
 export function startDashboardServer(options: DashboardOptions = {}): DashboardServer {
   const host = options.host ?? "127.0.0.1";
@@ -130,17 +170,108 @@ function getDashboardSession(store: Store, sessionId: string, config: AgentOpsCo
   const commands = getCommands(store, sessionId);
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
+  const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const decision = buildDashboardDecision(events, commands, risks, verification);
   return {
     session: toDashboardSessionRecord(session),
     usage: getUsageSummary(store, sessionId),
     events,
     commands,
-    files: getFileChanges(store, sessionId),
+    files,
     tools: getToolCalls(store, sessionId),
     risks,
     verification,
-    decision: buildDashboardDecision(events, commands, risks, verification)
+    decision,
+    riskDrilldown: buildRiskDrilldown(events, commands, files, risks, decision.evidence)
+  };
+}
+
+function buildRiskDrilldown(
+  events: StoredEvent[],
+  commands: CommandRecord[],
+  files: FileChangeRecord[],
+  risks: RiskFlagRecord[],
+  evidenceRows: DashboardEvidenceRow[]
+): DashboardRiskDrilldown {
+  const groups = new Map<string, DashboardRiskGroup>();
+  const totals = {
+    high: risks.filter((risk) => risk.severity === "high").length,
+    medium: risks.filter((risk) => risk.severity === "medium").length,
+    low: risks.filter((risk) => risk.severity === "low").length,
+    total: risks.length
+  };
+
+  for (const risk of risks) {
+    const key = `${risk.severity}/${risk.category}`;
+    const group =
+      groups.get(key) ??
+      ({
+        severity: risk.severity,
+        category: risk.category,
+        count: 0,
+        risks: []
+      } satisfies DashboardRiskGroup);
+    group.count += 1;
+    group.risks.push(buildRiskItem(risk, events, commands, files, evidenceRows));
+    groups.set(key, group);
+  }
+
+  return {
+    totals,
+    groups: Array.from(groups.values())
+  };
+}
+
+function buildRiskItem(
+  risk: RiskFlagRecord,
+  events: StoredEvent[],
+  commands: CommandRecord[],
+  files: FileChangeRecord[],
+  evidenceRows: DashboardEvidenceRow[]
+): DashboardRiskItem {
+  const event = risk.eventId === null ? null : events.find((entry) => entry.id === risk.eventId) ?? null;
+  const command = risk.eventId === null ? null : commands.find((entry) => entry.eventId === risk.eventId) ?? null;
+  const file = risk.eventId === null ? null : files.find((entry) => entry.eventId === risk.eventId) ?? null;
+  const evidence = evidenceRows.find((entry) => entry.riskCategory === risk.category) ?? null;
+
+  return {
+    id: risk.id,
+    severity: risk.severity,
+    category: risk.category,
+    message: risk.message,
+    event: event ? { id: event.id, idx: event.idx, type: event.type, summary: event.summary } : null,
+    command: command
+      ? {
+          id: command.id,
+          eventId: command.eventId,
+          command: command.command,
+          status: command.status,
+          exitCode: command.exitCode
+        }
+      : null,
+    file: file
+      ? {
+          id: file.id,
+          eventId: file.eventId,
+          path: file.path,
+          operation: file.operation,
+          linesAdded: file.linesAdded,
+          linesRemoved: file.linesRemoved
+        }
+      : null,
+    evidence: evidence
+      ? {
+          id: evidence.id,
+          label: evidence.label,
+          claimed: evidence.claimed,
+          evidenceFound: evidence.evidenceFound,
+          status: evidence.status,
+          command: evidence.command,
+          riskCategory: evidence.riskCategory,
+          riskMessage: evidence.riskMessage
+        }
+      : null
   };
 }
 
@@ -614,6 +745,52 @@ function dashboardHtml(): string {
     }
     .risk-card.high { border-color: #f0b4ae; background: var(--risk-soft); }
     .risk-card.medium { border-color: #efd08c; background: var(--warn-soft); }
+    .risk-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .risk-group {
+      border: 1px solid #edf1f5;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .risk-group.high { border-color: #f0b4ae; }
+    .risk-group.medium { border-color: #efd08c; }
+    .risk-group-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px;
+      background: #fbfcfd;
+      border-bottom: 1px solid #edf1f5;
+      font-weight: 700;
+    }
+    .risk-group.high .risk-group-head { background: var(--risk-soft); }
+    .risk-group.medium .risk-group-head { background: var(--warn-soft); }
+    .risk-item {
+      padding: 10px;
+      border-bottom: 1px solid #edf1f5;
+    }
+    .risk-item:last-child { border-bottom: 0; }
+    .risk-context {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .context-line {
+      display: grid;
+      grid-template-columns: 68px minmax(0, 1fr);
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .context-label {
+      color: #526174;
+      font-weight: 700;
+    }
     .empty {
       color: var(--muted);
       padding: 14px;
@@ -847,7 +1024,7 @@ function dashboardHtml(): string {
       renderDecision(data.decision);
       document.getElementById("timeline-count").textContent = data.events.length + " events";
       renderTimeline(data.events);
-      renderRisks(data.risks, data.verification);
+      renderRisks(data.riskDrilldown, data.verification);
       renderTools(data.tools);
       renderCommands(data.commands);
       renderFiles(data.files);
@@ -905,15 +1082,51 @@ function dashboardHtml(): string {
       ).join("");
     }
 
-    function renderRisks(risks, verification) {
+    function renderRisks(drilldown, verification) {
       const container = document.getElementById("tab-risks");
-      const riskHtml = risks.length
-        ? '<div class="list">' + risks.map((risk) => '<div class="item risk-card ' + escapeAttr(risk.severity) + '"><strong>' + escapeHtml(risk.severity + " / " + risk.category) + '</strong><div>' + escapeHtml(risk.message) + '</div></div>').join("") + '</div>'
+      const riskHtml = drilldown && drilldown.groups.length
+        ? '<h3 style="margin:0 0 8px">Risk Drilldown</h3>' + renderRiskSummary(drilldown.totals) + '<div class="list">' + drilldown.groups.map(renderRiskGroup).join("") + '</div>'
         : '<div class="empty">No risk flags detected.</div>';
       const evidenceHtml = verification.length
         ? '<h3 style="margin:14px 0 8px">Verification Evidence</h3><div class="list">' + verification.map((command) => '<div class="item"><code>' + escapeHtml(command.command) + '</code><div class="subtle">' + escapeHtml(command.status || "unknown") + formatExit(command.exitCode) + '</div></div>').join("") + '</div>'
         : '<h3 style="margin:14px 0 8px">Verification Evidence</h3><div class="empty">No verification command recorded.</div>';
       container.innerHTML = riskHtml + evidenceHtml;
+    }
+
+    function renderRiskSummary(totals) {
+      return '<div class="risk-summary">' +
+        '<span class="pill risk">' + totals.high + ' high</span>' +
+        '<span class="pill neutral">' + totals.medium + ' medium</span>' +
+        '<span class="pill neutral">' + totals.low + ' low</span>' +
+        '<span class="pill">' + totals.total + ' total</span>' +
+      '</div>';
+    }
+
+    function renderRiskGroup(group) {
+      return '<div class="risk-group ' + escapeAttr(group.severity) + '">' +
+        '<div class="risk-group-head"><span>' + escapeHtml(group.severity + " / " + group.category) + '</span><span class="pill">' + group.count + '</span></div>' +
+        group.risks.map(renderRiskItem).join("") +
+      '</div>';
+    }
+
+    function renderRiskItem(risk) {
+      return '<div class="risk-item">' +
+        '<div>' + escapeHtml(risk.message) + '</div>' +
+        '<div class="risk-context">' + renderRiskContext(risk) + '</div>' +
+      '</div>';
+    }
+
+    function renderRiskContext(risk) {
+      const rows = [];
+      if (risk.event) rows.push(contextLine("Event", "#" + risk.event.idx + " " + risk.event.type + " · " + risk.event.summary));
+      if (risk.command) rows.push(contextLine("Command", '<code>' + escapeHtml(risk.command.command) + '</code><div>' + escapeHtml(risk.command.status || "unknown") + formatExit(risk.command.exitCode) + '</div>', true));
+      if (risk.file) rows.push(contextLine("File", '<code>' + escapeHtml(risk.file.path) + '</code><div>' + escapeHtml(risk.file.operation) + formatChurn(risk.file) + '</div>', true));
+      if (risk.evidence) rows.push(contextLine("Evidence", risk.evidence.label + " · " + formatEvidenceStatus(risk.evidence.status)));
+      return rows.length ? rows.join("") : contextLine("Context", "No linked event context recorded.");
+    }
+
+    function contextLine(label, value, valueIsHtml) {
+      return '<div class="context-line"><div class="context-label">' + escapeHtml(label) + '</div><div>' + (valueIsHtml ? value : escapeHtml(value)) + '</div></div>';
     }
 
     function renderCommands(commands) {
