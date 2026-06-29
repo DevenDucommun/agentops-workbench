@@ -61,7 +61,7 @@ for (const excluded of [
   "specs/001-agentops-workbench/spec.md",
   "test/cli.test.ts",
   "report.md",
-  "docs/assets/dashboard-v0.4.0.png"
+  "docs/assets/dashboard-v1.2.0.png"
 ]) {
   if (files.has(excluded)) fail(`Package dry run includes excluded file: ${excluded}`);
 }

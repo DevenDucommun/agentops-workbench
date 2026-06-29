@@ -8,12 +8,24 @@ const originalDb = process.env.AGENTOPS_DB;
 process.env.AGENTOPS_DB = join(mkdtempSync(join(tmpdir(), "agentops-dashboard-smoke-")), "agentops.db");
 
 try {
+  const emptyServer = startDashboardServer({ port: 0 });
+  try {
+    const emptySessions = (await fetch(`${emptyServer.url}/api/sessions`).then((response) => response.json())) as { sessions?: unknown[] };
+    if (emptySessions.sessions?.length !== 0) fail("Dashboard empty state returned sessions.");
+    const emptyHtml = await fetch(emptyServer.url).then((response) => response.text());
+    if (!emptyHtml.includes("No session selected")) fail("Dashboard empty HTML shell did not include empty heading.");
+  } finally {
+    emptyServer.stop();
+  }
+
   const ingest = await runCli(["ingest", "fixtures/usage-session.jsonl"]);
   if (ingest.exitCode !== 0) fail(ingest.stderr ?? "Dashboard smoke ingest failed.");
   const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
   if (riskyIngest.exitCode !== 0) fail(riskyIngest.stderr ?? "Dashboard risky fixture ingest failed.");
   const sampleIngest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
   if (sampleIngest.exitCode !== 0) fail(sampleIngest.stderr ?? "Dashboard sample fixture ingest failed.");
+  const reviewIngest = await runCli(["ingest", "fixtures/needs-review-session.jsonl"]);
+  if (reviewIngest.exitCode !== 0) fail(reviewIngest.stderr ?? "Dashboard needs-review fixture ingest failed.");
 
   const server = startDashboardServer({ port: 0 });
   try {
@@ -41,6 +53,29 @@ try {
     if (detail.decision.mergeReadiness.missingEvidenceCount !== 0) fail("Dashboard session API returned wrong missing evidence count.");
     if (!detail.decision.evidence?.some((row) => row.id === "final-success" && row.status === "verified")) {
       fail("Dashboard session API did not include verified final-success evidence.");
+    }
+
+    const sampleResponse = await fetch(`${server.url}/api/sessions/sample-session`);
+    if (!sampleResponse.ok) fail(`Dashboard sample session API failed: ${sampleResponse.status}`);
+    const sampleDetail = (await sampleResponse.json()) as {
+      decision?: { mergeReadiness?: { status?: string } };
+      riskDrilldown?: { totals?: { total?: number } };
+    };
+    if (sampleDetail.decision?.mergeReadiness?.status !== "ready") fail("Dashboard ready fixture returned wrong readiness.");
+    if (sampleDetail.riskDrilldown?.totals?.total !== 0) fail("Dashboard ready fixture returned risks.");
+
+    const reviewResponse = await fetch(`${server.url}/api/sessions/needs-review-session`);
+    if (!reviewResponse.ok) fail(`Dashboard needs-review session API failed: ${reviewResponse.status}`);
+    const reviewDetail = (await reviewResponse.json()) as {
+      decision?: {
+        mergeReadiness?: { status?: string; missingEvidenceCount?: number };
+        evidence?: Array<{ id?: string; status?: string }>;
+      };
+    };
+    if (reviewDetail.decision?.mergeReadiness?.status !== "needs-review") fail("Dashboard needs-review fixture returned wrong readiness.");
+    if (reviewDetail.decision.mergeReadiness.missingEvidenceCount !== 1) fail("Dashboard needs-review fixture returned wrong missing evidence count.");
+    if (!reviewDetail.decision.evidence?.some((row) => row.id === "final-success" && row.status === "missing-evidence")) {
+      fail("Dashboard needs-review fixture did not include missing final-success evidence.");
     }
 
     const riskyResponse = await fetch(`${server.url}/api/sessions/risky-session`);

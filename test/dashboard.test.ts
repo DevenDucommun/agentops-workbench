@@ -142,6 +142,34 @@ test("dashboard decision payload surfaces missing evidence and blocked readiness
   }
 });
 
+test("dashboard demo fixtures cover ready, needs-review, and blocked states", async () => {
+  for (const fixture of ["fixtures/sample-session.jsonl", "fixtures/needs-review-session.jsonl", "fixtures/risky-session.jsonl"]) {
+    const ingest = await runCli(["ingest", fixture]);
+    expect(ingest.exitCode).toBe(0);
+  }
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const ready = (await fetch(`${server.url}/api/sessions/sample-session`).then((response) => response.json())) as {
+      decision: { mergeReadiness: { status: string } };
+    };
+    const needsReview = (await fetch(`${server.url}/api/sessions/needs-review-session`).then((response) => response.json())) as {
+      decision: { mergeReadiness: { status: string; missingEvidenceCount: number }; evidence: Array<{ id: string; status: string }> };
+    };
+    const blocked = (await fetch(`${server.url}/api/sessions/risky-session`).then((response) => response.json())) as {
+      decision: { mergeReadiness: { status: string } };
+    };
+
+    expect(ready.decision.mergeReadiness.status).toBe("ready");
+    expect(needsReview.decision.mergeReadiness.status).toBe("needs-review");
+    expect(needsReview.decision.mergeReadiness.missingEvidenceCount).toBe(1);
+    expect(needsReview.decision.evidence).toContainEqual(expect.objectContaining({ id: "final-success", status: "missing-evidence" }));
+    expect(blocked.decision.mergeReadiness.status).toBe("blocked");
+  } finally {
+    server.stop();
+  }
+});
+
 test("dashboard API includes tool usage summary", async () => {
   const ingest = await runCli(["ingest", "fixtures/codex-exec-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
