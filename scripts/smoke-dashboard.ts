@@ -12,6 +12,8 @@ try {
   if (ingest.exitCode !== 0) fail(ingest.stderr ?? "Dashboard smoke ingest failed.");
   const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
   if (riskyIngest.exitCode !== 0) fail(riskyIngest.stderr ?? "Dashboard risky fixture ingest failed.");
+  const sampleIngest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  if (sampleIngest.exitCode !== 0) fail(sampleIngest.stderr ?? "Dashboard sample fixture ingest failed.");
 
   const server = startDashboardServer({ port: 0 });
   try {
@@ -81,6 +83,21 @@ try {
       fail("Dashboard evidence endpoint included raw event data.");
     }
     if (evidence.riskDrilldown?.totals?.total !== 5) fail("Dashboard evidence endpoint returned wrong risk drilldown.");
+
+    const comparisonResponse = await fetch(`${server.url}/api/compare?base=risky-session&target=sample-session`);
+    if (!comparisonResponse.ok) fail(`Dashboard comparison endpoint failed: ${comparisonResponse.status}`);
+    const comparison = (await comparisonResponse.json()) as {
+      schemaVersion?: string;
+      compatible?: { sameRepo?: boolean };
+      deltas?: { riskCount?: number; highRiskCount?: number; verificationCount?: number };
+      verification?: { targetOnly?: string[] };
+    };
+    if (comparison.schemaVersion !== "agentops.comparison.v1") fail("Dashboard comparison endpoint returned wrong schema.");
+    if (comparison.compatible?.sameRepo !== true) fail("Dashboard comparison endpoint returned incompatible synthetic sessions.");
+    if (comparison.deltas?.riskCount !== -5) fail("Dashboard comparison endpoint returned wrong risk delta.");
+    if (comparison.deltas.highRiskCount !== -2) fail("Dashboard comparison endpoint returned wrong high-risk delta.");
+    if (comparison.deltas.verificationCount !== 1) fail("Dashboard comparison endpoint returned wrong verification delta.");
+    if (!comparison.verification?.targetOnly?.includes("bun test")) fail("Dashboard comparison endpoint did not include target-only verification.");
 
     const report = await fetch(`${server.url}/api/sessions/usage-session/report`).then((response) => response.text());
     if (!report.includes("# AgentOps Session Report")) fail("Dashboard report endpoint did not render Markdown report.");

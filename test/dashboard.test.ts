@@ -201,6 +201,9 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("Markdown report");
     expect(html).toContain("evidence-link");
     expect(html).toContain("JSON evidence");
+    expect(html).toContain("compare-select");
+    expect(html).toContain("Compare with");
+    expect(html).toContain("Run Comparison");
     expect(html).toContain("Merge Readiness");
     expect(html).toContain("Claim vs Evidence");
     expect(html).toContain("Risk Drilldown");
@@ -250,6 +253,57 @@ test("dashboard serves sanitized JSON evidence bundles for sessions", async () =
     const missingEvidence = await fetch(`${server.url}/api/sessions/missing-session/evidence`);
     expect(missingEvidence.status).toBe(404);
     expect(await missingEvidence.json()).toEqual({ error: "Session not found" });
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard compares two sessions with decision and evidence deltas", async () => {
+  const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  expect(riskyIngest.exitCode).toBe(0);
+  const sampleIngest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  expect(sampleIngest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const compareResponse = await fetch(`${server.url}/api/compare?base=risky-session&target=sample-session`);
+    expect(compareResponse.status).toBe(200);
+    const comparison = (await compareResponse.json()) as {
+      schemaVersion: string;
+      kind: string;
+      compatible: { sameRepo: boolean; message: string | null };
+      base: { id: string; readiness: string; riskCount: number; verificationCount: number };
+      target: { id: string; readiness: string; riskCount: number; verificationCount: number };
+      deltas: { riskCount: number; highRiskCount: number; verificationCount: number; fileCount: number };
+      risks: Array<{ severity: string; category: string; baseCount: number; targetCount: number; delta: number }>;
+      files: { baseOnly: string[]; targetOnly: string[]; common: string[] };
+      verification: { baseOnly: string[]; targetOnly: string[]; common: string[] };
+    };
+
+    expect(comparison.schemaVersion).toBe("agentops.comparison.v1");
+    expect(comparison.kind).toBe("session-comparison");
+    expect(comparison.compatible).toEqual({ sameRepo: true, message: null });
+    expect(comparison.base).toEqual(expect.objectContaining({ id: "risky-session", readiness: "blocked", riskCount: 5, verificationCount: 0 }));
+    expect(comparison.target).toEqual(expect.objectContaining({ id: "sample-session", readiness: "ready", riskCount: 0, verificationCount: 1 }));
+    expect(comparison.deltas).toEqual(expect.objectContaining({ riskCount: -5, highRiskCount: -2, verificationCount: 1, fileCount: 0 }));
+    expect(comparison.risks).toContainEqual(
+      expect.objectContaining({ severity: "high", category: "destructive-command", baseCount: 1, targetCount: 0, delta: -1 })
+    );
+    expect(comparison.files.baseOnly).toContain(".env");
+    expect(comparison.files.targetOnly).toContain("src/server.ts");
+    expect(comparison.verification.targetOnly).toContain("bun test");
+
+    const missingCompare = await fetch(`${server.url}/api/compare?base=risky-session&target=missing-session`);
+    expect(missingCompare.status).toBe(404);
+    expect(await missingCompare.json()).toEqual({ error: "Session not found" });
+
+    const sameCompare = await fetch(`${server.url}/api/compare?base=risky-session&target=risky-session`);
+    expect(sameCompare.status).toBe(400);
+    expect(await sameCompare.json()).toEqual({ error: "Choose two different sessions" });
+
+    const incompleteCompare = await fetch(`${server.url}/api/compare?base=risky-session`);
+    expect(incompleteCompare.status).toBe(400);
+    expect(await incompleteCompare.json()).toEqual({ error: "Missing base or target session" });
   } finally {
     server.stop();
   }
