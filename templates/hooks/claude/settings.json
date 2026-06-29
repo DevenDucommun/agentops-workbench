@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${CLAUDE_PROJECT_DIR}/.agentops/hooks/write-hook-envelope.mjs --source claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${CLAUDE_PROJECT_DIR}/.agentops/hooks/write-hook-envelope.mjs --source claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"$(git rev-parse --show-toplevel)/.agentops/hooks/write-hook-envelope.mjs\" --source codex",
+            "timeout": 5,
+            "statusMessage": "Recording AgentOps hook envelope"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"$(git rev-parse --show-toplevel)/.agentops/hooks/write-hook-envelope.mjs\" --source codex",
+            "timeout": 5,
+            "statusMessage": "Recording AgentOps stop envelope"
+          }
+        ]
+      }
+    ]
+  }
+}

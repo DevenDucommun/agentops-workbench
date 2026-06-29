@@ -48,6 +48,20 @@ test("detects and parses native Claude Code stream JSONL streams", () => {
   expect(transcript.events.at(-1)?.type).toBe("final_response");
 });
 
+test("detects Claude Code streams that begin with hook system events", () => {
+  const input = {
+    sourcePath: "claude-hook-started.jsonl",
+    content: [
+      JSON.stringify({ type: "system", subtype: "hook_started", session_id: "claude-hook-sample" }),
+      JSON.stringify({ type: "system", subtype: "init", session_id: "claude-hook-sample" }),
+      JSON.stringify({ type: "result", subtype: "success", session_id: "claude-hook-sample", result: "Done" })
+    ].join("\n")
+  };
+  const adapter = resolveAdapter(input);
+
+  expect(adapter.id).toBe("claude-code-stream-json");
+});
+
 test("parses native Claude Code stream edge and partial fixtures", () => {
   const edgeInput = loadAdapterInput("fixtures/claude-code-stream-edge-session.jsonl");
   const edgeAdapter = resolveAdapter(edgeInput);

@@ -11,6 +11,49 @@ experimental boundaries.
 
 ## Commands
 
+### `agentops capture`
+
+Runs a supported agent CLI in machine-readable mode and writes the JSONL stream
+to an ignored local capture file.
+
+Codex capture:
+
+```bash
+agentops capture codex "review the current change" \
+  --output .agentops/captures/codex-session.jsonl
+```
+
+Claude Code capture:
+
+```bash
+agentops capture claude "review the current change" \
+  --output .agentops/captures/claude-session.jsonl
+```
+
+Use `--ingest` to ingest the artifact immediately after a successful capture:
+
+```bash
+agentops capture codex "summarize the repo risk areas" --ingest
+agentops capture claude "review the current change" --ingest
+```
+
+Use `--dry-run` to inspect the provider command without invoking it:
+
+```bash
+agentops capture codex "review the current change" --ephemeral --dry-run
+agentops capture claude "review the current change" --include-hook-events --dry-run
+```
+
+Codex capture invokes `codex exec --json`. Supported Codex options are
+`--ephemeral`, `--sandbox`, `--model`, and `--profile`.
+
+Claude capture invokes `claude -p --output-format stream-json --verbose`.
+Supported Claude options are `--include-hook-events`, `--no-session-persistence`,
+`--model`, and `--permission-mode`.
+
+The captured JSONL artifact is written from provider stdout only. Provider
+stderr remains separate so progress output does not contaminate the artifact.
+
 ### `agentops adapters`
 
 Lists supported adapters.

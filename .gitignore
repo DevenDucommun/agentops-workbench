@@ -3,6 +3,7 @@ node_modules/
 dist/
 .agentops/
 .agents/
+Plans/
 *.db
 *.sqlite
 *.sqlite3

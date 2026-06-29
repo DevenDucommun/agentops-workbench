@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `agentops capture codex` for local `codex exec --json` capture workflows.
+- `agentops capture claude` for local Claude Code `stream-json` capture
+  workflows.
+- Opt-in Codex and Claude Code hook templates that write bounded local
+  `agentops.hook-envelope.v1` JSONL artifacts.
+- Synthetic hook-envelope fixture coverage.
+
+### Changed
+
+- Claude Code stream detection now recognizes streams that begin with hook
+  system events before the session init event.
+- Capture docs now describe first-class capture commands, stdout/stderr
+  separation, redaction review, and hook template installation boundaries.
+
 ## v1.0.0 - 2026-06-28
 
 ### Added

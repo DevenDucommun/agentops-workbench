@@ -1,6 +1,7 @@
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
 import { formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
+import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
@@ -22,6 +23,17 @@ export async function runCli(argv: string[]): Promise<CliResult> {
   try {
     if (!command || command === "--help" || command === "-h") {
       return { stdout: help(), exitCode: 0 };
+    }
+
+    if (command === "capture") {
+      const request = parseCaptureArgs(args);
+      const result = await runCapture(request);
+      let stdout = formatCaptureResult(result);
+      if (request.ingest && !result.dryRun) {
+        stdout += "\n" + ingestArtifact(result.outputPath, result.adapterId);
+      }
+      const stderr = result.stderr.trim().length > 0 ? result.stderr : undefined;
+      return { stdout, stderr, exitCode: 0 };
     }
 
     if (command === "ingest") {
@@ -219,6 +231,19 @@ function waitForShutdown(server: DashboardServer): Promise<void> {
   });
 }
 
+function ingestArtifact(sourcePath: string, adapterId: string): string {
+  const config = loadConfig("agentops.config.json");
+  const input = loadAdapterInput(sourcePath);
+  const adapter = resolveAdapter(input, adapterId);
+  const store = openStore();
+  const transcript = adapter.parse(input, config);
+  const result = ingestTranscript(store, transcript, config);
+  analyzeSession(store, result.sessionId, config);
+  store.db.close();
+
+  return `Ingested session ${result.sessionId} (${result.eventCount} events)\nAdapter: ${adapter.id}\nDatabase: ${store.path}\n`;
+}
+
 function readOption(args: string[], name: string): string | null {
   const index = args.indexOf(name);
   if (index === -1) return null;
@@ -229,6 +254,8 @@ function help(): string {
   return `AgentOps Workbench
 
 Usage:
+  agentops capture codex <prompt> [--output .agentops/captures/codex.jsonl] [--ingest]
+  agentops capture claude <prompt> [--output .agentops/captures/claude.jsonl] [--ingest]
   agentops ingest <session.jsonl>
   agentops adapters
   agentops adapters --input <session.jsonl>
@@ -242,6 +269,10 @@ Usage:
   agentops repo-report --session latest --format github
   agentops dashboard
   agentops scan-publication
+
+Capture:
+  ${captureUsage("codex")}
+  ${captureUsage("claude")}
 
 Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
