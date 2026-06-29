@@ -272,7 +272,3 @@ export PATH="$PWD/bin:$PATH"
 agentops ingest ./fixtures/sample-session.jsonl
 agentops report --session latest > report.md
 ```
-
-## Resume Story
-
-Built AgentOps Workbench, a local TypeScript/Bun observability tool for AI coding agents that ingests agent sessions, normalizes tool/file/command events, flags risk, checks test evidence, and generates engineering-ready audit reports.
