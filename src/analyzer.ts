@@ -11,10 +11,22 @@ type RiskFlag = {
 };
 
 type EvidenceClaimRule = {
+  id: EvidenceClaimId;
   category: string;
   claimPattern: RegExp;
   commandPattern: RegExp;
   label: string;
+};
+
+export type EvidenceClaimId = "test" | "lint" | "typecheck" | "build";
+
+export type EvidenceClaimEvaluation = {
+  id: EvidenceClaimId;
+  category: string;
+  label: string;
+  claimed: boolean;
+  supported: boolean;
+  matchingCommand: string | null;
 };
 
 const destructiveCommandPattern = /\b(rm\s+-rf|git\s+reset\s+--hard|git\s+clean\s+-fd|drop\s+database|truncate\s+table|mkfs|chmod\s+-R\s+777|sudo\s+rm)\b/i;
@@ -24,24 +36,28 @@ const credentialRedactionPattern = /\[REDACTED:(aws-access-key|openai-style-key|
 const privacyRedactionPattern = /\[REDACTED:(email|local-path)\]/;
 const evidenceClaimRules: EvidenceClaimRule[] = [
   {
+    id: "test",
     category: "missing-test-evidence",
     label: "test",
     claimPattern: /\b(test|tests|test suite|unit tests|integration tests)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|green)\b[\s\S]{0,80}\b(test|tests|test suite)\b/i,
     commandPattern: /\b(pytest|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|cargo\s+test|go\s+test|make\s+test|gmake\s+test|mvn\s+test|gradle\s+test)\b/i
   },
   {
+    id: "lint",
     category: "missing-lint-evidence",
     label: "lint",
     claimPattern: /\b(lint|linting|eslint)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(lint|linting|eslint)\b/i,
     commandPattern: /\b(eslint|bun\s+(?:run\s+)?lint|npm\s+(?:run\s+)?lint|pnpm\s+(?:run\s+)?lint|yarn\s+(?:run\s+)?lint|make\s+lint|gmake\s+lint)\b/i
   },
   {
+    id: "typecheck",
     category: "missing-typecheck-evidence",
     label: "typecheck",
     claimPattern: /\b(typecheck|type check|type-check|type checking|tsc)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(typecheck|type check|type-check|type checking|tsc)\b/i,
     commandPattern: /\b(tsc|bun\s+(?:run\s+)?(?:typecheck|type-check)|npm\s+(?:run\s+)?(?:typecheck|type-check)|pnpm\s+(?:run\s+)?(?:typecheck|type-check)|yarn\s+(?:run\s+)?(?:typecheck|type-check)|make\s+(?:typecheck|type-check)|gmake\s+(?:typecheck|type-check))\b/i
   },
   {
+    id: "build",
     category: "missing-build-evidence",
     label: "build",
     claimPattern: /\b(build|built|compile|compiled|compilation)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified|complete(?:d)?)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(build|compile|compilation)\b/i,
@@ -203,8 +219,31 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
   return pattern.test(command);
 }
 
+export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
+  return evidenceClaimRules.map((rule) => {
+    const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
+    return {
+      id: rule.id,
+      category: rule.category,
+      label: rule.label,
+      claimed: rule.claimPattern.test(value),
+      supported: matchingCommand !== null,
+      matchingCommand
+    };
+  });
+}
+
+export function claimsFinalSuccess(value: string): boolean {
+  return claimsSuccess(value);
+}
+
 function findUnsupportedEvidenceClaims(value: string, commands: string[]): EvidenceClaimRule[] {
-  return evidenceClaimRules.filter((rule) => rule.claimPattern.test(value) && !commands.some((command) => rule.commandPattern.test(command)));
+  const unsupported = new Set(
+    evaluateEvidenceClaims(value, commands)
+      .filter((claim) => claim.claimed && !claim.supported)
+      .map((claim) => claim.category)
+  );
+  return evidenceClaimRules.filter((rule) => unsupported.has(rule.category));
 }
 
 function claimsSuccess(value: string): boolean {

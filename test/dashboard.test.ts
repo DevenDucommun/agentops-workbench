@@ -42,6 +42,10 @@ test("dashboard API reads sessions from SQLite", async () => {
       files: unknown[];
       risks: unknown[];
       verification: unknown[];
+      decision: {
+        mergeReadiness: { status: string; missingEvidenceCount: number; verificationCount: number };
+        evidence: Array<{ id: string; status: string; command: string | null }>;
+      };
     };
     expect(detailPayload.session.id).toBe("sample-session");
     expect(detailPayload.events.length).toBeGreaterThan(0);
@@ -49,6 +53,43 @@ test("dashboard API reads sessions from SQLite", async () => {
     expect(detailPayload.files.length).toBeGreaterThan(0);
     expect(detailPayload.risks).toEqual([]);
     expect(detailPayload.verification.length).toBeGreaterThan(0);
+    expect(detailPayload.decision.mergeReadiness.status).toBe("ready");
+    expect(detailPayload.decision.mergeReadiness.missingEvidenceCount).toBe(0);
+    expect(detailPayload.decision.mergeReadiness.verificationCount).toBeGreaterThan(0);
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({ id: "test", status: "verified", command: "bun test" })
+    );
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard decision payload surfaces missing evidence and blocked readiness", async () => {
+  const ingest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/risky-session`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      decision: {
+        mergeReadiness: { status: string; highRiskCount: number; missingEvidenceCount: number };
+        evidence: Array<{ id: string; claimed: boolean; status: string; riskCategory: string | null }>;
+      };
+    };
+
+    expect(detailPayload.decision.mergeReadiness.status).toBe("blocked");
+    expect(detailPayload.decision.mergeReadiness.highRiskCount).toBeGreaterThan(0);
+    expect(detailPayload.decision.mergeReadiness.missingEvidenceCount).toBe(1);
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({
+        id: "final-success",
+        claimed: true,
+        status: "missing-evidence",
+        riskCategory: "unsupported-success-claim"
+      })
+    );
   } finally {
     server.stop();
   }
@@ -111,6 +152,8 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("adapter-filter");
     expect(html).toContain("report-link");
     expect(html).toContain("Markdown report");
+    expect(html).toContain("Merge Readiness");
+    expect(html).toContain("Claim vs Evidence");
 
     const missingResponse = await fetch(`${server.url}/api/sessions/missing-session`);
     expect(missingResponse.status).toBe(404);

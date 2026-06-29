@@ -1,4 +1,4 @@
-import { isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { generateMarkdownReport } from "./report";
@@ -37,11 +37,40 @@ type DashboardSessionDetail = {
   tools: ToolCallRecord[];
   risks: RiskFlagRecord[];
   verification: CommandRecord[];
+  decision: DashboardDecision;
 };
 
 type DashboardSessionRecord = Omit<NonNullable<ReturnType<typeof getSession>>, "source_path">;
 
 type DashboardSessionSummary = Omit<SessionSummary, "sourcePath">;
+
+type DashboardDecision = {
+  mergeReadiness: DashboardMergeReadiness;
+  evidence: DashboardEvidenceRow[];
+};
+
+type DashboardMergeReadiness = {
+  status: "ready" | "needs-review" | "blocked";
+  label: string;
+  reasons: string[];
+  highRiskCount: number;
+  mediumRiskCount: number;
+  missingEvidenceCount: number;
+  verificationCount: number;
+};
+
+type DashboardEvidenceRow = {
+  id: "test" | "lint" | "typecheck" | "build" | "final-success";
+  label: string;
+  claimed: boolean;
+  evidenceFound: boolean;
+  status: "verified" | "missing-evidence" | "not-claimed";
+  command: string | null;
+  commandStatus: string | null;
+  commandExitCode: number | null;
+  riskCategory: string | null;
+  riskMessage: string | null;
+};
 
 export function startDashboardServer(options: DashboardOptions = {}): DashboardServer {
   const host = options.host ?? "127.0.0.1";
@@ -99,16 +128,126 @@ function getDashboardSession(store: Store, sessionId: string, config: AgentOpsCo
   if (!session) return null;
 
   const commands = getCommands(store, sessionId);
+  const events = getEvents(store, sessionId);
+  const risks = getRiskFlags(store, sessionId);
+  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   return {
     session: toDashboardSessionRecord(session),
     usage: getUsageSummary(store, sessionId),
-    events: getEvents(store, sessionId),
+    events,
     commands,
     files: getFileChanges(store, sessionId),
     tools: getToolCalls(store, sessionId),
-    risks: getRiskFlags(store, sessionId),
-    verification: commands.filter((command) => isVerificationCommand(command.command, config))
+    risks,
+    verification,
+    decision: buildDashboardDecision(events, commands, risks, verification)
   };
+}
+
+function buildDashboardDecision(
+  events: StoredEvent[],
+  commands: CommandRecord[],
+  risks: RiskFlagRecord[],
+  verification: CommandRecord[]
+): DashboardDecision {
+  const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
+  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification);
+  const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
+  const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
+  const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
+  const reasons: string[] = [];
+  let status: DashboardMergeReadiness["status"] = "ready";
+
+  if (highRiskCount > 0) {
+    status = "blocked";
+    reasons.push(`${highRiskCount} high-severity risk${highRiskCount === 1 ? "" : "s"} detected.`);
+  }
+  if (mediumRiskCount > 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(`${mediumRiskCount} medium-severity risk${mediumRiskCount === 1 ? "" : "s"} detected.`);
+  }
+  if (missingEvidenceCount > 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(`${missingEvidenceCount} claimed check${missingEvidenceCount === 1 ? "" : "s"} missing command evidence.`);
+  }
+  if (verification.length === 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push("No verification command was recorded.");
+  }
+  if (!reasons.length) reasons.push("No blocking risks or missing evidence detected.");
+
+  return {
+    mergeReadiness: {
+      status,
+      label: status === "ready" ? "Ready" : status === "blocked" ? "Blocked" : "Needs review",
+      reasons,
+      highRiskCount,
+      mediumRiskCount,
+      missingEvidenceCount,
+      verificationCount: verification.length
+    },
+    evidence
+  };
+}
+
+function buildEvidenceRows(
+  finalSummary: string,
+  commands: CommandRecord[],
+  risks: RiskFlagRecord[],
+  verification: CommandRecord[]
+): DashboardEvidenceRow[] {
+  const commandStrings = commands.map((command) => command.command);
+  const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
+    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+    const risk = risks.find((entry) => entry.category === claim.category) ?? null;
+    return toEvidenceRow({
+      id: claim.id,
+      label: titleCase(claim.label),
+      claimed: claim.claimed || risk !== null,
+      evidenceFound: claim.supported,
+      command: matchingCommand,
+      risk
+    });
+  });
+  const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
+  const finalSuccessClaimed = claimsFinalSuccess(finalSummary) || successRisk !== null;
+  rows.push(
+    toEvidenceRow({
+      id: "final-success",
+      label: "Final success",
+      claimed: finalSuccessClaimed,
+      evidenceFound: verification.length > 0,
+      command: verification[0] ?? null,
+      risk: successRisk
+    })
+  );
+  return rows;
+}
+
+function toEvidenceRow(input: {
+  id: DashboardEvidenceRow["id"];
+  label: string;
+  claimed: boolean;
+  evidenceFound: boolean;
+  command: CommandRecord | null;
+  risk: RiskFlagRecord | null;
+}): DashboardEvidenceRow {
+  return {
+    id: input.id,
+    label: input.label,
+    claimed: input.claimed,
+    evidenceFound: input.evidenceFound,
+    status: input.evidenceFound ? "verified" : input.claimed ? "missing-evidence" : "not-claimed",
+    command: input.command?.command ?? null,
+    commandStatus: input.command?.status ?? null,
+    commandExitCode: input.command?.exitCode ?? null,
+    riskCategory: input.risk?.category ?? null,
+    riskMessage: input.risk?.message ?? null
+  };
+}
+
+function titleCase(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
 function toDashboardSessionSummary(session: SessionSummary): DashboardSessionSummary {
@@ -330,6 +469,12 @@ function dashboardHtml(): string {
       gap: 10px;
       margin-bottom: 18px;
     }
+    .decision-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.42fr) minmax(0, 0.58fr);
+      gap: 14px;
+      margin-bottom: 18px;
+    }
     .metric, .panel {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -350,6 +495,61 @@ function dashboardHtml(): string {
       font-weight: 750;
       letter-spacing: 0;
     }
+    .readiness-card {
+      padding: 14px;
+      min-height: 100%;
+    }
+    .readiness-card.ready { border-color: #9ed7b7; background: #f2faf5; }
+    .readiness-card.needs-review { border-color: #efd08c; background: var(--warn-soft); }
+    .readiness-card.blocked { border-color: #f0b4ae; background: var(--risk-soft); }
+    .readiness-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .readiness-title {
+      font-size: 20px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+    .reason-list {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding-left: 18px;
+      color: #344153;
+    }
+    .evidence-table {
+      display: grid;
+      gap: 1px;
+      background: #edf1f5;
+    }
+    .evidence-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.7fr) 120px minmax(160px, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-height: 56px;
+      padding: 10px 12px;
+      background: #fff;
+    }
+    .evidence-row:first-child {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      min-height: 36px;
+      background: #fbfcfd;
+    }
+    .evidence-detail {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .pill.missing { color: var(--risk); background: var(--risk-soft); }
+    .pill.neutral { color: var(--muted); background: #edf1f5; }
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.7fr);
@@ -458,6 +658,8 @@ function dashboardHtml(): string {
       .app { grid-template-columns: 1fr; }
       .sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .decision-grid { grid-template-columns: 1fr; }
+      .evidence-row { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .header { grid-template-columns: 1fr; }
     }
@@ -493,6 +695,7 @@ function dashboardHtml(): string {
         </div>
       </section>
       <section class="metric-grid" id="metrics"></section>
+      <section class="decision-grid" id="decision"></section>
       <section class="grid">
         <div class="panel">
           <div class="panel-head">
@@ -609,6 +812,7 @@ function dashboardHtml(): string {
 
     function renderEmpty() {
       document.getElementById("metrics").innerHTML = "";
+      document.getElementById("decision").innerHTML = "";
       document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops ingest first.</div>';
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
       document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';
@@ -640,12 +844,50 @@ function dashboardHtml(): string {
         metric("Verification", data.verification.length),
         metric("Tokens", data.usage.totalTokens == null ? "—" : fmt.format(data.usage.totalTokens))
       ].join("");
+      renderDecision(data.decision);
       document.getElementById("timeline-count").textContent = data.events.length + " events";
       renderTimeline(data.events);
       renderRisks(data.risks, data.verification);
       renderTools(data.tools);
       renderCommands(data.commands);
       renderFiles(data.files);
+    }
+
+    function renderDecision(decision) {
+      const container = document.getElementById("decision");
+      if (!decision) {
+        container.innerHTML = "";
+        return;
+      }
+      const readiness = decision.mergeReadiness;
+      container.innerHTML =
+        '<div class="panel readiness-card ' + escapeAttr(readiness.status) + '">' +
+          '<div class="readiness-head">' +
+            '<div><h3>Merge Readiness</h3><div class="readiness-title">' + escapeHtml(readiness.label) + '</div></div>' +
+            '<span class="pill ' + readinessPillClass(readiness.status) + '">' + escapeHtml(readiness.status) + '</span>' +
+          '</div>' +
+          '<ul class="reason-list">' + readiness.reasons.map((reason) => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' +
+        '</div>' +
+        '<div class="panel">' +
+          '<div class="panel-head"><h3>Claim vs Evidence</h3><span class="subtle">' + decision.evidence.length + ' checks</span></div>' +
+          '<div class="evidence-table">' +
+            '<div class="evidence-row"><div>Check</div><div>Status</div><div>Evidence</div></div>' +
+            decision.evidence.map(renderEvidenceRow).join("") +
+          '</div>' +
+        '</div>';
+    }
+
+    function renderEvidenceRow(row) {
+      const detail = row.command
+        ? '<code>' + escapeHtml(row.command) + '</code><div class="evidence-detail">' + escapeHtml(row.commandStatus || "unknown") + formatExit(row.commandExitCode) + '</div>'
+        : row.riskMessage
+          ? '<div class="evidence-detail">' + escapeHtml(row.riskMessage) + '</div>'
+          : '<div class="evidence-detail">No claim recorded.</div>';
+      return '<div class="evidence-row">' +
+        '<div><strong>' + escapeHtml(row.label) + '</strong><div class="evidence-detail">' + (row.claimed ? 'Claimed' : 'Not claimed') + '</div></div>' +
+        '<div><span class="pill ' + evidencePillClass(row.status) + '">' + escapeHtml(formatEvidenceStatus(row.status)) + '</span></div>' +
+        '<div>' + detail + '</div>' +
+      '</div>';
     }
 
     function renderTimeline(events) {
@@ -702,6 +944,24 @@ function dashboardHtml(): string {
 
     function metric(label, value) {
       return '<div class="metric"><div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(String(value)) + '</div></div>';
+    }
+
+    function readinessPillClass(status) {
+      if (status === "ready") return "ok";
+      if (status === "blocked") return "risk";
+      return "neutral";
+    }
+
+    function evidencePillClass(status) {
+      if (status === "verified") return "ok";
+      if (status === "missing-evidence") return "missing";
+      return "neutral";
+    }
+
+    function formatEvidenceStatus(status) {
+      if (status === "verified") return "Evidence found";
+      if (status === "missing-evidence") return "Missing evidence";
+      return "Not claimed";
     }
 
     function formatExit(exitCode) {
