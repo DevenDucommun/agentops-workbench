@@ -45,6 +45,20 @@ type DashboardSessionRecord = Omit<NonNullable<ReturnType<typeof getSession>>, "
 
 type DashboardSessionSummary = Omit<SessionSummary, "sourcePath">;
 
+type DashboardEvidenceBundle = {
+  schemaVersion: "agentops.evidence.v1";
+  kind: "session-evidence";
+  session: DashboardSessionRecord;
+  usage: UsageSummary;
+  decision: DashboardDecision;
+  riskDrilldown: DashboardRiskDrilldown;
+  verification: DashboardPublicCommand[];
+  commands: DashboardPublicCommand[];
+  files: FileChangeRecord[];
+  risks: RiskFlagRecord[];
+  events: DashboardPublicEvent[];
+};
+
 type DashboardDecision = {
   mergeReadiness: DashboardMergeReadiness;
   evidence: DashboardEvidenceRow[];
@@ -112,6 +126,10 @@ type DashboardRiskEvidence = Pick<
   "id" | "label" | "claimed" | "evidenceFound" | "status" | "command" | "riskCategory" | "riskMessage"
 >;
 
+type DashboardPublicCommand = Omit<CommandRecord, "output">;
+
+type DashboardPublicEvent = Omit<StoredEvent, "rawJson" | "rawPayloadHash">;
+
 export function startDashboardServer(options: DashboardOptions = {}): DashboardServer {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 4927;
@@ -150,11 +168,17 @@ function handleDashboardRequest(request: Request, store: Store, config: AgentOps
   if (url.pathname.startsWith("/api/sessions/")) {
     const sessionPath = url.pathname.replace("/api/sessions/", "");
     const isReport = sessionPath.endsWith("/report");
-    const sessionId = decodeURIComponent(isReport ? sessionPath.slice(0, -"/report".length) : sessionPath);
+    const isEvidence = sessionPath.endsWith("/evidence");
+    const sessionId = decodeURIComponent(isReport ? sessionPath.slice(0, -"/report".length) : isEvidence ? sessionPath.slice(0, -"/evidence".length) : sessionPath);
     if (isReport) {
       const session = getSession(store, sessionId);
       if (!session) return jsonResponse({ error: "Session not found" }, 404);
       return markdownResponse(generateMarkdownReport(store, sessionId, config));
+    }
+    if (isEvidence) {
+      const detail = getDashboardSession(store, sessionId, config);
+      if (!detail) return jsonResponse({ error: "Session not found" }, 404);
+      return evidenceResponse(toEvidenceBundle(detail));
     }
     const detail = getDashboardSession(store, sessionId, config);
     if (!detail) return jsonResponse({ error: "Session not found" }, 404);
@@ -391,6 +415,27 @@ function toDashboardSessionRecord(session: NonNullable<ReturnType<typeof getSess
   return rest;
 }
 
+function toEvidenceBundle(detail: DashboardSessionDetail): DashboardEvidenceBundle {
+  return {
+    schemaVersion: "agentops.evidence.v1",
+    kind: "session-evidence",
+    session: detail.session,
+    usage: detail.usage,
+    decision: detail.decision,
+    riskDrilldown: detail.riskDrilldown,
+    verification: detail.verification.map(toPublicCommand),
+    commands: detail.commands.map(toPublicCommand),
+    files: detail.files,
+    risks: detail.risks,
+    events: detail.events.map(({ rawJson: _rawJson, rawPayloadHash: _rawPayloadHash, ...event }) => event)
+  };
+}
+
+function toPublicCommand(command: CommandRecord): DashboardPublicCommand {
+  const { output: _output, ...rest } = command;
+  return rest;
+}
+
 function positiveLimit(value: string | null): number {
   const parsed = Number(value ?? "50");
   if (!Number.isInteger(parsed) || parsed < 1) return 50;
@@ -423,6 +468,21 @@ function markdownResponse(value: string): Response {
       "cache-control": "no-store"
     }
   });
+}
+
+function evidenceResponse(value: DashboardEvidenceBundle): Response {
+  return new Response(`${JSON.stringify(value, null, 2)}\n`, {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "content-disposition": `attachment; filename="${safeFilename(value.session.id)}-evidence.json"`
+    }
+  });
+}
+
+function safeFilename(value: string): string {
+  const sanitized = value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return sanitized || "session";
 }
 
 function dashboardHtml(): string {
@@ -869,6 +929,7 @@ function dashboardHtml(): string {
         </div>
         <div class="header-actions">
           <a class="action-button hidden" id="report-link" href="#" target="_blank" rel="noreferrer">Markdown report</a>
+          <a class="action-button hidden" id="evidence-link" href="#" target="_blank" rel="noreferrer">JSON evidence</a>
         </div>
       </section>
       <section class="metric-grid" id="metrics"></section>
@@ -996,6 +1057,7 @@ function dashboardHtml(): string {
       document.getElementById("tab-commands").innerHTML = '<div class="empty">No commands.</div>';
       document.getElementById("tab-files").innerHTML = '<div class="empty">No file changes.</div>';
       document.getElementById("report-link").classList.add("hidden");
+      document.getElementById("evidence-link").classList.add("hidden");
     }
 
     function renderDetail() {
@@ -1004,6 +1066,9 @@ function dashboardHtml(): string {
       const reportLink = document.getElementById("report-link");
       reportLink.href = "/api/sessions/" + encodeURIComponent(session.id) + "/report";
       reportLink.classList.remove("hidden");
+      const evidenceLink = document.getElementById("evidence-link");
+      evidenceLink.href = "/api/sessions/" + encodeURIComponent(session.id) + "/evidence";
+      evidenceLink.classList.remove("hidden");
       document.getElementById("session-heading").textContent = session.id;
       document.getElementById("session-task").textContent = session.task || "Untitled task";
       document.getElementById("session-meta").innerHTML = [

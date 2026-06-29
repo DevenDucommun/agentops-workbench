@@ -18,6 +18,7 @@ try {
     const html = await fetch(server.url).then((response) => response.text());
     if (!html.includes("AgentOps Workbench")) fail("Dashboard HTML shell did not render title.");
     if (!html.includes("report-link")) fail("Dashboard HTML shell did not include report link.");
+    if (!html.includes("evidence-link")) fail("Dashboard HTML shell did not include evidence link.");
     if (!html.includes("Merge Readiness")) fail("Dashboard HTML shell did not include merge-readiness panel.");
     if (!html.includes("Claim vs Evidence")) fail("Dashboard HTML shell did not include claim/evidence panel.");
     if (!html.includes("Risk Drilldown")) fail("Dashboard HTML shell did not include risk drilldown.");
@@ -61,6 +62,25 @@ try {
     if (!riskyDetail.riskDrilldown.groups?.some((group) => group.category === "unsupported-success-claim" && group.risks?.some((risk) => risk.evidence?.id === "final-success"))) {
       fail("Dashboard risk drilldown did not link missing final-success evidence.");
     }
+
+    const evidenceResponse = await fetch(`${server.url}/api/sessions/risky-session/evidence`);
+    if (!evidenceResponse.ok) fail(`Dashboard evidence endpoint failed: ${evidenceResponse.status}`);
+    if (!evidenceResponse.headers.get("content-type")?.includes("application/json")) fail("Dashboard evidence endpoint returned wrong content type.");
+    const evidence = (await evidenceResponse.json()) as {
+      schemaVersion?: string;
+      session?: { id?: string; sourcePath?: string; source_path?: string };
+      commands?: Array<{ output?: string }>;
+      events?: Array<{ rawJson?: string; rawPayloadHash?: string }>;
+      riskDrilldown?: { totals?: { total?: number } };
+    };
+    if (evidence.schemaVersion !== "agentops.evidence.v1") fail("Dashboard evidence endpoint returned wrong schema.");
+    if (evidence.session?.id !== "risky-session") fail("Dashboard evidence endpoint returned wrong session.");
+    if (evidence.session.sourcePath !== undefined || evidence.session.source_path !== undefined) fail("Dashboard evidence endpoint leaked source path.");
+    if (evidence.commands?.some((command) => command.output !== undefined)) fail("Dashboard evidence endpoint included command output.");
+    if (evidence.events?.some((event) => event.rawJson !== undefined || event.rawPayloadHash !== undefined)) {
+      fail("Dashboard evidence endpoint included raw event data.");
+    }
+    if (evidence.riskDrilldown?.totals?.total !== 5) fail("Dashboard evidence endpoint returned wrong risk drilldown.");
 
     const report = await fetch(`${server.url}/api/sessions/usage-session/report`).then((response) => response.text());
     if (!report.includes("# AgentOps Session Report")) fail("Dashboard report endpoint did not render Markdown report.");
