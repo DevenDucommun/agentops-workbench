@@ -272,7 +272,20 @@ Dependencies:
 
 ## Backlog Beyond 1.0
 
-These are intentionally outside the 1.0 commitment:
+The post-1.0 roadmap is now tracked in
+[Roadmap After 1.0](ROADMAP_POST_1_0.md).
+
+Planned milestones:
+
+- `v1.1.0`: real capture integrations for Codex, Claude Code, and safe hook
+  templates.
+- `v1.2.0`: decision-quality dashboard views for merge readiness,
+  claim-vs-evidence, risk drilldown, and run comparison.
+- `v1.3.0`: deterministic quality gates and PR/CI workflow support.
+- `v1.4.0`: distribution, install polish, platform support decisions, and
+  adoption path.
+
+Still deferred beyond the planned post-1.0 ladder:
 
 - Hosted service or team account model.
 - Multi-user auth and organization-level policy management.
@@ -280,7 +293,6 @@ These are intentionally outside the 1.0 commitment:
 - Live agent control or intervention.
 - Direct private memory-store ingestion.
 - Raw Claude Code transcript-file parsing.
-- Binary distribution for users without Bun.
 - Deep trace visualization comparable to a full observability platform.
 
 ## Historical Milestones

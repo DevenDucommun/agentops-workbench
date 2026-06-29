@@ -188,6 +188,7 @@ Core docs:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap to 1.0](docs/ROADMAP.md)
+- [Roadmap after 1.0](docs/ROADMAP_POST_1_0.md)
 - [Compatibility policy](docs/COMPATIBILITY.md)
 - [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
 - [PAI integration plan](docs/PAI_INTEGRATION.md)
