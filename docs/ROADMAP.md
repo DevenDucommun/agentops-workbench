@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.0.0`
+Current public release: `v1.1.0`
 
 Implemented:
 
@@ -277,8 +277,6 @@ The post-1.0 roadmap is now tracked in
 
 Planned milestones:
 
-- `v1.1.0`: real capture integrations for Codex, Claude Code, and safe hook
-  templates.
 - `v1.2.0`: decision-quality dashboard views for merge readiness,
   claim-vs-evidence, risk drilldown, and run comparison.
 - `v1.3.0`: deterministic quality gates and PR/CI workflow support.
@@ -296,6 +294,19 @@ Still deferred beyond the planned post-1.0 ladder:
 - Deep trace visualization comparable to a full observability platform.
 
 ## Historical Milestones
+
+### v1.1.0
+
+Delivered:
+
+- First-class `agentops capture codex` and `agentops capture claude` commands.
+- Optional capture-and-ingest flow for native Codex and Claude Code JSONL
+  artifacts.
+- Opt-in Codex and Claude Code hook templates for bounded local hook-envelope
+  JSONL.
+- Claude Code stream detection for captures that begin with hook system events.
+- Capture docs covering stdout/stderr separation, local ignored artifacts,
+  redaction review, and hook template boundaries.
 
 ### v0.5.0
 

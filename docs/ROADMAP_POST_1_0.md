@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: proposed post-`v1.0.0` roadmap.
+Status: `v1.1.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-29.
 
@@ -56,6 +56,8 @@ Reference docs:
 ### v1.1.0: Real Capture Integrations
 
 Tracking issue: [#48](https://github.com/DevenDucommun/agentops-workbench/issues/48)
+
+Status: complete in `v1.1.0`.
 
 Purpose: reduce friction between agent execution and AgentOps ingestion.
 

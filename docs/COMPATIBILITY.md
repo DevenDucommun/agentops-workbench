@@ -1,14 +1,16 @@
 # Compatibility Policy
 
-Status: stable for `v1.0.0`.
+Status: stable for `v1.1.0`.
 
-AgentOps Workbench is a local-first review tool. Version `v1.0.0` freezes the
+AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
-exports, and documented CLI workflows.
+exports, and documented CLI workflows. Version `v1.1.0` adds first-class local
+capture commands for supported native stream adapters without expanding into
+private transcript parsing or hosted capture.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.0.0`:
+The following surfaces are treated as public contracts in `v1.1.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -26,13 +28,13 @@ adapter diagnostics, new commands, or new config keys with defaults. Breaking
 changes to stable surfaces require a new major version or an explicit migration
 path.
 
-Post-`v1.0.0` capture commands are additive CLI workflows. They create local
+The `v1.1.0` capture commands are additive CLI workflows. They create local
 artifacts for existing native stream adapters and do not expand the supported
 input boundary to private transcript folders or hosted capture.
 
 ## Adapter Matrix
 
-Supported in `v1.0.0`:
+Supported in `v1.1.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -53,7 +55,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.0.0` stable contract:
+The following are intentionally outside the `v1.1.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -65,7 +67,7 @@ The following are intentionally outside the `v1.0.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.0.0`.
+local template output shape, not a live ingestion API in `v1.1.0`.
 
 ## Reports
 
