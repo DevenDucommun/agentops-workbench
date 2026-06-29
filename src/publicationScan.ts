@@ -12,7 +12,7 @@ type PublicationScanOptions = {
   rootDir?: string;
 };
 
-const ignoredDirs = new Set([".git", ".agentops", ".agents", "node_modules", "dist"]);
+const ignoredDirs = new Set([".git", ".agentops", ".agents", "Plans", "node_modules", "dist"]);
 const ignoredExtensions = new Set([".db", ".sqlite", ".sqlite3", ".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const ignoredFiles = new Set([
   "scripts/public-readiness.ts",

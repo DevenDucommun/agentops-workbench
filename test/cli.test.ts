@@ -33,6 +33,35 @@ test("lists adapters and detection diagnostics", async () => {
   expect(detected.stdout).toContain("found Codex source metadata");
 });
 
+test("prints capture dry-run commands without invoking providers", async () => {
+  const codex = await runCli([
+    "capture",
+    "codex",
+    "review current diff",
+    "--output",
+    ".agentops/captures/codex.jsonl",
+    "--ephemeral",
+    "--dry-run"
+  ]);
+  expect(codex.exitCode).toBe(0);
+  expect(codex.stdout).toContain("Capture command (dry run)");
+  expect(codex.stdout).toContain("codex exec --json --ephemeral 'review current diff'");
+  expect(codex.stdout).toContain("Adapter: codex-exec-jsonl");
+
+  const claude = await runCli([
+    "capture",
+    "claude",
+    "review current diff",
+    "--output",
+    ".agentops/captures/claude.jsonl",
+    "--include-hook-events",
+    "--dry-run"
+  ]);
+  expect(claude.exitCode).toBe(0);
+  expect(claude.stdout).toContain("claude -p --output-format stream-json --verbose --include-hook-events 'review current diff'");
+  expect(claude.stdout).toContain("Adapter: claude-code-stream-json");
+});
+
 test("validates config files", async () => {
   const defaults = await runCli(["config", "--check"]);
   expect(defaults.exitCode).toBe(0);

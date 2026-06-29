@@ -26,6 +26,10 @@ adapter diagnostics, new commands, or new config keys with defaults. Breaking
 changes to stable surfaces require a new major version or an explicit migration
 path.
 
+Post-`v1.0.0` capture commands are additive CLI workflows. They create local
+artifacts for existing native stream adapters and do not expand the supported
+input boundary to private transcript folders or hosted capture.
+
 ## Adapter Matrix
 
 Supported in `v1.0.0`:
@@ -42,6 +46,11 @@ Supported in `v1.0.0`:
 Native stream adapters are tested with synthetic fixtures and clear diagnostics
 for unsupported shapes. They are not private transcript parsers.
 
+`agentops capture codex` and `agentops capture claude` are convenience commands
+for producing these explicit local artifacts. Captured stdout is written to
+ignored local paths such as `.agentops/captures/`; provider stderr remains
+separate and is not part of the JSONL artifact.
+
 ## Unsupported Or Experimental
 
 The following are intentionally outside the `v1.0.0` stable contract:
@@ -56,7 +65,7 @@ The following are intentionally outside the `v1.0.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-future integration shape, not a live ingestion API in `v1.0.0`.
+local template output shape, not a live ingestion API in `v1.0.0`.
 
 ## Reports
 

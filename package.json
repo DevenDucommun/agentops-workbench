@@ -9,6 +9,7 @@
   "files": [
     "bin/",
     "src/",
+    "templates/",
     "fixtures/",
     "docs/INSTALLATION.md",
     "docs/CLI.md",

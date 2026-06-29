@@ -1,7 +1,7 @@
 # Hook Envelope JSONL
 
-This is the proposed sanitized hook-envelope format for future local capture.
-It is documented in `v0.8.0`; live hook capture remains deferred.
+This is the sanitized hook-envelope format for local hook capture templates.
+It is documented for bounded local artifacts; live tailing remains deferred.
 
 ## Goals
 
@@ -47,5 +47,7 @@ Each line is one JSON object:
 
 ## Status
 
-This format is a documented compatibility target. AgentOps does not yet tail or
-write hook envelopes directly.
+This format is a documented compatibility target. AgentOps ships opt-in hook
+templates under `templates/hooks/` that can write hook envelopes to ignored
+local paths. AgentOps does not yet tail hook files or ingest hook-envelope JSONL
+as a first-class adapter.

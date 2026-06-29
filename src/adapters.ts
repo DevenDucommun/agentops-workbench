@@ -115,6 +115,9 @@ export const claudeCodeStreamJsonlAdapter: Adapter = {
     if (first?.type === "system" && first?.subtype === "init" && typeof first.session_id === "string") {
       return { matched: true, confidence: 1, reason: "found Claude Code stream init event" };
     }
+    if (first?.type === "system" && typeof first.session_id === "string") {
+      return { matched: true, confidence: 0.75, reason: "found Claude Code stream system event" };
+    }
     if (
       typeof first?.session_id === "string" &&
       (first?.type === "assistant" || first?.type === "user" || first?.type === "result")

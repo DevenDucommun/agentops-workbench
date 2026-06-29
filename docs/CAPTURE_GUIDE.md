@@ -16,19 +16,39 @@ reviewed, minimized, and sanitized.
 
 ## Codex Native JSONL
 
-Codex non-interactive mode can emit JSON Lines with `codex exec --json`.
-Capture stdout to an ignored local file:
+AgentOps can run Codex non-interactive mode and capture `codex exec --json`
+stdout to an ignored local JSONL file:
+
+```bash
+./bin/agentops capture codex "summarize the repo risk areas" \
+  --output .agentops/captures/codex-session.jsonl
+```
+
+Use `--ingest` to capture and ingest in one step:
+
+```bash
+./bin/agentops capture codex "review the current change" \
+  --output .agentops/captures/codex-session.jsonl \
+  --ingest
+```
+
+For a run that should not persist Codex session rollout files, pass
+`--ephemeral` through the capture command:
+
+```bash
+./bin/agentops capture codex "review the current change" \
+  --ephemeral \
+  --output .agentops/captures/codex-session.jsonl
+```
+
+Codex progress and diagnostics are kept separate from the JSONL artifact.
+AgentOps writes only provider stdout to the capture file.
+
+You can still run the provider command manually when you need complete shell
+control:
 
 ```bash
 codex exec --json "summarize the repo risk areas" \
-  > .agentops/captures/codex-session.jsonl
-```
-
-For a run that should not persist Codex session rollout files, use
-`--ephemeral`:
-
-```bash
-codex exec --ephemeral --json "review the current change" \
   > .agentops/captures/codex-session.jsonl
 ```
 
@@ -42,7 +62,28 @@ Then ingest the capture:
 
 ## Claude Code Native Stream JSON
 
-Claude Code print mode can emit stream JSON:
+AgentOps can run Claude Code print mode and capture stream JSON to an ignored
+local JSONL file:
+
+```bash
+./bin/agentops capture claude "review the current change" \
+  --output .agentops/captures/claude-session.jsonl
+```
+
+Use `--ingest` to capture and ingest in one step:
+
+```bash
+./bin/agentops capture claude "review the current change" \
+  --output .agentops/captures/claude-session.jsonl \
+  --ingest
+```
+
+The capture command invokes `claude -p --output-format stream-json --verbose`.
+AgentOps writes only provider stdout to the capture file so progress output does
+not contaminate JSONL.
+
+You can still run the provider command manually when you need complete shell
+control:
 
 ```bash
 claude -p --output-format stream-json --verbose "review the current change" \
@@ -51,6 +92,14 @@ claude -p --output-format stream-json --verbose "review the current change" \
 
 Hook lifecycle events can be included, but they increase the sensitivity of the
 artifact and should stay local unless explicitly sanitized:
+
+```bash
+./bin/agentops capture claude "review the current change" \
+  --include-hook-events \
+  --output .agentops/captures/claude-session-hooks.jsonl
+```
+
+Equivalent manual provider command:
 
 ```bash
 claude -p --output-format stream-json --verbose --include-hook-events "review the current change" \
@@ -84,6 +133,52 @@ Expected flow:
 The exported artifact should contain bounded action evidence: session summary,
 tool calls, shell commands, file edits, verification commands, usage metadata
 when available, and the final response summary.
+
+## Hook Envelope Templates
+
+AgentOps includes opt-in hook templates for users who want bounded local hook
+envelopes. They are examples, not automatic installation steps.
+
+The helper script reads hook JSON from stdin and appends
+`agentops.hook-envelope.v1` records to `.agentops/captures/hook-events.jsonl`
+by default. It does not read transcript files. Set
+`AGENTOPS_HOOK_CAPTURE_PATH` to choose a different ignored local output path.
+
+Inspect the templates before copying them:
+
+```bash
+ls templates/hooks
+sed -n '1,160p' templates/hooks/write-hook-envelope.mjs
+sed -n '1,120p' templates/hooks/codex/hooks.json
+sed -n '1,120p' templates/hooks/claude/settings.json
+```
+
+For Codex, copy the helper and hook configuration into a trusted project after
+review:
+
+```bash
+mkdir -p .agentops/hooks .codex
+cp templates/hooks/write-hook-envelope.mjs .agentops/hooks/
+cp templates/hooks/codex/hooks.json .codex/hooks.json
+```
+
+Codex requires hook review/trust before non-managed command hooks run. Use the
+Codex hook review flow to inspect and trust the copied commands.
+
+For Claude Code, copy the helper and merge the settings template manually:
+
+```bash
+mkdir -p .agentops/hooks .claude
+cp templates/hooks/write-hook-envelope.mjs .agentops/hooks/
+cp templates/hooks/claude/settings.json .claude/settings.json
+```
+
+If `.claude/settings.json` already exists, merge the `hooks` object instead of
+overwriting the file.
+
+Command hooks run with your user permissions. Keep them opt-in, local-only, and
+easy to remove. Delete the copied settings entry and helper script to disable
+the template.
 
 ## Review Before Publishing
 

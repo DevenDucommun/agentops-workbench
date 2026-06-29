@@ -101,6 +101,8 @@ See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release arc
 Common commands:
 
 ```bash
+./bin/agentops capture codex "review the current change" --output .agentops/captures/codex-session.jsonl
+./bin/agentops capture claude "review the current change" --output .agentops/captures/claude-session.jsonl
 ./bin/agentops ingest ./fixtures/sample-session.jsonl
 ./bin/agentops adapters
 ./bin/agentops sessions
@@ -131,6 +133,16 @@ Code and Codex CLI event streams:
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream
 - `codex-jsonl`: sanitized Codex AgentOps JSONL export
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
+
+First-class capture commands can create native Codex and Claude Code artifacts:
+
+```bash
+./bin/agentops capture codex "summarize the repo risk areas" --ingest
+./bin/agentops capture claude "review the current change" --ingest
+```
+
+Raw captures are written under `.agentops/captures/` by default and should be
+reviewed before publishing or turning into fixtures.
 
 PAI-compatible post-hoc exports use the same canonical JSONL schema:
 
