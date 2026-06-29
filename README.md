@@ -56,7 +56,16 @@ bun install --frozen-lockfile
 
 The local dashboard reads from SQLite and can be demoed with synthetic fixtures:
 
-![AgentOps Workbench dashboard showing synthetic Codex exec fixture data](docs/assets/dashboard-v0.4.0.png)
+![AgentOps Workbench dashboard showing synthetic decision dashboard data](docs/assets/dashboard-v1.2.0.png)
+
+Useful synthetic dashboard states:
+
+```bash
+./bin/agentops ingest ./fixtures/sample-session.jsonl
+./bin/agentops ingest ./fixtures/needs-review-session.jsonl
+./bin/agentops ingest ./fixtures/risky-session.jsonl
+./bin/agentops dashboard
+```
 
 Generate a repo-aware PR report:
 

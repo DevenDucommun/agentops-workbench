@@ -1,0 +1,4 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"needs-review-session","agent":"synthetic-agent","model":"synthetic-model","repo":"agentops-workbench","task":"Synthetic session needing review"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Synthetic request: update documentation and summarize the result."}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"docs/example.md","operation":"edit","linesAdded":8,"linesRemoved":2,"summary":"Synthetic documentation update."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Completed successfully."}
