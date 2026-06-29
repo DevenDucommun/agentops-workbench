@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { analyzeSession } from "../src/analyzer";
+import { analyzeSession, claimsFinalSuccess, evaluateEvidenceClaims } from "../src/analyzer";
 import { defaultConfig, type AgentOpsConfig } from "../src/config";
 import { parseJsonlTranscript } from "../src/parser";
 import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
@@ -82,6 +82,18 @@ test("accepts specific evidence claims with matching commands", () => {
   expect(getRiskFlags(store, "supported-claims")).toEqual([]);
 
   store.db.close();
+});
+
+test("evaluates final response evidence claims for dashboard reuse", () => {
+  const claims = evaluateEvidenceClaims("Tests passed. Lint is clean, and typecheck passed.", ["bun test"]);
+
+  expect(claims).toContainEqual(
+    expect.objectContaining({ id: "test", claimed: true, supported: true, matchingCommand: "bun test" })
+  );
+  expect(claims).toContainEqual(expect.objectContaining({ id: "lint", claimed: true, supported: false }));
+  expect(claims).toContainEqual(expect.objectContaining({ id: "typecheck", claimed: true, supported: false }));
+  expect(claims).toContainEqual(expect.objectContaining({ id: "build", claimed: false, supported: false }));
+  expect(claimsFinalSuccess("Completed successfully.")).toBe(true);
 });
 
 test("accepts missing timestamps", () => {
