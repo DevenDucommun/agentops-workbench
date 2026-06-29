@@ -10,6 +10,8 @@ process.env.AGENTOPS_DB = join(mkdtempSync(join(tmpdir(), "agentops-dashboard-sm
 try {
   const ingest = await runCli(["ingest", "fixtures/usage-session.jsonl"]);
   if (ingest.exitCode !== 0) fail(ingest.stderr ?? "Dashboard smoke ingest failed.");
+  const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  if (riskyIngest.exitCode !== 0) fail(riskyIngest.stderr ?? "Dashboard risky fixture ingest failed.");
 
   const server = startDashboardServer({ port: 0 });
   try {
@@ -18,6 +20,7 @@ try {
     if (!html.includes("report-link")) fail("Dashboard HTML shell did not include report link.");
     if (!html.includes("Merge Readiness")) fail("Dashboard HTML shell did not include merge-readiness panel.");
     if (!html.includes("Claim vs Evidence")) fail("Dashboard HTML shell did not include claim/evidence panel.");
+    if (!html.includes("Risk Drilldown")) fail("Dashboard HTML shell did not include risk drilldown.");
 
     const detailResponse = await fetch(`${server.url}/api/sessions/usage-session`);
     if (!detailResponse.ok) fail(`Dashboard session API failed: ${detailResponse.status}`);
@@ -35,6 +38,28 @@ try {
     if (detail.decision.mergeReadiness.missingEvidenceCount !== 0) fail("Dashboard session API returned wrong missing evidence count.");
     if (!detail.decision.evidence?.some((row) => row.id === "final-success" && row.status === "verified")) {
       fail("Dashboard session API did not include verified final-success evidence.");
+    }
+
+    const riskyResponse = await fetch(`${server.url}/api/sessions/risky-session`);
+    if (!riskyResponse.ok) fail(`Dashboard risky session API failed: ${riskyResponse.status}`);
+    const riskyDetail = (await riskyResponse.json()) as {
+      riskDrilldown?: {
+        totals?: { high?: number; medium?: number; total?: number };
+        groups?: Array<{
+          category?: string;
+          risks?: Array<{ command?: { command?: string } | null; file?: { path?: string } | null; evidence?: { id?: string } | null }>;
+        }>;
+      };
+    };
+    if (riskyDetail.riskDrilldown?.totals?.total !== 5) fail("Dashboard risky session returned wrong risk total.");
+    if (!riskyDetail.riskDrilldown.groups?.some((group) => group.category === "destructive-command" && group.risks?.some((risk) => risk.command?.command === "rm -rf ./dist"))) {
+      fail("Dashboard risk drilldown did not link the destructive command.");
+    }
+    if (!riskyDetail.riskDrilldown.groups?.some((group) => group.category === "sensitive-file" && group.risks?.some((risk) => risk.file?.path === ".env"))) {
+      fail("Dashboard risk drilldown did not link the sensitive file.");
+    }
+    if (!riskyDetail.riskDrilldown.groups?.some((group) => group.category === "unsupported-success-claim" && group.risks?.some((risk) => risk.evidence?.id === "final-success"))) {
+      fail("Dashboard risk drilldown did not link missing final-success evidence.");
     }
 
     const report = await fetch(`${server.url}/api/sessions/usage-session/report`).then((response) => response.text());

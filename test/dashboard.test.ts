@@ -77,6 +77,19 @@ test("dashboard decision payload surfaces missing evidence and blocked readiness
         mergeReadiness: { status: string; highRiskCount: number; missingEvidenceCount: number };
         evidence: Array<{ id: string; claimed: boolean; status: string; riskCategory: string | null }>;
       };
+      riskDrilldown: {
+        totals: { high: number; medium: number; low: number; total: number };
+        groups: Array<{
+          severity: string;
+          category: string;
+          count: number;
+          risks: Array<{
+            command: { command: string } | null;
+            file: { path: string; linesAdded: number | null; linesRemoved: number | null } | null;
+            evidence: { id: string; status: string } | null;
+          }>;
+        }>;
+      };
     };
 
     expect(detailPayload.decision.mergeReadiness.status).toBe("blocked");
@@ -88,6 +101,40 @@ test("dashboard decision payload surfaces missing evidence and blocked readiness
         claimed: true,
         status: "missing-evidence",
         riskCategory: "unsupported-success-claim"
+      })
+    );
+    expect(detailPayload.riskDrilldown.totals).toEqual({ high: 2, medium: 3, low: 0, total: 5 });
+    expect(detailPayload.riskDrilldown.groups).toContainEqual(
+      expect.objectContaining({
+        severity: "high",
+        category: "destructive-command",
+        count: 1,
+        risks: [expect.objectContaining({ command: expect.objectContaining({ command: "rm -rf ./dist" }) })]
+      })
+    );
+    expect(detailPayload.riskDrilldown.groups).toContainEqual(
+      expect.objectContaining({
+        severity: "high",
+        category: "sensitive-file",
+        risks: [expect.objectContaining({ file: expect.objectContaining({ path: ".env" }) })]
+      })
+    );
+    expect(detailPayload.riskDrilldown.groups).toContainEqual(
+      expect.objectContaining({
+        severity: "medium",
+        category: "large-churn",
+        risks: [
+          expect.objectContaining({
+            file: expect.objectContaining({ path: "deploy/production.yaml", linesAdded: 600, linesRemoved: 25 })
+          })
+        ]
+      })
+    );
+    expect(detailPayload.riskDrilldown.groups).toContainEqual(
+      expect.objectContaining({
+        severity: "medium",
+        category: "unsupported-success-claim",
+        risks: [expect.objectContaining({ evidence: expect.objectContaining({ id: "final-success", status: "missing-evidence" }) })]
       })
     );
   } finally {
@@ -154,6 +201,7 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("Markdown report");
     expect(html).toContain("Merge Readiness");
     expect(html).toContain("Claim vs Evidence");
+    expect(html).toContain("Risk Drilldown");
 
     const missingResponse = await fetch(`${server.url}/api/sessions/missing-session`);
     expect(missingResponse.status).toBe(404);
