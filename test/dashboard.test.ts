@@ -199,6 +199,8 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("adapter-filter");
     expect(html).toContain("report-link");
     expect(html).toContain("Markdown report");
+    expect(html).toContain("evidence-link");
+    expect(html).toContain("JSON evidence");
     expect(html).toContain("Merge Readiness");
     expect(html).toContain("Claim vs Evidence");
     expect(html).toContain("Risk Drilldown");
@@ -206,6 +208,48 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     const missingResponse = await fetch(`${server.url}/api/sessions/missing-session`);
     expect(missingResponse.status).toBe(404);
     expect(await missingResponse.json()).toEqual({ error: "Session not found" });
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard serves sanitized JSON evidence bundles for sessions", async () => {
+  const ingest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const evidenceResponse = await fetch(`${server.url}/api/sessions/risky-session/evidence`);
+    expect(evidenceResponse.status).toBe(200);
+    expect(evidenceResponse.headers.get("content-type")).toContain("application/json");
+    expect(evidenceResponse.headers.get("content-disposition")).toContain('filename="risky-session-evidence.json"');
+    const payload = (await evidenceResponse.json()) as {
+      schemaVersion: string;
+      kind: string;
+      session: { id: string; source_path?: string; sourcePath?: string };
+      decision: { mergeReadiness: { status: string }; evidence: unknown[] };
+      riskDrilldown: { totals: { total: number } };
+      verification: Array<{ command: string; output?: string }>;
+      commands: Array<{ command: string; output?: string }>;
+      events: Array<{ summary: string; rawJson?: string; rawPayloadHash?: string }>;
+    };
+
+    expect(payload.schemaVersion).toBe("agentops.evidence.v1");
+    expect(payload.kind).toBe("session-evidence");
+    expect(payload.session.id).toBe("risky-session");
+    expect(payload.session.source_path).toBeUndefined();
+    expect(payload.session.sourcePath).toBeUndefined();
+    expect(payload.decision.mergeReadiness.status).toBe("blocked");
+    expect(payload.decision.evidence.length).toBeGreaterThan(0);
+    expect(payload.riskDrilldown.totals.total).toBe(5);
+    expect(payload.commands).toContainEqual(expect.objectContaining({ command: "rm -rf ./dist" }));
+    expect(payload.commands.every((command) => command.output === undefined)).toBe(true);
+    expect(payload.events.every((event) => event.rawJson === undefined && event.rawPayloadHash === undefined)).toBe(true);
+    expect(payload.events.map((event) => event.summary)).toContain("Completed successfully.");
+
+    const missingEvidence = await fetch(`${server.url}/api/sessions/missing-session/evidence`);
+    expect(missingEvidence.status).toBe(404);
+    expect(await missingEvidence.json()).toEqual({ error: "Session not found" });
   } finally {
     server.stop();
   }
