@@ -1,6 +1,6 @@
 # Research And Landscape
 
-Last reviewed: 2026-06-27.
+Last reviewed: 2026-06-29.
 
 ## Summary
 
@@ -63,6 +63,68 @@ Build a local workbench first, not a hosted tracing platform.
 
 The public story is: "AgentOps Workbench turns coding-agent sessions into reviewable engineering evidence."
 
+## Post-1.0 Research Update
+
+The post-1.0 roadmap should prioritize real capture and decision-quality
+review over generic observability breadth.
+
+### Codex
+
+Codex exposes useful capture and integration surfaces for AgentOps:
+
+- `codex exec --json` for machine-readable non-interactive runs.
+- Hook lifecycle events for local validation, logging, and policy scripts.
+- MCP configuration for connecting tools and context.
+
+Implication: AgentOps should add `agentops capture codex` and Codex hook
+templates before pursuing hosted or broad trace export work.
+
+Source: https://developers.openai.com/codex/codex-manual.md
+
+### Claude Code
+
+Claude Code documents stream output and hook surfaces that can produce bounded
+local artifacts.
+
+Implication: AgentOps should add `agentops capture claude` and opt-in Claude
+Code hook templates that write sanitized local JSONL envelopes.
+
+Sources:
+
+- https://docs.anthropic.com/en/docs/claude-code/cli-reference
+- https://docs.anthropic.com/en/docs/claude-code/hooks
+
+### MCP
+
+MCP is a good future integration layer because it is designed around connecting
+agents to external tools and context with explicit user consent and tool
+boundaries.
+
+Implication: AgentOps should consider a read-only MCP server for recent
+sessions, reports, and quality-gate results after capture and dashboard
+workflows are stronger.
+
+Sources:
+
+- https://modelcontextprotocol.io/docs/getting-started/intro
+- https://modelcontextprotocol.io/specification/2025-06-18
+
+### Decision Dashboard
+
+The next dashboard step should not be generic trace browsing. Existing
+observability products already cover traces, spans, evaluations, dashboards,
+prompt workflows, and production monitoring.
+
+AgentOps should instead answer:
+
+- Is the final claim supported by evidence?
+- Are high-risk files or commands involved?
+- What verification is missing?
+- What changed compared with a previous run?
+- Is this ready to attach to a PR or CI check?
+
+This keeps AgentOps differentiated as a local repo-aware decision layer.
+
 ## Source Notes
 
-The sources above were reviewed from official documentation or official project repositories on 2026-06-27. The landscape is moving quickly, so major roadmap decisions should be rechecked before public launch.
+The sources above were reviewed from official documentation or official project repositories on 2026-06-27 and refreshed on 2026-06-29. The landscape is moving quickly, so major roadmap decisions should be rechecked before implementation milestones start.

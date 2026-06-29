@@ -44,7 +44,8 @@ for (const required of [
   "fixtures/claude-code-stream-session.jsonl",
   "docs/INSTALLATION.md",
   "docs/CLI.md",
-  "docs/COMPATIBILITY.md"
+  "docs/COMPATIBILITY.md",
+  "docs/ROADMAP_POST_1_0.md"
 ]) {
   if (!files.has(required)) fail(`Package dry run is missing required file: ${required}`);
 }
