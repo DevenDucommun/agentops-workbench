@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -16,6 +16,7 @@
     "docs/COMPATIBILITY.md",
     "docs/CONFIGURATION.md",
     "docs/DASHBOARD.md",
+    "docs/QUALITY_GATES.md",
     "docs/REPO_REPORT.md",
     "docs/ROADMAP_POST_1_0.md",
     "docs/CAPTURE_GUIDE.md",

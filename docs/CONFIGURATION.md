@@ -37,6 +37,14 @@ and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
   "evidence": {
     "verificationCommands": ["test", "lint", "typecheck", "build"]
   },
+  "gates": {
+    "requireVerification": true,
+    "requiredVerificationCommands": [],
+    "maxHighSeverityRisks": 0,
+    "allowUnsupportedFinalClaims": false,
+    "maxGeneratedFileChurnLines": 0,
+    "generatedFilePatterns": ["generated", "dist", "build"]
+  },
   "suppressions": [
     {
       "category": "large-churn",
@@ -54,6 +62,7 @@ Different repos have different risk profiles:
 - generated files may be expected in one repo and risky in another
 - deployment paths differ by team
 - test commands differ by stack
+- CI gates differ by repository
 - line churn thresholds differ by project
 - some findings need explicit suppressions
 

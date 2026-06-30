@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.4.0`
+Current public release: `v1.5.0`
 
 Implemented:
 
@@ -52,6 +52,10 @@ Implemented:
   reports, exports, migrations, and privacy defaults.
 - Simplified `agentops run`, `agentops review`, and `agentops import`
   workflows, with `agentops ingest` retained as a compatibility alias.
+- Best-effort forensic text import with explicit observed vs inferred evidence
+  labels for lower-fidelity transcript review.
+- Deterministic `agentops gate` checks with text, JSON, and GitHub-ready
+  output for local CI/PR workflows.
 
 Current boundaries:
 

@@ -41,6 +41,7 @@ for (const required of [
   "src/capture.ts",
   "src/claudeStream.ts",
   "src/codexExec.ts",
+  "src/gate.ts",
   "templates/hooks/write-hook-envelope.mjs",
   "templates/hooks/codex/hooks.json",
   "templates/hooks/claude/settings.json",
@@ -53,6 +54,7 @@ for (const required of [
   "docs/INSTALLATION.md",
   "docs/CLI.md",
   "docs/COMPATIBILITY.md",
+  "docs/QUALITY_GATES.md",
   "docs/ROADMAP_POST_1_0.md"
 ]) {
   if (!files.has(required)) fail(`Package dry run is missing required file: ${required}`);

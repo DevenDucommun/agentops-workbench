@@ -34,6 +34,7 @@ runAndExpect(["bun", "./bin/agentops", "config", "--check"], "AgentOps config OK
 runAndExpect(["bun", "./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", packageDir);
 runAndExpect(["bun", "./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", packageDir);
 runAndExpect(["bun", "./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", packageDir);
+runAndExpect(["bun", "./bin/agentops", "gate", "sample-session"], "Status: PASSED", packageDir);
 runAndExpect(["bun", "./bin/agentops", "export", "--session", "latest", "--format", "json"], "agentops.export.v1", packageDir);
 
 if (!existsSync(dbPath)) fail(`Expected package smoke database to exist at ${dbPath}`);

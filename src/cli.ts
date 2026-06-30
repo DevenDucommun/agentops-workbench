@@ -5,6 +5,7 @@ import { analyzeSession } from "./analyzer";
 import { formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
+import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
 import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
@@ -227,6 +228,28 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return outputResult(output, outPath, "JSON export");
     }
 
+    if (command === "gate") {
+      const sessionArg = readSessionArg(args);
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      const format = readOption(args, "--format") ?? "text";
+      const outPath = readOption(args, "--out");
+      if (!["text", "json", "github"].includes(format)) {
+        return { stderr: "Usage: agentops gate [latest|session-id] [--format text|json|github] [--out file]\n", exitCode: 1 };
+      }
+      const config = loadConfig(configPath);
+      const store = openStore();
+      const sessionId = getSessionId(store, sessionArg);
+      if (!sessionId) {
+        store.db.close();
+        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+      }
+      const result = evaluateQualityGate(store, sessionId, config, { gitChanges: getGitChangesOrEmpty() });
+      store.db.close();
+      const output = format === "json" ? formatGateJson(result) : format === "github" ? formatGateGithub(result) : formatGateText(result);
+      const written = outputResult(output, outPath, format === "github" ? "quality gate PR comment" : "quality gate");
+      return { ...written, exitCode: result.status === "passed" ? 0 : 1 };
+    }
+
     if (command === "dashboard") {
       if (args.includes("--check")) {
         const host = readOption(args, "--host") ?? "127.0.0.1";
@@ -350,6 +373,14 @@ function ingestArtifact(sourcePath: string, adapterId: string): string {
   return output;
 }
 
+function getGitChangesOrEmpty() {
+  try {
+    return getGitChanges();
+  } catch {
+    return [];
+  }
+}
+
 function formatIngestResult(store: Store, sessionId: string, eventCount: number, adapterId: string): string {
   const lines = [`Ingested session ${sessionId} (${eventCount} events)`, `Adapter: ${adapterId}`, `Database: ${store.path}`];
   if (adapterId === "forensic-text") {
@@ -400,6 +431,8 @@ Usage:
   agentops import <session.jsonl> --adapter pai-export-jsonl
   agentops report latest
   agentops export latest --format json
+  agentops gate latest
+  agentops gate latest --format json --out agentops-gate.json
   agentops repo-report latest
   agentops repo-report latest --format github
   agentops dashboard

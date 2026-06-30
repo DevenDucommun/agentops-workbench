@@ -16,6 +16,14 @@ export type AgentOpsConfig = {
   evidence: {
     verificationCommands: string[];
   };
+  gates: {
+    requireVerification: boolean;
+    requiredVerificationCommands: string[];
+    maxHighSeverityRisks: number;
+    allowUnsupportedFinalClaims: boolean;
+    maxGeneratedFileChurnLines: number;
+    generatedFilePatterns: string[];
+  };
   suppressions: RiskSuppression[];
 };
 
@@ -48,6 +56,14 @@ export const defaultConfig: AgentOpsConfig = {
   },
   evidence: {
     verificationCommands: ["test", "check", "lint", "typecheck", "verify", "build"]
+  },
+  gates: {
+    requireVerification: true,
+    requiredVerificationCommands: [],
+    maxHighSeverityRisks: 0,
+    allowUnsupportedFinalClaims: false,
+    maxGeneratedFileChurnLines: 0,
+    generatedFilePatterns: ["generated", "dist", "build"]
   },
   suppressions: []
 };
@@ -123,6 +139,10 @@ function normalizeConfig(value: unknown): AgentOpsConfig {
       ...defaultConfig.evidence,
       ...(isRecord(parsed.evidence) ? parsed.evidence : {})
     },
+    gates: {
+      ...defaultConfig.gates,
+      ...(isRecord(parsed.gates) ? parsed.gates : {})
+    },
     suppressions: normalizeSuppressions(parsed.suppressions)
   };
 }
@@ -163,6 +183,19 @@ function validateConfigShape(value: unknown): string[] {
       errors.push("evidence must be an object.");
     } else {
       requireStringArray(value.evidence, "evidence.verificationCommands", "verificationCommands", errors);
+    }
+  }
+
+  if (value.gates !== undefined) {
+    if (!isRecord(value.gates)) {
+      errors.push("gates must be an object.");
+    } else {
+      requireBoolean(value.gates, "gates.requireVerification", "requireVerification", errors);
+      requireBoolean(value.gates, "gates.allowUnsupportedFinalClaims", "allowUnsupportedFinalClaims", errors);
+      requireNonNegativeInteger(value.gates, "gates.maxHighSeverityRisks", "maxHighSeverityRisks", errors);
+      requireNonNegativeInteger(value.gates, "gates.maxGeneratedFileChurnLines", "maxGeneratedFileChurnLines", errors);
+      requireStringArray(value.gates, "gates.requiredVerificationCommands", "requiredVerificationCommands", errors);
+      requireStringArray(value.gates, "gates.generatedFilePatterns", "generatedFilePatterns", errors);
     }
   }
 
@@ -219,6 +252,12 @@ function normalizeSuppressions(value: unknown): RiskSuppression[] {
 function requireBoolean(record: Record<string, unknown>, label: string, key: string, errors: string[]): void {
   if (record[key] !== undefined && typeof record[key] !== "boolean") {
     errors.push(`${label} must be a boolean.`);
+  }
+}
+
+function requireNonNegativeInteger(record: Record<string, unknown>, label: string, key: string, errors: string[]): void {
+  if (record[key] !== undefined && (typeof record[key] !== "number" || !Number.isInteger(record[key]) || record[key] < 0)) {
+    errors.push(`${label} must be a non-negative integer.`);
   }
 }
 

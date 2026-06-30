@@ -1,6 +1,7 @@
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
+import { evaluateQualityGate, formatGateGithub } from "./gate";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
 import type { GitChange } from "./git";
 import type { UsageSummary } from "./types";
@@ -157,6 +158,7 @@ export function generateGithubRepoComment(
   const sections = [
     "## AgentOps Workbench Report",
     `**Status:** ${status}`,
+    formatGateGithub(evaluateQualityGate(store, sessionId, config, { gitChanges })).trim(),
     table([
       ["Session", data.session.id],
       ["Task", data.session.task ?? "Unknown"],
