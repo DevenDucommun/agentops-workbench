@@ -15,16 +15,16 @@ local implementation details, not a stable remote API. See
 Ingest synthetic demo sessions:
 
 ```bash
-./bin/agentops import ./fixtures/sample-session.jsonl
-./bin/agentops import ./fixtures/needs-review-session.jsonl
-./bin/agentops import ./fixtures/risky-session.jsonl
-./bin/agentops import ./fixtures/forensic-terminal-transcript.txt
+./bin/agentops audit ./fixtures/sample-session.jsonl
+./bin/agentops audit ./fixtures/needs-review-session.jsonl
+./bin/agentops audit ./fixtures/risky-session.jsonl
+./bin/agentops audit ./fixtures/forensic-terminal-transcript.txt
 ```
 
 Start the local server:
 
 ```bash
-./bin/agentops dashboard
+./bin/agentops open
 ```
 
 Default URL:
@@ -36,13 +36,13 @@ http://127.0.0.1:4927
 Use a different local port when needed:
 
 ```bash
-./bin/agentops dashboard --port 4930
+./bin/agentops open --port 4930
 ```
 
 Validate the dashboard configuration without starting a long-running server:
 
 ```bash
-./bin/agentops dashboard --check
+./bin/agentops open --check
 ```
 
 ## Scope
@@ -118,10 +118,10 @@ credentials, or sensitive command output in public screenshots.
 
 Basic manual verification:
 
-1. Run `./bin/agentops import ./fixtures/sample-session.jsonl`.
-2. Run `./bin/agentops import ./fixtures/needs-review-session.jsonl`.
-3. Run `./bin/agentops import ./fixtures/risky-session.jsonl`.
-4. Run `./bin/agentops dashboard`.
+1. Run `./bin/agentops audit ./fixtures/sample-session.jsonl`.
+2. Run `./bin/agentops audit ./fixtures/needs-review-session.jsonl`.
+3. Run `./bin/agentops audit ./fixtures/risky-session.jsonl`.
+4. Run `./bin/agentops open`.
 5. Open `http://127.0.0.1:4927`.
 6. Confirm the session list shows `sample-session`, `needs-review-session`,
    and `risky-session`.

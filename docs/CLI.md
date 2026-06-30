@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.10.0`. See
+The documented command surface is stable in `v1.11.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -13,28 +13,34 @@ experimental boundaries.
 
 ## Simple Workflow
 
-Use AgentOps in one of two modes.
+Use AgentOps in one of two modes, then inspect, check, save, or open the
+results.
 
 For a new audited run, start the agent through AgentOps:
 
 ```bash
 agentops run codex "review the current diff"
-agentops review
-agentops dashboard
+agentops look
+agentops check
+agentops save
 ```
 
 or:
 
 ```bash
 agentops run claude "review the current diff"
-agentops review
-agentops dashboard
+agentops look
+agentops check
+agentops save
 ```
 
 For after-the-fact audit, import an existing session artifact:
 
 ```bash
 agentops audit path/to/session.jsonl
+agentops look
+agentops check
+agentops save
 ```
 
 AgentOps does not need a background service. For live capture, it must launch
@@ -52,9 +58,12 @@ For a local synthetic demo:
 ```bash
 agentops init
 agentops demo
-agentops review sample-session
-agentops dashboard
+agentops look
+agentops check
+agentops open
 ```
+
+Running `agentops` with no arguments prints `agentops status`.
 
 ### `agentops init`
 
@@ -87,19 +96,93 @@ before running checks.
 
 ### `agentops demo`
 
-Imports synthetic demo sessions and prints the fastest review, gate, and
-dashboard next steps.
+Imports synthetic demo sessions and prints the fastest inspection, quality
+check, and dashboard next steps.
 
 ```bash
 agentops demo
 agentops demo --serve
-agentops review sample-session
-agentops gate sample-session
-agentops dashboard --host 127.0.0.1 --port 4927
+agentops look sample-session
+agentops check sample-session
+agentops open --host 127.0.0.1 --port 4927
 ```
 
 The demo uses only public synthetic fixtures and prints the dashboard URL. With
 `--serve`, it starts the local dashboard after importing fixtures.
+
+### `agentops status`
+
+Prints the latest session, quality gate summary, recent sessions, and next
+recommended commands.
+
+```bash
+agentops
+agentops status
+```
+
+### `agentops look`
+
+Shows what happened in the latest session or a named session.
+
+```bash
+agentops look
+agentops look sample-session
+```
+
+`agentops show` is kept as a compatibility alias.
+
+### `agentops check`
+
+Runs deterministic quality gates for the latest session or a named session.
+
+```bash
+agentops check
+agentops check sample-session
+agentops check --json
+agentops check --save
+```
+
+`--save` writes `agentops-gate.json`.
+
+### `agentops save`
+
+Writes review artifacts with default filenames so users do not need to remember
+format and output flags.
+
+```bash
+agentops save
+```
+
+Default bundle:
+
+- `agentops-report.md`
+- `agentops-pr-comment.md`
+- `agentops-gate.json`
+- `agentops-session.json`
+
+Specific saves:
+
+```bash
+agentops save report
+agentops save pr
+agentops save json
+agentops save repo-json
+agentops save trace
+agentops save gate
+agentops save pr custom-pr-comment.md
+```
+
+### `agentops open`
+
+Starts the local dashboard.
+
+```bash
+agentops open
+agentops open --port 4930
+agentops open --check
+```
+
+`agentops dashboard` is kept as a compatibility alias.
 
 ### `agentops mcp`
 
@@ -141,6 +224,9 @@ This is the recommended entrypoint for normal use. It is equivalent to
 
 Runs a supported agent CLI in machine-readable mode and writes the JSONL stream
 to an ignored local capture file.
+
+This is an advanced compatibility command. Most users should use
+`agentops run codex|claude <prompt>`.
 
 Codex capture:
 
@@ -202,6 +288,9 @@ before import.
 ### `agentops import <session.jsonl|transcript.txt>`
 
 Imports a post-hoc session artifact into the local SQLite store.
+
+This is an advanced compatibility command. Most users should use
+`agentops audit <artifact>`.
 
 ```bash
 agentops import ./fixtures/sample-session.jsonl

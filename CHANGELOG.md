@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.11.0 - 2026-06-30
+
+### Added
+
+- `agentops status`, `agentops look`, `agentops check`, `agentops open`, and
+  `agentops save` as simplified intent-based commands for regular use.
+- Running `agentops` with no arguments now prints the current status and next
+  recommended commands.
+- `agentops save` writes a default local bundle: report, PR comment, quality
+  gate JSON, and session JSON.
+
+### Changed
+
+- Top-level help now leads with the simplified product workflow and moves
+  lower-level commands under advanced compatibility.
+
 ## v1.10.0 - 2026-06-30
 
 ### Added

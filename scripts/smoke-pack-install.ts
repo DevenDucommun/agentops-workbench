@@ -38,8 +38,12 @@ runAndExpect(["bun", "./bin/agentops", "demo"], "sample-session", packageDir);
 runAndExpect(["bun", "./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", packageDir);
 runAndExpect(["bun", "./bin/agentops", "audit", "./fixtures/sample-session.jsonl"], "AgentOps Audit", packageDir);
 runAndExpect(["bun", "./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", packageDir);
+runAndExpect(["bun", "./bin/agentops", "status"], "AgentOps Status", packageDir);
+runAndExpect(["bun", "./bin/agentops", "look"], "AgentOps Session Inspection", packageDir);
 runAndExpect(["bun", "./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", packageDir);
+runAndExpect(["bun", "./bin/agentops", "check"], "Status: PASSED", packageDir);
 runAndExpect(["bun", "./bin/agentops", "gate", "sample-session"], "Status: PASSED", packageDir);
+runAndExpect(["bun", "./bin/agentops", "save"], "Saved AgentOps bundle", packageDir);
 runAndExpect(["bun", "./bin/agentops", "export", "--session", "latest", "--format", "json"], "agentops.export.v1", packageDir);
 runAndExpect(["bun", "./bin/agentops", "export", "--session", "latest", "--format", "openinference-json"], "agentops.openinference.v1", packageDir);
 

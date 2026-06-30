@@ -48,8 +48,8 @@ Implemented commands include:
 - `agentops repo-report --format github`
 - `agentops export --format json`
 - `agentops config --check`
-- `agentops dashboard --check`
-- `agentops dashboard`
+- `agentops open --check`
+- `agentops open`
 - `agentops scan-publication`
 
 ### Ingestion Adapters

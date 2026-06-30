@@ -9,8 +9,8 @@ upload transcripts, command output, raw event payloads, or reports.
 ## Basic Use
 
 ```bash
-./bin/agentops import ./fixtures/sample-session.jsonl
-./bin/agentops gate latest
+./bin/agentops audit ./fixtures/sample-session.jsonl
+./bin/agentops check
 ```
 
 The command exits with:
@@ -21,13 +21,13 @@ The command exits with:
 Machine-readable output:
 
 ```bash
-./bin/agentops gate latest --format json --out agentops-gate.json
+./bin/agentops check --save
 ```
 
 GitHub-ready comment body:
 
 ```bash
-./bin/agentops gate latest --format github --out agentops-gate-comment.md
+./bin/agentops save pr
 ```
 
 The GitHub format is stdout/file only. AgentOps does not post comments.
@@ -85,9 +85,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: ./bin/agentops import ./fixtures/sample-session.jsonl
-      - run: ./bin/agentops gate latest --format json --out agentops-gate.json
-      - run: ./bin/agentops repo-report latest --format github --out agentops-pr-comment.md
+      - run: ./bin/agentops audit ./fixtures/sample-session.jsonl
+      - run: ./bin/agentops check --save
+      - run: ./bin/agentops save pr
       - uses: actions/upload-artifact@v4
         if: always()
         with:

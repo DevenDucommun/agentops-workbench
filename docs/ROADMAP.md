@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.10.0`
+Current public release: `v1.11.0`
 
 Implemented:
 
@@ -65,6 +65,9 @@ Implemented:
 - Read-only MCP server for local session lookup, inspection, reports, quality
   gates, and repo reports.
 - Deterministic OpenInference-style JSON span export.
+- Simplified product commands: `agentops status`, `agentops look`,
+  `agentops check`, `agentops save`, and `agentops open`, with older
+  flag-heavy commands retained as advanced compatibility commands.
 
 Current boundaries:
 
@@ -304,6 +307,8 @@ Planned milestones:
   one-command demo serving.
 - `v1.9.0`: read-only MCP server for local session/report lookup.
 - `v1.10.0`: OpenInference-style JSON span export.
+- `v1.11.0`: simplified product command surface for status, inspection,
+  quality checks, saved review bundles, and dashboard launch.
 
 Still deferred beyond the planned post-1.0 ladder:
 

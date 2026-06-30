@@ -1,6 +1,6 @@
 # Packaging Strategy
 
-Status: source-package strategy validated through `v1.10.0`.
+Status: source-package strategy validated through `v1.11.0`.
 
 ## Current Distribution Decision
 
@@ -9,8 +9,9 @@ distribution path for the current release line. This keeps installation aligned
 with the tested Bun runtime, local SQLite behavior, and repo-aware git
 features.
 
-Npm package publication remains deferred until there is enough external demand
-to support package-install expectations across platforms.
+Npm package publication remains deferred until after the simplified CLI surface
+has settled. The next packaging candidate is a source package that keeps the
+current Bun runtime requirement.
 
 ## Next Candidate
 

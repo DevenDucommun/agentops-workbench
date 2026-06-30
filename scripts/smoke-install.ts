@@ -37,6 +37,9 @@ runAndExpect(["agentops", "import", "fixtures/claude-code-stream-edge-session.js
 runAndExpect(["agentops", "import", "fixtures/codex-exec-edge-session.jsonl"], "Ingested session codex-edge-sample");
 runAndExpect(["agentops", "import", "fixtures/usage-session.jsonl"], "Ingested session usage-session");
 runAndExpect(["agentops", "sessions"], "usage-session");
+runAndExpect(["agentops", "status"], "AgentOps Status");
+runAndExpect(["agentops", "look"], "AgentOps Session Inspection");
+runAndExpect(["agentops", "check"], "Status: PASSED");
 runAndExpect(["agentops", "review"], "Total Tokens");
 runAndExpect(["agentops", "gate", "latest"], "Status: PASSED");
 runAndExpect(["agentops", "review", "latest", "--format", "markdown"], "## Usage");
@@ -45,6 +48,7 @@ runAndExpect(["agentops", "repo-report", "latest", "--format", "github"], "Agent
 runAndExpect(["agentops", "pr", "latest"], "AgentOps Workbench Report");
 runAndExpect(["agentops", "export", "latest", "--format", "json"], "agentops.export.v1");
 runAndExpect(["agentops", "export", "latest", "--format", "openinference-json"], "agentops.openinference.v1");
+runAndExpect(["agentops", "save", "trace", "--out", join(tmpdir(), `agentops-trace-${Date.now()}.json`)], "Wrote OpenInference export");
 runAndExpect(["agentops", "export", "latest", "--format", "json", "--scope", "repo"], "\"git\"");
 runAndExpect(["agentops", "dashboard", "--check"], "Dashboard configuration OK");
 runAndExpect(["agentops", "import", "fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text");

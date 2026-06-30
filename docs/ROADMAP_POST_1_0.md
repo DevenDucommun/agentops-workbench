@@ -1,8 +1,9 @@
 # Roadmap After 1.0
 
-Status: `v1.10.0` complete; later milestones proposed.
+Status: `v1.11.0` complete; later milestones proposed.
 
-Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
+Last reviewed: 2026-06-30. Updated for the completed CLI simplification
+milestone.
 
 ## Product Direction
 
@@ -386,9 +387,43 @@ Exit criteria:
 - Existing `agentops.export.v1` JSON remains compatible.
 - No new upload or collector configuration is introduced.
 
+### v1.11.0: CLI Command Simplification
+
+Tracking issue: [#92](https://github.com/DevenDucommun/agentops-workbench/issues/92)
+
+Status: complete in `v1.11.0`.
+
+Purpose: make AgentOps feel like one product workflow instead of a collection
+of low-level primitives and format flags.
+
+Scope:
+
+- Add `agentops status` as the default no-argument summary and next-step view.
+- Add `agentops look` for the latest or selected session inspection.
+- Add `agentops check` for deterministic quality gates without remembering
+  `gate latest`.
+- Add `agentops save` for default local review bundles, with short save kinds
+  for report, PR comment, JSON, repo JSON, OpenInference trace, and gate JSON.
+- Add `agentops open` as the regular dashboard launch command.
+- Keep `review`, `inspect`, `report`, `export`, `gate`, `repo-report`,
+  `dashboard`, and other lower-level commands as advanced compatibility
+  commands.
+- Update README, CLI docs, installation docs, release checklist, and smoke
+  coverage around the simplified surface.
+
+Exit criteria:
+
+- A regular user can remember the product loop: run or audit, status, look,
+  check, save, open.
+- Running `agentops` with no arguments prints useful status instead of a long
+  command catalog.
+- Default saves create useful filenames without requiring `--format` or
+  `--out`.
+- Existing advanced commands continue to work for automation and compatibility.
+
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.10.0`
+These are intentionally not planned until the `v1.1.0` through `v1.11.0`
 sequence proves demand:
 
 - OTLP/protobuf export and collector upload.

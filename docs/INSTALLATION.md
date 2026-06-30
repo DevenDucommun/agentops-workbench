@@ -20,14 +20,15 @@ bun install --frozen-lockfile
 ./bin/agentops --help
 ./bin/agentops init
 ./bin/agentops demo
-./bin/agentops review sample-session
-./bin/agentops gate sample-session
+./bin/agentops look
+./bin/agentops check
+./bin/agentops save
 ```
 
-Repo-aware reports require a git checkout:
+Repo-aware advanced reports require a git checkout:
 
 ```bash
-./bin/agentops pr --out pr-comment.md
+./bin/agentops repo-report latest --out repo-report.md
 ```
 
 ## PATH-Based Local Command
@@ -39,8 +40,8 @@ export PATH="$PWD/bin:$PATH"
 agentops --help
 agentops init
 agentops demo
-agentops review sample-session
-agentops sessions
+agentops status
+agentops look
 ```
 
 This is the currently recommended way to use the `agentops` command from a clone.
@@ -74,8 +75,9 @@ This works from an extracted source archive:
 bun install --frozen-lockfile
 ./bin/agentops init
 ./bin/agentops demo
-./bin/agentops review sample-session
-./bin/agentops audit ./fixtures/sample-session.jsonl --out audit.md
+./bin/agentops look
+./bin/agentops check
+./bin/agentops save
 ```
 
 This does not work from a source archive because `.git` is not present:
@@ -109,8 +111,8 @@ runs.
 ## Packaging Strategy
 
 The current distribution path remains source-first: clone the repository or use
-the GitHub release source archive. An npm source package remains the next
-candidate, but it is not published yet; publishing should happen only through a
+the GitHub release source archive. Npm publication remains deferred until the
+simplified command surface has settled; publishing should happen only through a
 release checklist decision.
 
 The package still requires Bun at runtime because `bin/agentops` uses:
@@ -148,5 +150,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.10.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.11.0` command,
 adapter, schema, and packaging boundaries.
