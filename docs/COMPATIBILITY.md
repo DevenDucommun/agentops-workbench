@@ -60,10 +60,10 @@ The `v1.2.0` dashboard views and evidence bundles are additive local review
 workflows. Browser JSON endpoints are intended for the local dashboard and are
 not a remote API compatibility guarantee.
 
-The `v1.3.0` `run`, `review`, and `import` commands are additive convenience
-workflows over the existing capture, ingest, inspect, report, repo-report, and
-export behavior. `agentops ingest` remains supported as a compatibility alias
-for `agentops import`.
+The `v1.3.0` `run`, `review`, and `import` commands were additive convenience
+workflows over that release's capture, ingest, inspect, report, repo-report, and
+export behavior. (`review` was removed in `v2.0.0`; `import` and its `ingest`
+alias were removed in `v3.0.0` — use `agentops audit --quiet`.)
 
 The `v1.5.0` `gate` command is an additive deterministic check over stored
 session analysis and current git metadata. Gate JSON uses
@@ -101,7 +101,8 @@ advanced commands `review`, `inspect`, `report`, `export`, `gate`,
 `repo-report`, `pr`, `dashboard`, plus the `ingest` and `show` aliases. Each is
 reached through a simple verb: `look` (inspect/review), `save report|json|repo-json|trace|pr`
 (report/export/repo-report/pr), `check` (gate, now with `--format text|json|github`),
-and `open` (dashboard). `import` and `capture` are retained. Two niche
+and `open` (dashboard). (`import` and `capture` were retained in `v2.0.0` but
+removed in `v3.0.0` — see the `v3.0.0` note below.) Two niche
 sub-options are not re-exposed on the simple verbs: the Markdown-only repo
 report (`repo-report --format markdown`) and `export --include-raw-payloads`;
 their library functions remain. `v2.0.0` also consolidates the per-source JSONL
