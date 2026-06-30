@@ -6,9 +6,9 @@ The Markdown repo report and GitHub-format stdout output are stable local
 report surfaces in `v1.0.0`. The command does not post comments or call GitHub.
 
 ```bash
-agentops ingest ./fixtures/sample-session.jsonl
-agentops repo-report --session latest > repo-report.md
-agentops repo-report --session latest --format github > pr-comment.md
+agentops import ./fixtures/sample-session.jsonl
+agentops repo-report latest --out repo-report.md
+agentops repo-report latest --format github --out pr-comment.md
 ```
 
 ## What It Shows

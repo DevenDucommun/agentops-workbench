@@ -6,7 +6,7 @@ import type { UsageSummary } from "./types";
 
 export function generateSessionList(store: Store, limit = 20): string {
   const sessions = listSessions(store, limit);
-  if (sessions.length === 0) return "No sessions found. Run `agentops ingest <session.jsonl>` first.\n";
+  if (sessions.length === 0) return "No sessions found. Run `agentops import <session.jsonl>` first.\n";
 
   const rows = sessions.map((session) => [
     session.id,

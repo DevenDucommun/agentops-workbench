@@ -3,7 +3,7 @@
 This checklist must pass before every public release. See
 [Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
 
-Status: reusable and exercised through `v1.2.0`; v0.1.0 public readiness
+Status: reusable and exercised through `v1.3.0`; v0.1.0 public readiness
 passed on 2026-06-28. See
 [v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
 
@@ -38,10 +38,11 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `bun run smoke:pack-install`.
 - [x] Fresh clone can run `bun run smoke:large-session`.
 - [x] Fresh clone can run `bun run smoke:dashboard`.
-- [x] Fresh clone can run `./bin/agentops ingest ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops report --session latest > report.md`.
-- [x] Fresh clone can run `./bin/agentops repo-report --session latest > repo-report.md`.
-- [x] Fresh clone can run `./bin/agentops repo-report --session latest --format github > pr-comment.md`.
+- [x] Fresh clone can run `./bin/agentops import ./fixtures/sample-session.jsonl`.
+- [x] Fresh clone can run `./bin/agentops review`.
+- [x] Fresh clone can run `./bin/agentops review latest --format markdown --out report.md`.
+- [x] Fresh clone can run `./bin/agentops repo-report latest --out repo-report.md`.
+- [x] Fresh clone can run `./bin/agentops repo-report latest --format github --out pr-comment.md`.
 - [x] Fresh clone can run `./bin/agentops scan-publication`.
 - [x] README explains the product, current CLI, planning docs, and privacy posture.
 - [x] Architecture docs explain adapters, storage, analyzers, reports, and PAI boundaries.
@@ -70,7 +71,7 @@ passed on 2026-06-28. See
 After creating a GitHub release, verify the generated source archive:
 
 ```bash
-bun ./scripts/smoke-release-archive.ts v1.2.0
+bun ./scripts/smoke-release-archive.ts v1.3.0
 ```
 
 The archive does not include `.git`, so `repo-report` remains a git-checkout
@@ -84,10 +85,10 @@ fixtures.
 bun install --frozen-lockfile
 bun run ci
 bun run smoke:large-session
-./bin/agentops ingest ./fixtures/sample-session.jsonl
-./bin/agentops report --session latest > /tmp/agentops-report.md
-./bin/agentops repo-report --session latest > /tmp/agentops-repo-report.md
-./bin/agentops repo-report --session latest --format github > /tmp/agentops-pr-comment.md
+./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops review latest --format markdown --out /tmp/agentops-report.md
+./bin/agentops repo-report latest --out /tmp/agentops-repo-report.md
+./bin/agentops repo-report latest --format github --out /tmp/agentops-pr-comment.md
 ./bin/agentops scan-publication
 test -s /tmp/agentops-report.md
 test -s /tmp/agentops-repo-report.md

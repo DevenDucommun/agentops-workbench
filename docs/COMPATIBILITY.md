@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.2.0`.
+Status: stable for `v1.3.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -8,11 +8,13 @@ exports, and documented CLI workflows. Version `v1.1.0` added first-class
 local capture commands for supported native stream adapters without expanding
 into private transcript parsing or hosted capture. Version `v1.2.0` adds the
 local Decision Dashboard for merge-readiness review, claim/evidence checks,
-risk drilldown, evidence exports, and two-session comparison.
+risk drilldown, evidence exports, and two-session comparison. Version `v1.3.0`
+adds simplified `run`, `review`, `import`, and `--out` CLI workflows without
+changing the underlying artifact boundary.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.2.0`:
+The following surfaces are treated as public contracts in `v1.3.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -40,9 +42,14 @@ The `v1.2.0` dashboard views and evidence bundles are additive local review
 workflows. Browser JSON endpoints are intended for the local dashboard and are
 not a remote API compatibility guarantee.
 
+The `v1.3.0` `run`, `review`, and `import` commands are additive convenience
+workflows over the existing capture, ingest, inspect, report, repo-report, and
+export behavior. `agentops ingest` remains supported as a compatibility alias
+for `agentops import`.
+
 ## Adapter Matrix
 
-Supported in `v1.2.0`:
+Supported in `v1.3.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -63,9 +70,10 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.2.0` stable contract:
+The following are intentionally outside the `v1.3.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
+- Best-effort plain terminal transcript import without provenance labels.
 - Private PAI memory store reads.
 - Live hook tailing or real-time agent control.
 - Hosted dashboard operation, auth, teams, or remote API compatibility.
@@ -75,7 +83,7 @@ The following are intentionally outside the `v1.2.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.2.0`.
+local template output shape, not a live ingestion API in `v1.3.0`.
 
 ## Reports
 

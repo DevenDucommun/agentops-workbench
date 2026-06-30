@@ -16,17 +16,16 @@ git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
 bun install --frozen-lockfile
 ./bin/agentops --help
-./bin/agentops ingest ./fixtures/sample-session.jsonl
-./bin/agentops sessions
-./bin/agentops inspect --session latest
-./bin/agentops report --session latest > report.md
+./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops review
+./bin/agentops review latest --format markdown --out report.md
 ```
 
 Repo-aware reports require a git checkout:
 
 ```bash
-./bin/agentops repo-report --session latest > repo-report.md
-./bin/agentops repo-report --session latest --format github > pr-comment.md
+./bin/agentops repo-report latest --out repo-report.md
+./bin/agentops repo-report latest --format github --out pr-comment.md
 ```
 
 ## PATH-Based Local Command
@@ -36,7 +35,8 @@ For local use without typing `./bin/` each time:
 ```bash
 export PATH="$PWD/bin:$PATH"
 agentops --help
-agentops ingest ./fixtures/sample-session.jsonl
+agentops import ./fixtures/sample-session.jsonl
+agentops review
 agentops sessions
 ```
 
@@ -63,16 +63,15 @@ This works from an extracted source archive:
 
 ```bash
 bun install --frozen-lockfile
-./bin/agentops ingest ./fixtures/sample-session.jsonl
-./bin/agentops sessions
-./bin/agentops inspect --session latest
-./bin/agentops report --session latest > report.md
+./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops review
+./bin/agentops review latest --format markdown --out report.md
 ```
 
 This does not work from a source archive because `.git` is not present:
 
 ```bash
-./bin/agentops repo-report --session latest
+./bin/agentops repo-report latest
 ```
 
 Use a fresh git clone when you need `repo-report`.
@@ -112,5 +111,5 @@ equivalent to:
 bun run smoke:install
 ```
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.2.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.3.0` command,
 adapter, schema, and packaging boundaries.
