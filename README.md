@@ -103,11 +103,23 @@ do not include observable commands.
 
 ## Dashboard Preview
 
-The local dashboard reads from SQLite and can be demoed with synthetic fixtures:
+The local dashboard reads from SQLite and surfaces a merge-readiness decision,
+claim-vs-evidence checks, and a risk drilldown for each session. The synthetic
+demo fixtures exercise three decision states:
 
-![AgentOps Workbench dashboard showing synthetic decision dashboard data](docs/assets/dashboard-v1.2.0.png)
+**Ready** — verification evidence present, no blocking risks:
 
-Useful synthetic dashboard states:
+![AgentOps Workbench dashboard — a session in the ready state with verification evidence and no blocking risks](docs/assets/dashboard-v2.0.0-ready.png)
+
+**Needs review** — at least one risk to look at before merging:
+
+![AgentOps Workbench dashboard — a session in the needs-review state with a flagged risk](docs/assets/dashboard-v2.0.0-needs-review.png)
+
+**Blocked** — high-severity risks or unsupported success claims:
+
+![AgentOps Workbench dashboard — a session in the blocked state showing high-severity risks and missing evidence](docs/assets/dashboard-v2.0.0-blocked.png)
+
+Reproduce these states locally:
 
 ```bash
 ./bin/agentops audit ./fixtures/sample-session.jsonl
