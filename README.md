@@ -305,37 +305,53 @@ Override the database path when needed:
 AGENTOPS_DB=/path/to/agentops.db ./bin/agentops sessions
 ```
 
-## Planning And Architecture
+## Documentation
 
-Core docs:
+Current user-facing docs:
+
+- [Installation](docs/INSTALLATION.md)
+- [CLI reference](docs/CLI.md)
+- [Capture guide](docs/CAPTURE_GUIDE.md)
+- [Dashboard](docs/DASHBOARD.md)
+- [MCP server](docs/MCP.md)
+- [Quality gates](docs/QUALITY_GATES.md)
+- [Exports](docs/EXPORT.md)
+- [Repo report](docs/REPO_REPORT.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Demo artifacts](docs/demo/README.md)
+
+Architecture and compatibility:
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap to 1.0](docs/ROADMAP.md)
-- [Roadmap after 1.0](docs/ROADMAP_POST_1_0.md)
 - [Compatibility policy](docs/COMPATIBILITY.md)
-- [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
-- [PAI integration plan](docs/PAI_INTEGRATION.md)
+- [Event schema](docs/EVENT_SCHEMA.md)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md)
-- [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
-- [Capture guide](docs/CAPTURE_GUIDE.md)
-- [JSON export](docs/EXPORT.md)
-- [Quality gates](docs/QUALITY_GATES.md)
-- [Demo artifacts](docs/demo/README.md)
 - [Hook envelope](docs/HOOK_ENVELOPE.md)
 - [Standards mapping](docs/STANDARDS_MAPPING.md)
-- [Event schema](docs/EVENT_SCHEMA.md)
-- [Configuration strategy](docs/CONFIGURATION.md)
-- [CLI reference](docs/CLI.md)
-- [Installation](docs/INSTALLATION.md)
 - [Packaging strategy](docs/PACKAGING.md)
-- [Dashboard](docs/DASHBOARD.md)
-- [Repo report](docs/REPO_REPORT.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
+
+Planning and release docs:
+
+- [Roadmap to 1.0](docs/ROADMAP.md)
+- [Roadmap after 1.0](docs/ROADMAP_POST_1_0.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Release template](docs/RELEASE_TEMPLATE.md)
 - [Changelog](CHANGELOG.md)
 
-Project planning artifacts:
+Research and historical context:
 
-- [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
+- [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
+- [PAI integration plan](docs/PAI_INTEGRATION.md)
+- [Project brief](docs/PROJECT_BRIEF.md)
+- [Preliminary plan](docs/PRELIMINARY_PLAN.md)
+- [Decision 0001: post-hoc PAI first](docs/decisions/0001-posthoc-pai-first.md)
+- [v0.1.0 release checklist](docs/releases/v0.1.0-checklist.md)
+- [v0.1.0 readiness result](docs/releases/v0.1.0-readiness-result.md)
+
+Spec Kit artifacts:
+
 - [Spec Kit constitution](.specify/memory/constitution.md)
 - [MVP spec](specs/001-agentops-workbench/spec.md)
 - [MVP implementation plan](specs/001-agentops-workbench/plan.md)
