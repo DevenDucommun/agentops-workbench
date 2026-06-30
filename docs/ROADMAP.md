@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.7.1`
+Current public release: `v1.8.0`
 
 Implemented:
 
@@ -60,6 +60,8 @@ Implemented:
   reproducible synthetic demo artifacts under `docs/demo/`.
 - Guided first-run commands: `agentops doctor`, `agentops demo`,
   `agentops audit`, and `agentops pr`.
+- Guided setup automation: `agentops init`, `agentops doctor --fix`, and
+  `agentops demo --serve`.
 
 Current boundaries:
 
@@ -295,6 +297,8 @@ Planned milestones:
   adoption path.
 - `v1.7.0`: guided first-run simplification for setup, demo, audit, and
   PR-ready report workflows.
+- `v1.8.0`: guided setup automation for local init, safe doctor fixes, and
+  one-command demo serving.
 
 Still deferred beyond the planned post-1.0 ladder:
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.8.0 - 2026-06-30
+
+### Added
+
+- `agentops init` for one-command local setup: create `.agentops/`, ensure
+  `.agentops/` is ignored, write a default config when missing, run readiness
+  checks, and print one recommended next command.
+- `agentops doctor --fix` for the same safe local setup fixes without
+  overwriting existing config.
+- `agentops demo --serve` to import synthetic demo sessions and start the
+  local dashboard in one command.
+
 ## v1.7.1 - 2026-06-30
 
 ### Changed

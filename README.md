@@ -10,7 +10,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.7.1`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.7.1)
+- Public release: [`v1.8.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.8.0)
 - Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
@@ -44,7 +44,7 @@ Run locally:
 git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
 bun install --frozen-lockfile
-./bin/agentops doctor
+./bin/agentops init
 ./bin/agentops demo
 ./bin/agentops review sample-session
 ./bin/agentops dashboard
@@ -163,8 +163,11 @@ Common commands:
 ```bash
 ./bin/agentops run codex "review the current change"
 ./bin/agentops run claude "review the current change"
+./bin/agentops init
 ./bin/agentops doctor
+./bin/agentops doctor --fix
 ./bin/agentops demo
+./bin/agentops demo --serve
 ./bin/agentops audit ./fixtures/sample-session.jsonl
 ./bin/agentops review
 ./bin/agentops review latest --format markdown --out report.md
@@ -190,7 +193,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.7.1`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.8.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
