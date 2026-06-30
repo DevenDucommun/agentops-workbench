@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.1.0` complete; later milestones proposed.
+Status: `v1.2.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-29.
 
@@ -94,6 +94,8 @@ Deferred:
 ### v1.2.0: Decision Dashboard
 
 Tracking issue: [#49](https://github.com/DevenDucommun/agentops-workbench/issues/49)
+
+Status: complete in `v1.2.0`.
 
 Purpose: make the dashboard answer review and merge-readiness questions, not
 just display session data.

@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.0 - 2026-06-29
+
+### Added
+
+- Decision Dashboard merge-readiness summary for selected sessions.
+- Claim-vs-evidence matrix for tests, lint, typecheck, build, and final
+  success claims.
+- Risk severity drilldown with linked event, command, file, and evidence
+  context.
+- Two-session run comparison for readiness, risks, verification, files,
+  commands, usage, and risk categories.
+- Dashboard JSON evidence bundle export endpoint and `JSON evidence` link.
+- Synthetic dashboard demo states for ready, needs-review, blocked, empty, and
+  comparison flows.
+- Current v1.2 dashboard screenshot asset.
+
+### Changed
+
+- Dashboard smoke now covers decision payloads, evidence export hygiene, risk
+  drilldown, run comparison, and representative demo states.
+- Dashboard docs and README now describe the v1.2 decision dashboard workflow.
+
 ## v1.1.0 - 2026-06-29
 
 ### Added

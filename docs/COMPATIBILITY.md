@@ -1,16 +1,18 @@
 # Compatibility Policy
 
-Status: stable for `v1.1.0`.
+Status: stable for `v1.2.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
-exports, and documented CLI workflows. Version `v1.1.0` adds first-class local
-capture commands for supported native stream adapters without expanding into
-private transcript parsing or hosted capture.
+exports, and documented CLI workflows. Version `v1.1.0` added first-class
+local capture commands for supported native stream adapters without expanding
+into private transcript parsing or hosted capture. Version `v1.2.0` adds the
+local Decision Dashboard for merge-readiness review, claim/evidence checks,
+risk drilldown, evidence exports, and two-session comparison.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.1.0`:
+The following surfaces are treated as public contracts in `v1.2.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -19,6 +21,8 @@ The following surfaces are treated as public contracts in `v1.1.0`:
 - CLI commands documented in [CLI reference](CLI.md).
 - Supported adapter identifiers documented in [Adapter strategy](ADAPTER_STRATEGY.md).
 - Session Markdown report and repo Markdown report section structure.
+- Local dashboard CLI entrypoint and supported local UI workflows documented in
+  [Dashboard](DASHBOARD.md).
 - Local SQLite migration behavior for databases created by pre-1.0 releases.
 - Privacy defaults: raw payload storage off, raw payload hashing on, redaction
   before storage on.
@@ -32,9 +36,13 @@ The `v1.1.0` capture commands are additive CLI workflows. They create local
 artifacts for existing native stream adapters and do not expand the supported
 input boundary to private transcript folders or hosted capture.
 
+The `v1.2.0` dashboard views and evidence bundles are additive local review
+workflows. Browser JSON endpoints are intended for the local dashboard and are
+not a remote API compatibility guarantee.
+
 ## Adapter Matrix
 
-Supported in `v1.1.0`:
+Supported in `v1.2.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -55,7 +63,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.1.0` stable contract:
+The following are intentionally outside the `v1.2.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -67,7 +75,7 @@ The following are intentionally outside the `v1.1.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.1.0`.
+local template output shape, not a live ingestion API in `v1.2.0`.
 
 ## Reports
 

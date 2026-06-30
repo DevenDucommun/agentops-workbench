@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.1.0`
+Current public release: `v1.2.0`
 
 Implemented:
 
@@ -29,9 +29,10 @@ Implemented:
 - Public-readiness scan, CI, branch protection, GitGuardian checks, secret
   scanning, and Dependabot security updates.
 - Local dashboard backed by SQLite, including session filtering, timeline,
-  risk/evidence summaries, command/file drilldowns, usage summary, and
-  MCP/tool usage map.
-- Dashboard Markdown report export for selected sessions.
+  merge-readiness summary, claim/evidence matrix, risk drilldown, run
+  comparison, command/file drilldowns, usage summary, and MCP/tool usage map.
+- Dashboard Markdown report export and JSON evidence export for selected
+  sessions.
 - Safe capture guide for native Claude Code, Codex, and PAI/KAI-style
   post-hoc artifacts.
 - Specific missing-evidence flags for test, lint, typecheck, and build claims.
@@ -277,8 +278,6 @@ The post-1.0 roadmap is now tracked in
 
 Planned milestones:
 
-- `v1.2.0`: decision-quality dashboard views for merge readiness,
-  claim-vs-evidence, risk drilldown, and run comparison.
 - `v1.3.0`: deterministic quality gates and PR/CI workflow support.
 - `v1.4.0`: distribution, install polish, platform support decisions, and
   adoption path.
@@ -294,6 +293,21 @@ Still deferred beyond the planned post-1.0 ladder:
 - Deep trace visualization comparable to a full observability platform.
 
 ## Historical Milestones
+
+### v1.2.0
+
+Delivered:
+
+- Decision Dashboard merge-readiness summary for selected sessions.
+- Claim-vs-evidence matrix for tests, lint, typecheck, build, and final
+  success claims.
+- Risk severity drilldown with affected event, command, file, and evidence
+  context.
+- Two-session run comparison for risk, verification, file, command, and usage
+  deltas.
+- Dashboard Markdown and sanitized JSON evidence export links.
+- Synthetic dashboard demo states and smoke coverage for empty, ready,
+  needs-review, blocked, export, and comparison flows.
 
 ### v1.1.0
 
