@@ -13,6 +13,14 @@
   "evidence": {
     "verificationCommands": ["test", "check", "lint", "typecheck", "verify", "build"]
   },
+  "gates": {
+    "requireVerification": true,
+    "requiredVerificationCommands": [],
+    "maxHighSeverityRisks": 0,
+    "allowUnsupportedFinalClaims": false,
+    "maxGeneratedFileChurnLines": 0,
+    "generatedFilePatterns": ["generated", "dist", "build"]
+  },
   "suppressions": [
     {
       "category": "large-churn",

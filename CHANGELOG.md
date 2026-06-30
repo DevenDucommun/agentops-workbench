@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.5.0 - 2026-06-30
+
+### Added
+
+- `agentops gate [latest|session-id]` deterministic quality gates with text,
+  JSON, and GitHub-format output.
+- Configurable gate policy for observed verification evidence, required
+  verification command substrings, high-severity risk thresholds,
+  generated-file churn, and unsupported final claims.
+- GitHub-format repo reports now include quality gate status.
+- Quality gate CI documentation for local GitHub Actions workflows that upload
+  sanitized reports without uploading raw transcripts.
+
 ## v1.4.0 - 2026-06-30
 
 ### Added

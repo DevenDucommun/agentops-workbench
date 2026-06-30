@@ -41,6 +41,7 @@ runAndExpect(["./bin/agentops", "import", "./fixtures/claude-code-stream-session
 runAndExpect(["./bin/agentops", "import", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "gate", "sample-session"], "Status: PASSED", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "review", "latest", "--format", "markdown"], "AgentOps Session Report", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "dashboard", "--check"], "Dashboard configuration OK", { cwd: checkoutDir });
 runAndExpect(["bun", "run", "smoke:package"], "Package smoke passed", { cwd: checkoutDir });

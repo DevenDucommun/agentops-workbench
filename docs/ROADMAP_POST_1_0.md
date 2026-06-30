@@ -1,9 +1,8 @@
 # Roadmap After 1.0
 
-Status: `v1.4.0` complete; later milestones proposed.
+Status: `v1.5.0` complete; later milestones proposed.
 
-Last reviewed: 2026-06-29. Updated for capture/import UX investigation on
-2026-06-30.
+Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
 ## Product Direction
 
@@ -230,6 +229,8 @@ Deferred:
 
 ### v1.5.0: Quality Gates And PR Workflow
 
+Status: complete in `v1.5.0`.
+
 Purpose: turn AgentOps reports into repeatable local or CI checks once capture
 and import semantics are clear.
 
@@ -237,9 +238,8 @@ Scope:
 
 - Add configurable quality gates for required verification commands, maximum
   high-severity risks, generated-file churn, and unsupported final claims.
-- Add `agentops gate --session latest` and repo-aware gate output.
-- Add GitHub Action documentation or a small action wrapper for local report
-  generation in CI.
+- Add `agentops gate [latest|session-id]` with repo-aware gate output.
+- Add GitHub Actions documentation for local report generation in CI.
 - Add PR-comment body generation that includes pass/fail gate status.
 - Add machine-readable gate JSON for downstream workflows.
 

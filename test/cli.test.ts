@@ -97,6 +97,11 @@ test("validates config files", async () => {
         redactBeforeStore: false,
         hashRawPayload: false
       },
+      gates: {
+        requireVerification: "yes",
+        maxHighSeverityRisks: -1,
+        requiredVerificationCommands: ["test", 123]
+      },
       suppressions: [{ category: "large-churn" }]
     })
   );
@@ -105,6 +110,9 @@ test("validates config files", async () => {
   expect(invalid.exitCode).toBe(1);
   expect(invalid.stderr).toContain("privacy.storeRawPayload requires privacy.redactBeforeStore");
   expect(invalid.stderr).toContain("privacy.storeRawPayload requires privacy.hashRawPayload");
+  expect(invalid.stderr).toContain("gates.requireVerification must be a boolean");
+  expect(invalid.stderr).toContain("gates.maxHighSeverityRisks must be a non-negative integer");
+  expect(invalid.stderr).toContain("gates.requiredVerificationCommands must be an array of non-empty strings");
   expect(invalid.stderr).toContain("suppressions[0].reason is required");
 });
 
@@ -235,4 +243,30 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   expect(report.exitCode).toBe(0);
   expect(report.stdout).toContain("weak-forensic-transcript");
   expect(report.stdout).toContain("No test, lint, typecheck, or verification command recorded.");
+});
+
+test("runs quality gates with CI-friendly exit codes and formats", async () => {
+  const sample = await runCli(["import", "fixtures/sample-session.jsonl"]);
+  expect(sample.exitCode).toBe(0);
+
+  const passed = await runCli(["gate", "sample-session"]);
+  expect(passed.exitCode).toBe(0);
+  expect(passed.stdout).toContain("Status: PASSED");
+  expect(passed.stdout).toContain("Verification evidence");
+
+  const json = await runCli(["gate", "sample-session", "--format", "json"]);
+  expect(json.exitCode).toBe(0);
+  const payload = JSON.parse(json.stdout ?? "") as { schemaVersion: string; status: string; checks: Array<{ id: string }> };
+  expect(payload.schemaVersion).toBe("agentops.gate.v1");
+  expect(payload.status).toBe("passed");
+  expect(payload.checks).toContainEqual(expect.objectContaining({ id: "required-verification" }));
+
+  const risky = await runCli(["import", "fixtures/risky-session.jsonl"]);
+  expect(risky.exitCode).toBe(0);
+
+  const failed = await runCli(["gate", "risky-session", "--format", "github"]);
+  expect(failed.exitCode).toBe(1);
+  expect(failed.stdout).toContain("AgentOps Quality Gate");
+  expect(failed.stdout).toContain("FAIL FAILED");
+  expect(failed.stdout).toContain("High-severity risks");
 });

@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.4.0)
-- Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.5.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.5.0)
+- Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -165,6 +165,8 @@ Common commands:
 ./bin/agentops report latest --out report.md
 ./bin/agentops export latest --format json --out agentops-session.json
 ./bin/agentops export latest --format json --scope repo --out agentops-repo.json
+./bin/agentops gate latest
+./bin/agentops gate latest --format json --out agentops-gate.json
 ./bin/agentops repo-report latest --out repo-report.md
 ./bin/agentops repo-report latest --format github --out pr-comment.md
 ./bin/agentops config --check
@@ -174,7 +176,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.4.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.5.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
@@ -283,6 +285,7 @@ Core docs:
 - [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
 - [Capture guide](docs/CAPTURE_GUIDE.md)
 - [JSON export](docs/EXPORT.md)
+- [Quality gates](docs/QUALITY_GATES.md)
 - [Hook envelope](docs/HOOK_ENVELOPE.md)
 - [Standards mapping](docs/STANDARDS_MAPPING.md)
 - [Event schema](docs/EVENT_SCHEMA.md)
@@ -346,4 +349,5 @@ To use the exact `agentops` command during local development, put the repo's `bi
 export PATH="$PWD/bin:$PATH"
 agentops import ./fixtures/sample-session.jsonl
 agentops review latest --format markdown --out report.md
+agentops gate latest
 ```

@@ -35,6 +35,7 @@ runAndExpect(["agentops", "import", "fixtures/codex-exec-edge-session.jsonl"], "
 runAndExpect(["agentops", "import", "fixtures/usage-session.jsonl"], "Ingested session usage-session");
 runAndExpect(["agentops", "sessions"], "usage-session");
 runAndExpect(["agentops", "review"], "Total Tokens");
+runAndExpect(["agentops", "gate", "latest"], "Status: PASSED");
 runAndExpect(["agentops", "review", "latest", "--format", "markdown"], "## Usage");
 runAndExpect(["agentops", "repo-report", "latest"], "AgentOps Repo Report");
 runAndExpect(["agentops", "repo-report", "latest", "--format", "github"], "AgentOps Workbench Report");
