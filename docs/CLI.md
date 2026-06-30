@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.8.0`. See
+The documented command surface is stable in `v1.9.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -100,6 +100,19 @@ agentops dashboard --host 127.0.0.1 --port 4927
 
 The demo uses only public synthetic fixtures and prints the dashboard URL. With
 `--serve`, it starts the local dashboard after importing fixtures.
+
+### `agentops mcp`
+
+Starts the local read-only MCP server over stdio.
+
+```bash
+agentops mcp
+```
+
+The MCP server exposes stored AgentOps evidence to compatible local clients. It
+supports session listing, session inspection, session reports, quality gates,
+and repo reports. It does not ingest artifacts, capture provider output, post to
+GitHub, or read private transcript stores. See [MCP server](MCP.md).
 
 ### `agentops audit`
 

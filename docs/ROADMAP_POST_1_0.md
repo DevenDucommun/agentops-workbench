@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.8.0` complete; later milestones proposed.
+Status: `v1.9.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -343,12 +343,33 @@ Exit criteria:
 - Existing config is not overwritten.
 - Provider credentials and login state remain out of scope.
 
+### v1.9.0: Read-Only MCP Server
+
+Status: complete in `v1.9.0`.
+
+Purpose: let compatible local agents query AgentOps evidence without scraping
+private files or requiring hosted services.
+
+Scope:
+
+- Add `agentops mcp` as a stdio MCP server.
+- Expose read-only tools for session listing, session inspection, session
+  reports, quality gates, and repo reports.
+- Keep ingest, capture, provider execution, GitHub posting, and private
+  transcript-store access out of the MCP surface.
+- Document MCP client configuration, tool names, and privacy boundaries.
+
+Exit criteria:
+
+- MCP initialize, tool listing, and tool calls are covered by tests.
+- Tools use the existing local SQLite store, report, and gate logic.
+- No MCP tool mutates sessions or reads private transcript stores.
+
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.8.0`
+These are intentionally not planned until the `v1.1.0` through `v1.9.0`
 sequence proves demand:
 
-- AgentOps MCP server for read-only session/report lookup.
 - OpenTelemetry or OpenInference export.
 - LLM-as-judge evaluation backed by deterministic evidence.
 - Team policy packs.

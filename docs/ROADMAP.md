@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.8.0`
+Current public release: `v1.9.0`
 
 Implemented:
 
@@ -62,6 +62,8 @@ Implemented:
   `agentops audit`, and `agentops pr`.
 - Guided setup automation: `agentops init`, `agentops doctor --fix`, and
   `agentops demo --serve`.
+- Read-only MCP server for local session lookup, inspection, reports, quality
+  gates, and repo reports.
 
 Current boundaries:
 
@@ -299,6 +301,7 @@ Planned milestones:
   PR-ready report workflows.
 - `v1.8.0`: guided setup automation for local init, safe doctor fixes, and
   one-command demo serving.
+- `v1.9.0`: read-only MCP server for local session/report lookup.
 
 Still deferred beyond the planned post-1.0 ladder:
 

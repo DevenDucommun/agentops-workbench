@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.0 - 2026-06-30
+
+### Added
+
+- `agentops mcp`, a local stdio MCP server for read-only session lookup,
+  inspection, Markdown reports, quality gates, and repo reports.
+- MCP protocol tests for initialize, tool listing, session lookup, gate output,
+  and report output.
+- MCP documentation covering client configuration, available tools, and
+  privacy boundaries.
+
 ## v1.8.0 - 2026-06-30
 
 ### Added

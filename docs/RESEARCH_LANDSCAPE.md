@@ -100,9 +100,9 @@ MCP is a good future integration layer because it is designed around connecting
 agents to external tools and context with explicit user consent and tool
 boundaries.
 
-Implication: AgentOps should consider a read-only MCP server for recent
-sessions, reports, and quality-gate results after capture and dashboard
-workflows are stronger.
+Implication: AgentOps now includes a read-only MCP server for recent sessions,
+reports, and quality-gate results. Deeper MCP write tools and live agent
+control remain deferred.
 
 Sources:
 

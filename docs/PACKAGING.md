@@ -1,6 +1,6 @@
 # Packaging Strategy
 
-Status: source-package strategy validated through `v1.8.0`.
+Status: source-package strategy validated through `v1.9.0`.
 
 ## Current Distribution Decision
 
