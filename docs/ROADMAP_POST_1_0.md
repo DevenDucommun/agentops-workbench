@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.7.1` complete; later milestones proposed.
+Status: `v1.8.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -319,9 +319,33 @@ Deferred:
 - Automatic provider login or credential setup.
 - Posting PR comments directly to GitHub.
 
+### v1.8.0: Guided Setup Automation
+
+Status: complete in `v1.8.0`.
+
+Purpose: remove the remaining local setup chores from the first-run path while
+keeping setup changes explicit, safe, and local.
+
+Scope:
+
+- Add `agentops init` to create `.agentops/`, ensure `.agentops/` is ignored,
+  write a default config when missing, run readiness checks, and print one
+  next command.
+- Add `agentops doctor --fix` for the same safe local setup fixes before
+  readiness checks.
+- Add `agentops demo --serve` to import synthetic demo sessions and start the
+  local dashboard.
+- Update quickstart and installation docs to lead with `agentops init`.
+
+Exit criteria:
+
+- Setup commands are covered by CLI tests.
+- Existing config is not overwritten.
+- Provider credentials and login state remain out of scope.
+
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.7.1`
+These are intentionally not planned until the `v1.1.0` through `v1.8.0`
 sequence proves demand:
 
 - AgentOps MCP server for read-only session/report lookup.

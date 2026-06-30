@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
-import { formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
+import { defaultConfig, formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
@@ -31,6 +31,10 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
     if (command === "doctor") {
       return runDoctor(args);
+    }
+
+    if (command === "init") {
+      return runInit(args);
     }
 
     if (command === "demo") {
@@ -374,8 +378,50 @@ function waitForShutdown(server: DashboardServer): Promise<void> {
   });
 }
 
+type DoctorCheck = ReturnType<typeof doctorCheck>;
+
+type SetupResult = {
+  label: string;
+  status: "ok" | "created" | "updated" | "failed";
+  detail: string;
+};
+
 function runDoctor(args: string[]): CliResult {
   const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const fixResults = args.includes("--fix") ? applySetupFixes(configPath) : [];
+  const state = collectDoctorState(configPath);
+  const setupOk = fixResults.every((result) => result.status !== "failed");
+  const lines = [
+    "# AgentOps Doctor",
+    "",
+    ...(fixResults.length ? ["Safe fixes:", ...fixResults.map(formatSetupResult), ""] : []),
+    ...formatDoctorState(state)
+  ];
+  return { stdout: lines.join("\n"), exitCode: state.ok && setupOk ? 0 : 1 };
+}
+
+function runInit(args: string[]): CliResult {
+  const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const setupResults = applySetupFixes(configPath);
+  const state = collectDoctorState(configPath);
+  const setupOk = setupResults.every((result) => result.status !== "failed");
+  const lines = [
+    "# AgentOps Init",
+    "",
+    "Setup:",
+    ...setupResults.map(formatSetupResult),
+    "",
+    "Readiness:",
+    ...state.checks.map(formatDoctorCheck),
+    "",
+    "Recommended next command:",
+    `  ${state.next}`,
+    ""
+  ];
+  return { stdout: lines.join("\n"), exitCode: state.ok && setupOk ? 0 : 1 };
+}
+
+function collectDoctorState(configPath: string): { checks: DoctorCheck[]; ok: boolean; next: string } {
   const configResult = validateConfigFile(configPath);
   const store = openStore();
   const sessions = listSessions(store, 1);
@@ -402,16 +448,17 @@ function runDoctor(args: string[]): CliResult {
   ];
   const ok = checks.every((check) => check.ok || check.level === "warn");
   const next = sessions.length > 0 ? "agentops review" : "agentops demo";
-  const lines = [
-    "# AgentOps Doctor",
-    "",
-    ...checks.map((check) => `- ${check.ok ? "PASS" : check.level === "warn" ? "WARN" : "FAIL"} ${check.label}: ${check.detail}`),
+  return { checks, ok, next };
+}
+
+function formatDoctorState(state: { checks: DoctorCheck[]; next: string }): string[] {
+  return [
+    ...state.checks.map(formatDoctorCheck),
     "",
     "Recommended next command:",
-    `  ${next}`,
+    `  ${state.next}`,
     ""
   ];
-  return { stdout: lines.join("\n"), exitCode: ok ? 0 : 1 };
 }
 
 function runDemo(args: string[]): CliResult {
@@ -435,6 +482,7 @@ function runDemo(args: string[]): CliResult {
   });
   const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
   store.db.close();
+  const server = args.includes("--serve") ? startDashboardServer({ host, port }) : null;
 
   const lines = [
     "# AgentOps Demo",
@@ -449,11 +497,12 @@ function runDemo(args: string[]): CliResult {
     "  agentops gate sample-session",
     `  agentops dashboard --host ${host} --port ${port}`,
     `Dashboard URL: ${dashboardUrl}`,
+    ...(server ? ["", `Dashboard listening at ${server.url}`, "Press Ctrl+C to stop."] : []),
     "",
     "Static demo artifacts: docs/demo/",
     ""
   ];
-  return { stdout: lines.join("\n"), exitCode: 0 };
+  return server ? { stdout: lines.join("\n"), exitCode: 0, keepAlive: waitForShutdown(server) } : { stdout: lines.join("\n"), exitCode: 0 };
 }
 
 function runAudit(args: string[]): CliResult {
@@ -526,6 +575,65 @@ function doctorCheck(label: string, ok: boolean, detail: string, level: "error" 
   return { label, ok, detail, level };
 }
 
+function formatDoctorCheck(check: DoctorCheck): string {
+  return `- ${check.ok ? "PASS" : check.level === "warn" ? "WARN" : "FAIL"} ${check.label}: ${check.detail}`;
+}
+
+function formatSetupResult(result: SetupResult): string {
+  return `- ${result.status.toUpperCase()} ${result.label}: ${result.detail}`;
+}
+
+function applySetupFixes(configPath: string): SetupResult[] {
+  return [ensureAgentOpsDirectory(), ensureAgentOpsGitignore(), ensureDefaultConfig(configPath)];
+}
+
+function ensureAgentOpsDirectory(): SetupResult {
+  try {
+    mkdirSync(".agentops", { recursive: true });
+    return { label: ".agentops directory", status: "ok", detail: ".agentops/ is present" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { label: ".agentops directory", status: "failed", detail: reason };
+  }
+}
+
+function ensureAgentOpsGitignore(): SetupResult {
+  const path = ".gitignore";
+  try {
+    const current = existsSync(path) ? readFileSync(path, "utf8") : "";
+    if (hasAgentOpsIgnoreEntry(current)) {
+      return { label: ".gitignore", status: "ok", detail: ".agentops/ already ignored" };
+    }
+    const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+    writeFileSync(path, `${current}${separator}.agentops/\n`);
+    return { label: ".gitignore", status: existsSync(path) && current.length > 0 ? "updated" : "created", detail: "added .agentops/" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { label: ".gitignore", status: "failed", detail: reason };
+  }
+}
+
+function ensureDefaultConfig(configPath: string): SetupResult {
+  if (existsSync(configPath)) {
+    return { label: "Config", status: "ok", detail: `${configPath} already exists` };
+  }
+  try {
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, `${JSON.stringify(defaultConfig, null, 2)}\n`);
+    return { label: "Config", status: "created", detail: configPath };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { label: "Config", status: "failed", detail: reason };
+  }
+}
+
+function hasAgentOpsIgnoreEntry(content: string): boolean {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((line) => line === ".agentops/" || line === ".agentops");
+}
+
 function commandAvailable(command: string): boolean {
   const result = spawnSync(command, ["--version"], {
     encoding: "utf8",
@@ -585,8 +693,11 @@ function help(): string {
   return `AgentOps Workbench
 
 Usage:
+  agentops init
   agentops doctor
+  agentops doctor --fix
   agentops demo
+  agentops demo --serve
   agentops run codex <prompt>
   agentops run claude <prompt>
   agentops audit <session.jsonl|transcript.txt>

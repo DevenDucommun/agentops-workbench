@@ -18,7 +18,7 @@ git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
 bun install --frozen-lockfile
 ./bin/agentops --help
-./bin/agentops doctor
+./bin/agentops init
 ./bin/agentops demo
 ./bin/agentops review sample-session
 ./bin/agentops gate sample-session
@@ -37,7 +37,7 @@ For local use without typing `./bin/` each time:
 ```bash
 export PATH="$PWD/bin:$PATH"
 agentops --help
-agentops doctor
+agentops init
 agentops demo
 agentops review sample-session
 agentops sessions
@@ -66,7 +66,7 @@ This works from an extracted source archive:
 
 ```bash
 bun install --frozen-lockfile
-./bin/agentops doctor
+./bin/agentops init
 ./bin/agentops demo
 ./bin/agentops review sample-session
 ./bin/agentops audit ./fixtures/sample-session.jsonl --out audit.md
@@ -142,5 +142,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.7.1` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.8.0` command,
 adapter, schema, and packaging boundaries.

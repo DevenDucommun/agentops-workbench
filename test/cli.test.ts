@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { runCli } from "../src/cli";
 
 const originalDb = process.env.AGENTOPS_DB;
+const originalCwd = process.cwd();
 
 beforeEach(() => {
   const dir = mkdtempSync(join(tmpdir(), "agentops-cli-test-"));
@@ -12,11 +13,43 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   if (originalDb === undefined) {
     delete process.env.AGENTOPS_DB;
   } else {
     process.env.AGENTOPS_DB = originalDb;
   }
+});
+
+test("initializes local setup and applies safe doctor fixes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-init-test-"));
+  process.chdir(dir);
+  process.env.AGENTOPS_DB = join(dir, ".agentops", "agentops.db");
+
+  const init = await runCli(["init"]);
+  expect(init.exitCode).toBe(0);
+  expect(init.stdout).toContain("# AgentOps Init");
+  expect(init.stdout).toContain("Setup:");
+  expect(init.stdout).toContain("CREATED .gitignore: added .agentops/");
+  expect(init.stdout).toContain("CREATED Config: agentops.config.json");
+  expect(init.stdout).toContain("Recommended next command:");
+  expect(init.stdout).toContain("agentops demo");
+  expect(existsSync(".agentops")).toBe(true);
+  expect(readFileSync(".gitignore", "utf8")).toContain(".agentops/");
+  expect(JSON.parse(readFileSync("agentops.config.json", "utf8"))).toMatchObject({ schemaVersion: "agentops.config.v1" });
+
+  const secondInit = await runCli(["init"]);
+  expect(secondInit.exitCode).toBe(0);
+  expect(secondInit.stdout).toContain("OK .gitignore: .agentops/ already ignored");
+  expect(secondInit.stdout).toContain("OK Config: agentops.config.json already exists");
+
+  writeFileSync(".gitignore", "node_modules\n");
+  const doctorFix = await runCli(["doctor", "--fix"]);
+  expect(doctorFix.exitCode).toBe(0);
+  expect(doctorFix.stdout).toContain("# AgentOps Doctor");
+  expect(doctorFix.stdout).toContain("Safe fixes:");
+  expect(doctorFix.stdout).toContain("UPDATED .gitignore: added .agentops/");
+  expect(readFileSync(".gitignore", "utf8")).toContain(".agentops/");
 });
 
 test("lists adapters and detection diagnostics", async () => {

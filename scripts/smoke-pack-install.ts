@@ -30,7 +30,9 @@ const packageDir = join(extractDir, "package");
 if (!existsSync(packageDir)) fail(`Expected package directory at ${packageDir}`);
 
 runAndExpect(["bun", "./bin/agentops", "--help"], "AgentOps Workbench", packageDir);
+runAndExpect(["bun", "./bin/agentops", "init"], "AgentOps Init", packageDir);
 runAndExpect(["bun", "./bin/agentops", "doctor"], "AgentOps Doctor", packageDir);
+runAndExpect(["bun", "./bin/agentops", "doctor", "--fix"], "Safe fixes", packageDir);
 runAndExpect(["bun", "./bin/agentops", "config", "--check"], "AgentOps config OK", packageDir);
 runAndExpect(["bun", "./bin/agentops", "demo"], "sample-session", packageDir);
 runAndExpect(["bun", "./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", packageDir);

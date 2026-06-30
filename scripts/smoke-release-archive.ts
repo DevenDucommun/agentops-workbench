@@ -34,7 +34,9 @@ if (!existsSync(checkoutDir)) {
 
 runAndExpect(["bun", "install", "--frozen-lockfile"], "Saved lockfile", { cwd: checkoutDir, allowNoExpectedText: true });
 runAndExpect(["./bin/agentops", "--help"], "AgentOps Workbench", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "init"], "AgentOps Init", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "doctor"], "AgentOps Doctor", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "doctor", "--fix"], "Safe fixes", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "demo"], "sample-session", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters"], "codex-exec-jsonl", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters", "--input", "./fixtures/claude-code-stream-session.jsonl"], "Claude Code Stream JSON", { cwd: checkoutDir });

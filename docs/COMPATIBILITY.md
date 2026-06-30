@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.7.1`.
+Status: stable for `v1.8.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -19,11 +19,13 @@ quality gates and GitHub-ready gate output for local or CI workflows. Version
 demo artifacts for adoption. Version `v1.7.0` adds guided first-run commands
 for setup checks, demos, artifact audits, and PR-ready reports. Version
 `v1.7.1` tightens guided setup by checking `.agentops/` ignore status and
-printing the dashboard URL in demo output.
+printing the dashboard URL in demo output. Version `v1.8.0` adds safe setup
+automation through `agentops init`, `agentops doctor --fix`, and
+`agentops demo --serve`.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.7.1`:
+The following surfaces are treated as public contracts in `v1.8.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -68,9 +70,14 @@ The `v1.7.0` `doctor`, `demo`, `audit`, and `pr` commands are additive guided
 workflows over existing config, import, review, gate, dashboard, and repo-report
 behavior.
 
+The `v1.8.0` `init`, `doctor --fix`, and `demo --serve` workflows are additive
+local setup conveniences. They may create `.agentops/`, add `.agentops/` to
+`.gitignore`, and write a default config when missing, but they do not
+overwrite existing config or manage provider credentials.
+
 ## Adapter Matrix
 
-Supported in `v1.7.1`:
+Supported in `v1.8.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -92,7 +99,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.7.1` stable contract:
+The following are intentionally outside the `v1.8.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -104,7 +111,7 @@ The following are intentionally outside the `v1.7.1` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.7.1`.
+local template output shape, not a live ingestion API in `v1.8.0`.
 
 ## Reports
 
