@@ -156,6 +156,49 @@ test("ingests then lists and inspects sessions", async () => {
   expect(payload.events.every((event) => event.rawJson === undefined)).toBe(true);
 });
 
+test("guides first-run setup with doctor and demo commands", async () => {
+  const empty = await runCli(["sessions"]);
+  expect(empty.exitCode).toBe(0);
+  expect(empty.stdout).toContain("agentops demo");
+  expect(empty.stdout).toContain("agentops audit <session.jsonl|transcript.txt>");
+
+  const doctor = await runCli(["doctor"]);
+  expect(doctor.exitCode).toBe(0);
+  expect(doctor.stdout).toContain("# AgentOps Doctor");
+  expect(doctor.stdout).toContain("Bun runtime");
+  expect(doctor.stdout).toContain("Recommended next command");
+
+  const demo = await runCli(["demo"]);
+  expect(demo.exitCode).toBe(0);
+  expect(demo.stdout).toContain("# AgentOps Demo");
+  expect(demo.stdout).toContain("sample-session (ready");
+  expect(demo.stdout).toContain("risky-session (blocked");
+  expect(demo.stdout).toContain("agentops dashboard");
+
+  const sessions = await runCli(["sessions"]);
+  expect(sessions.exitCode).toBe(0);
+  expect(sessions.stdout).toContain("sample-session");
+  expect(sessions.stdout).toContain("risky-session");
+});
+
+test("audits artifacts and creates PR-ready output with short commands", async () => {
+  const audit = await runCli(["audit", "fixtures/sample-session.jsonl"]);
+  expect(audit.exitCode).toBe(0);
+  expect(audit.stdout).toContain("# AgentOps Audit");
+  expect(audit.stdout).toContain("# AgentOps Session Inspection");
+  expect(audit.stdout).toContain("# AgentOps Quality Gate");
+  expect(audit.stdout).not.toContain("Database:");
+
+  const risky = await runCli(["audit", "fixtures/risky-session.jsonl"]);
+  expect(risky.exitCode).toBe(1);
+  expect(risky.stdout).toContain("Status: FAILED");
+
+  const pr = await runCli(["pr", "sample-session"]);
+  expect(pr.exitCode).toBe(0);
+  expect(pr.stdout).toContain("AgentOps Workbench Report");
+  expect(pr.stdout).toContain("AgentOps Quality Gate");
+});
+
 test("gives clearer guidance for common command mistakes", async () => {
   const outputAsCommand = await runCli(["report.md", "latest"]);
   expect(outputAsCommand.exitCode).toBe(1);

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.7.0 - 2026-06-30
+
+### Added
+
+- `agentops doctor` for local readiness checks and recommended next command.
+- `agentops demo` to import synthetic demo sessions and show immediate review,
+  gate, and dashboard next steps.
+- `agentops audit <artifact>` as a one-command import, review, and quality
+  gate flow for saved JSONL artifacts or forensic transcripts.
+- `agentops pr [latest|session-id]` as a short GitHub-ready repo report
+  command.
+
+### Changed
+
+- Top-level help now shows the guided first-run commands first and moves
+  lower-level commands under an advanced section.
+- Empty session guidance now consistently points users to `agentops demo`,
+  `agentops audit`, and `agentops run`.
+
 ## v1.6.0 - 2026-06-30
 
 ### Added

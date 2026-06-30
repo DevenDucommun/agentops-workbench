@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.6.0`. See
+The documented command surface is stable in `v1.7.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -34,8 +34,7 @@ agentops dashboard
 For after-the-fact audit, import an existing session artifact:
 
 ```bash
-agentops import path/to/session.jsonl
-agentops review
+agentops audit path/to/session.jsonl
 ```
 
 AgentOps does not need a background service. For live capture, it must launch
@@ -45,8 +44,52 @@ full-fidelity review. Plain text transcripts are accepted as lower-confidence
 forensic imports when JSONL is unavailable:
 
 ```bash
-agentops import path/to/transcript.txt
-agentops review
+agentops audit path/to/transcript.txt
+```
+
+For a local synthetic demo:
+
+```bash
+agentops doctor
+agentops demo
+agentops review sample-session
+agentops dashboard
+```
+
+### `agentops doctor`
+
+Checks local readiness and prints the next recommended command.
+
+```bash
+agentops doctor
+```
+
+The check covers the Bun runtime, git checkout state, config validity, SQLite
+store path, stored sessions, and whether Codex and Claude CLIs are available on
+`PATH`.
+
+### `agentops demo`
+
+Imports synthetic demo sessions and prints the fastest review, gate, and
+dashboard next steps.
+
+```bash
+agentops demo
+agentops review sample-session
+agentops gate sample-session
+agentops dashboard
+```
+
+The demo uses only public synthetic fixtures.
+
+### `agentops audit`
+
+Imports an artifact, prints the session inspection, evaluates quality gates, and
+exits non-zero when the gate fails.
+
+```bash
+agentops audit path/to/session.jsonl
+agentops audit path/to/transcript.txt --out audit.md
 ```
 
 ### `agentops run`
@@ -239,6 +282,18 @@ agentops repo-report latest --format github --out pr-comment.md
 ```
 
 The GitHub format includes quality gate status and is stdout-only. It does not
+post comments.
+
+### `agentops pr`
+
+Short form for a GitHub-ready repo report.
+
+```bash
+agentops pr
+agentops pr latest --out pr-comment.md
+```
+
+It is equivalent to `agentops repo-report latest --format github` and does not
 post comments.
 
 ### `agentops dashboard`

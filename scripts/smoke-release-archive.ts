@@ -34,9 +34,12 @@ if (!existsSync(checkoutDir)) {
 
 runAndExpect(["bun", "install", "--frozen-lockfile"], "Saved lockfile", { cwd: checkoutDir, allowNoExpectedText: true });
 runAndExpect(["./bin/agentops", "--help"], "AgentOps Workbench", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "doctor"], "AgentOps Doctor", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "demo"], "sample-session", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters"], "codex-exec-jsonl", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters", "--input", "./fixtures/claude-code-stream-session.jsonl"], "Claude Code Stream JSON", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "audit", "./fixtures/sample-session.jsonl"], "AgentOps Audit", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", { cwd: checkoutDir });

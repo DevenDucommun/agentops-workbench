@@ -30,8 +30,11 @@ const packageDir = join(extractDir, "package");
 if (!existsSync(packageDir)) fail(`Expected package directory at ${packageDir}`);
 
 runAndExpect(["bun", "./bin/agentops", "--help"], "AgentOps Workbench", packageDir);
+runAndExpect(["bun", "./bin/agentops", "doctor"], "AgentOps Doctor", packageDir);
 runAndExpect(["bun", "./bin/agentops", "config", "--check"], "AgentOps config OK", packageDir);
+runAndExpect(["bun", "./bin/agentops", "demo"], "sample-session", packageDir);
 runAndExpect(["bun", "./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", packageDir);
+runAndExpect(["bun", "./bin/agentops", "audit", "./fixtures/sample-session.jsonl"], "AgentOps Audit", packageDir);
 runAndExpect(["bun", "./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", packageDir);
 runAndExpect(["bun", "./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", packageDir);
 runAndExpect(["bun", "./bin/agentops", "gate", "sample-session"], "Status: PASSED", packageDir);
