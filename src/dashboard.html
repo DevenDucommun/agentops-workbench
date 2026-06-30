@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentOps Workbench</title>
+  <style>/*__DASHBOARD_CSS__*/  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div>
+          <h1>AgentOps Workbench</h1>
+          <p class="subtle">Local SQLite dashboard</p>
+        </div>
+        <button class="refresh" id="refresh" title="Refresh sessions">↻</button>
+      </div>
+      <div class="filters">
+        <input class="filter-control" id="session-filter" type="search" placeholder="Filter sessions">
+        <select class="filter-control" id="adapter-filter">
+          <option value="">All adapters</option>
+        </select>
+      </div>
+      <div class="sessions" id="sessions"></div>
+    </aside>
+    <main class="main">
+      <section class="header">
+        <div>
+          <h2 id="session-heading">No session selected</h2>
+          <p class="subtle" id="session-task">Ingest a session, then refresh this dashboard.</p>
+          <div class="meta" id="session-meta"></div>
+        </div>
+        <div class="header-actions">
+          <select class="compare-select hidden" id="compare-select">
+            <option value="">Compare with</option>
+          </select>
+          <a class="action-button hidden" id="report-link" href="#" target="_blank" rel="noreferrer">Markdown report</a>
+          <a class="action-button hidden" id="evidence-link" href="#" target="_blank" rel="noreferrer">JSON evidence</a>
+        </div>
+      </section>
+      <section class="metric-grid" id="metrics"></section>
+      <section class="quality-grid" id="quality"></section>
+      <section class="decision-grid" id="decision"></section>
+      <section class="panel hidden" id="comparison"></section>
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Timeline</h3>
+            <span class="subtle" id="timeline-count"></span>
+          </div>
+          <div class="panel-body"><div class="timeline" id="timeline"></div></div>
+        </div>
+        <div class="panel">
+          <div class="tabs">
+            <button class="tab active" data-tab="risks">Risks</button>
+            <button class="tab" data-tab="tools">Tools</button>
+            <button class="tab" data-tab="commands">Commands</button>
+            <button class="tab" data-tab="files">Files</button>
+          </div>
+          <div class="panel-body" id="tab-risks"></div>
+          <div class="panel-body hidden" id="tab-tools"></div>
+          <div class="panel-body hidden" id="tab-commands"></div>
+          <div class="panel-body hidden" id="tab-files"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>//__DASHBOARD_JS__  </script>
+</body>
+</html>
