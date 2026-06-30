@@ -10,9 +10,10 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.5.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.5.0)
+- Public release: [`v1.6.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.6.0)
 - Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
+- Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
 
@@ -49,6 +50,14 @@ bun install --frozen-lockfile
 ./bin/agentops export latest --format json --out agentops-session.json
 ./bin/agentops config --check
 ./bin/agentops dashboard
+```
+
+For a no-surprises demo, inspect generated synthetic artifacts in
+[docs/demo](docs/demo/README.md), or regenerate them locally:
+
+```bash
+bun run demo:artifacts
+bun run smoke:demo-artifacts
 ```
 
 For a new audited run, put AgentOps in the command path:
@@ -133,6 +142,12 @@ Validate packed package installation:
 bun run smoke:pack-install
 ```
 
+Validate tracked synthetic demo artifacts:
+
+```bash
+bun run smoke:demo-artifacts
+```
+
 ## Installation
 
 The recommended install path today is a fresh git clone with Bun:
@@ -176,7 +191,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.5.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.6.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
@@ -286,6 +301,7 @@ Core docs:
 - [Capture guide](docs/CAPTURE_GUIDE.md)
 - [JSON export](docs/EXPORT.md)
 - [Quality gates](docs/QUALITY_GATES.md)
+- [Demo artifacts](docs/demo/README.md)
 - [Hook envelope](docs/HOOK_ENVELOPE.md)
 - [Standards mapping](docs/STANDARDS_MAPPING.md)
 - [Event schema](docs/EVENT_SCHEMA.md)

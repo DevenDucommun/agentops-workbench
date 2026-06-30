@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.5.0` complete; later milestones proposed.
+Status: `v1.6.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -259,6 +259,8 @@ Deferred:
 - Organization policy service.
 
 ### v1.6.0: Distribution And Adoption
+
+Status: complete in `v1.6.0`.
 
 Purpose: make AgentOps easier to install, demo, and trust outside the original
 development environment.

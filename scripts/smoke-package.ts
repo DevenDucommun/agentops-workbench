@@ -36,6 +36,7 @@ for (const required of [
   "LICENSE",
   "CHANGELOG.md",
   "bin/agentops",
+  "scripts/generate-demo-artifacts.ts",
   "src/cli.ts",
   "src/adapters.ts",
   "src/capture.ts",
@@ -55,6 +56,11 @@ for (const required of [
   "docs/CLI.md",
   "docs/COMPATIBILITY.md",
   "docs/QUALITY_GATES.md",
+  "docs/demo/README.md",
+  "docs/demo/sample-session-report.md",
+  "docs/demo/sample-quality-gate.json",
+  "docs/demo/risky-quality-gate-comment.md",
+  "docs/demo/forensic-transcript-report.md",
   "docs/ROADMAP_POST_1_0.md"
 ]) {
   if (!files.has(required)) fail(`Package dry run is missing required file: ${required}`);

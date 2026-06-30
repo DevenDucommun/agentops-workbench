@@ -1,6 +1,8 @@
 # Installation
 
 AgentOps Workbench is currently distributed as a source-first Bun project.
+The supported paths are a fresh git clone or a GitHub source archive. Npm
+publication and standalone binaries remain deferred.
 
 ## Requirements
 
@@ -9,7 +11,7 @@ AgentOps Workbench is currently distributed as a source-first Bun project.
 
 ## Recommended: Fresh Clone
 
-Use this path for development and for repo-aware reports.
+Use this path for development, repo-aware reports, and the local dashboard.
 
 ```bash
 git clone https://github.com/DevenDucommun/agentops-workbench.git
@@ -19,6 +21,7 @@ bun install --frozen-lockfile
 ./bin/agentops import ./fixtures/sample-session.jsonl
 ./bin/agentops review
 ./bin/agentops review latest --format markdown --out report.md
+./bin/agentops gate latest
 ```
 
 Repo-aware reports require a git checkout:
@@ -76,10 +79,31 @@ This does not work from a source archive because `.git` is not present:
 
 Use a fresh git clone when you need `repo-report`.
 
+## Five-Minute Synthetic Demo
+
+The repository includes generated demo artifacts from synthetic fixtures:
+
+```bash
+ls docs/demo
+```
+
+Regenerate them locally:
+
+```bash
+bun run demo:artifacts
+bun run smoke:demo-artifacts
+```
+
+The demo artifacts include a passing session report, a passing quality gate JSON
+file, a failing GitHub-ready gate body, and a forensic transcript report. They
+are intended for quick inspection before connecting AgentOps to real agent
+runs.
+
 ## Packaging Strategy
 
-The next distribution path is an npm source package with the existing `agentops`
-bin entry. It is not published yet; publishing should happen only through a
+The current distribution path remains source-first: clone the repository or use
+the GitHub release source archive. An npm source package remains the next
+candidate, but it is not published yet; publishing should happen only through a
 release checklist decision.
 
 The package still requires Bun at runtime because `bin/agentops` uses:
@@ -111,5 +135,11 @@ equivalent to:
 bun run smoke:install
 ```
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.5.0` command,
+## Platform Support
+
+Ubuntu CI and local macOS development are exercised. Windows support is not
+claimed for the current release line; add Windows CI before documenting it as a
+supported platform.
+
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.6.0` command,
 adapter, schema, and packaging boundaries.

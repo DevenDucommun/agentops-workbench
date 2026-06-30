@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.0 - 2026-06-30
+
+### Added
+
+- Reproducible demo artifacts generated from synthetic sessions under
+  `docs/demo/`.
+- `bun run demo:artifacts` and `bun run smoke:demo-artifacts` for regenerating
+  and checking public demo artifacts.
+
+### Changed
+
+- CI now checks that tracked demo artifacts are current.
+- Installation and packaging docs now make the source-archive/clone
+  distribution decision explicit for the current release line.
+
 ## v1.5.0 - 2026-06-30
 
 ### Added
