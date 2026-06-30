@@ -373,7 +373,7 @@ Spec Kit artifacts:
 
 - Hosted SaaS
 - Multi-user auth
-- Full trace visualization
+- Full distributed-trace / OTLP-style waterfall UI (the local decision dashboard is a supported feature)
 - Model benchmarking
 - Deep semantic evals
 - Direct modification of agent behavior
@@ -384,7 +384,7 @@ Spec Kit artifacts:
 - TypeScript + Bun
 - SQLite for local storage
 - Markdown report output first
-- Optional web dashboard later
+- Local decision dashboard as a supported first-class surface
 - Adapter-based ingestion for Claude Code, KAI, and future runners
 
 ## Development
