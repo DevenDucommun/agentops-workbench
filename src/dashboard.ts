@@ -30,6 +30,7 @@ export type DashboardServer = {
 
 type DashboardSessionDetail = {
   session: DashboardSessionRecord;
+  evidenceQuality: DashboardEvidenceQuality;
   usage: UsageSummary;
   events: StoredEvent[];
   commands: CommandRecord[];
@@ -49,6 +50,7 @@ type DashboardEvidenceBundle = {
   schemaVersion: "agentops.evidence.v1";
   kind: "session-evidence";
   session: DashboardSessionRecord;
+  evidenceQuality: DashboardEvidenceQuality;
   usage: UsageSummary;
   decision: DashboardDecision;
   riskDrilldown: DashboardRiskDrilldown;
@@ -116,6 +118,16 @@ type DashboardComparisonSetDiff = {
 type DashboardDecision = {
   mergeReadiness: DashboardMergeReadiness;
   evidence: DashboardEvidenceRow[];
+};
+
+type DashboardEvidenceQuality = {
+  level: "structured" | "forensic" | "weak-forensic";
+  label: string;
+  sourceAdapter: string | null;
+  observedCommandCount: number;
+  inferredCommandCount: number;
+  inferredFileCount: number;
+  notes: string[];
 };
 
 type DashboardMergeReadiness = {
@@ -368,6 +380,7 @@ function getDashboardSession(store: Store, sessionId: string, config: AgentOpsCo
   const decision = buildDashboardDecision(events, commands, risks, verification);
   return {
     session: toDashboardSessionRecord(session),
+    evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
     usage: getUsageSummary(store, sessionId),
     events,
     commands,
@@ -377,6 +390,42 @@ function getDashboardSession(store: Store, sessionId: string, config: AgentOpsCo
     verification,
     decision,
     riskDrilldown: buildRiskDrilldown(events, commands, files, risks, decision.evidence)
+  };
+}
+
+function buildEvidenceQuality(
+  sourceAdapter: string | null,
+  commands: CommandRecord[],
+  files: FileChangeRecord[],
+  risks: RiskFlagRecord[]
+): DashboardEvidenceQuality {
+  if (sourceAdapter !== "forensic-text") {
+    return {
+      level: "structured",
+      label: "Structured JSONL",
+      sourceAdapter,
+      observedCommandCount: commands.length,
+      inferredCommandCount: 0,
+      inferredFileCount: 0,
+      notes: ["Machine-readable artifact with structured event evidence."]
+    };
+  }
+
+  const observedCommandCount = commands.filter((command) => command.status === "observed").length;
+  const inferredCommandCount = commands.filter((command) => command.status === "inferred").length;
+  const inferredFileCount = files.filter((file) => file.operation.startsWith("inferred")).length;
+  const weak = risks.some((risk) => risk.category === "weak-forensic-transcript");
+
+  return {
+    level: weak ? "weak-forensic" : "forensic",
+    label: weak ? "Weak forensic text" : "Forensic text",
+    sourceAdapter,
+    observedCommandCount,
+    inferredCommandCount,
+    inferredFileCount,
+    notes: weak
+      ? ["No observable shell commands were found; verification evidence is missing."]
+      : ["Shell-prompt commands are observed; prose-derived command and file mentions are inferred."]
   };
 }
 
@@ -589,6 +638,7 @@ function toEvidenceBundle(detail: DashboardSessionDetail): DashboardEvidenceBund
     schemaVersion: "agentops.evidence.v1",
     kind: "session-evidence",
     session: detail.session,
+    evidenceQuality: detail.evidenceQuality,
     usage: detail.usage,
     decision: detail.decision,
     riskDrilldown: detail.riskDrilldown,
@@ -839,6 +889,9 @@ function dashboardHtml(): string {
       gap: 10px;
       margin-bottom: 18px;
     }
+    .quality-grid {
+      margin-bottom: 18px;
+    }
     .decision-grid {
       display: grid;
       grid-template-columns: minmax(260px, 0.42fr) minmax(0, 0.58fr);
@@ -890,6 +943,20 @@ function dashboardHtml(): string {
       margin: 0;
       padding-left: 18px;
       color: #344153;
+    }
+    .quality-card {
+      padding: 13px 14px;
+    }
+    .quality-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .quality-notes {
+      color: var(--muted);
+      margin-top: 8px;
     }
     .evidence-table {
       display: grid;
@@ -1163,6 +1230,7 @@ function dashboardHtml(): string {
         </div>
       </section>
       <section class="metric-grid" id="metrics"></section>
+      <section class="quality-grid" id="quality"></section>
       <section class="decision-grid" id="decision"></section>
       <section class="panel hidden" id="comparison"></section>
       <section class="grid">
@@ -1289,6 +1357,7 @@ function dashboardHtml(): string {
       document.getElementById("decision").innerHTML = "";
       renderComparison(null);
       document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops import first.</div>';
+      document.getElementById("quality").innerHTML = "";
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
       document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';
       document.getElementById("tab-commands").innerHTML = '<div class="empty">No commands.</div>';
@@ -1324,6 +1393,7 @@ function dashboardHtml(): string {
         metric("Verification", data.verification.length),
         metric("Tokens", data.usage.totalTokens == null ? "—" : fmt.format(data.usage.totalTokens))
       ].join("");
+      renderEvidenceQuality(data.evidenceQuality);
       renderDecision(data.decision);
       renderCompareSelect(session.id);
       if (state.compareId) loadComparison();
@@ -1439,6 +1509,26 @@ function dashboardHtml(): string {
             '<div class="evidence-row"><div>Check</div><div>Status</div><div>Evidence</div></div>' +
             decision.evidence.map(renderEvidenceRow).join("") +
           '</div>' +
+        '</div>';
+    }
+
+    function renderEvidenceQuality(quality) {
+      const container = document.getElementById("quality");
+      if (!quality) {
+        container.innerHTML = "";
+        return;
+      }
+      const pillClass = quality.level === "structured" ? "ok" : quality.level === "weak-forensic" ? "risk" : "neutral";
+      const counts = [
+        quality.observedCommandCount + " observed commands",
+        quality.inferredCommandCount + " inferred commands",
+        quality.inferredFileCount + " inferred files"
+      ];
+      container.innerHTML =
+        '<div class="panel quality-card">' +
+          '<div class="quality-head"><h3>Evidence Quality</h3><span class="pill ' + pillClass + '">' + escapeHtml(quality.label) + '</span></div>' +
+          '<div class="pill-row">' + counts.map((value) => '<span class="pill">' + escapeHtml(value) + '</span>').join("") + '</div>' +
+          '<div class="quality-notes">' + quality.notes.map((note) => escapeHtml(note)).join(" ") + '</div>' +
         '</div>';
     }
 

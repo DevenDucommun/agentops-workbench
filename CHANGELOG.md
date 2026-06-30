@@ -10,6 +10,8 @@
   text, and copied chat text.
 - Evidence-quality report language for forensic imports, including observed vs
   inferred command labels and weak-transcript risk flags.
+- Dashboard evidence-quality payload and card for structured JSONL vs forensic
+  text imports.
 
 ### Changed
 

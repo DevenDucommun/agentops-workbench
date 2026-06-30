@@ -5,8 +5,10 @@ SQLite store used by the CLI.
 
 The dashboard is supported as a local UI. Version `v1.2.0` adds decision
 views for merge readiness, claim/evidence checks, risk drilldown, evidence
-exports, and run comparison. Browser JSON endpoints remain local implementation
-details, not a stable remote API. See [Compatibility policy](COMPATIBILITY.md).
+exports, and run comparison. The v1.4 forensic import work adds evidence
+quality labels for plain-text transcript imports. Browser JSON endpoints remain
+local implementation details, not a stable remote API. See
+[Compatibility policy](COMPATIBILITY.md).
 
 ## Start
 
@@ -16,6 +18,7 @@ Ingest synthetic demo sessions:
 ./bin/agentops import ./fixtures/sample-session.jsonl
 ./bin/agentops import ./fixtures/needs-review-session.jsonl
 ./bin/agentops import ./fixtures/risky-session.jsonl
+./bin/agentops import ./fixtures/forensic-terminal-transcript.txt
 ```
 
 Start the local server:
@@ -48,6 +51,7 @@ The dashboard currently provides:
 
 - session list
 - session text and adapter filtering
+- evidence-quality summary for structured JSONL and forensic text imports
 - merge-readiness summary for a selected session
 - claim-vs-evidence matrix for tests, lint, typecheck, build, and final success
 - risk severity drilldown with linked event, command, file, and evidence context
@@ -77,6 +81,7 @@ states:
 | Ready | `fixtures/sample-session.jsonl` | no risks and `bun test` evidence |
 | Needs review | `fixtures/needs-review-session.jsonl` | final success claim without verification evidence |
 | Blocked | `fixtures/risky-session.jsonl` | high risks, medium risks, and missing success evidence |
+| Forensic | `fixtures/forensic-terminal-transcript.txt` | `forensic-text` adapter, observed shell commands, inferred file changes |
 | Comparison | `sample-session` against `risky-session` | reduced risks and added verification |
 
 ## API
@@ -118,8 +123,8 @@ Basic manual verification:
 5. Open `http://127.0.0.1:4927`.
 6. Confirm the session list shows `sample-session`, `needs-review-session`,
    and `risky-session`.
-7. Confirm merge readiness, claim/evidence, risk drilldown, timeline, commands,
-   files, tools, and token metrics render.
+7. Confirm evidence quality, merge readiness, claim/evidence, risk drilldown,
+   timeline, commands, files, tools, and token metrics render.
 8. Select a comparison session from the `Compare with` control and confirm the
    run comparison panel renders.
 9. Open the Markdown report and JSON evidence links for the selected session.
