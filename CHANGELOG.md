@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.1 - 2026-06-30
+
+### Changed
+
+- Release archive smoke now expects the full MCP protocol test count.
+
 ## v1.9.0 - 2026-06-30
 
 ### Added

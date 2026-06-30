@@ -10,7 +10,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.9.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.9.0)
+- Public release: [`v1.9.1`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.9.1)
 - Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
@@ -200,7 +200,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.9.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.9.1`
 surfaces and experimental boundaries.
 
 ## MCP Server

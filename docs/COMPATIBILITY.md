@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.9.0`.
+Status: stable for `v1.9.1`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -23,10 +23,12 @@ printing the dashboard URL in demo output. Version `v1.8.0` adds safe setup
 automation through `agentops init`, `agentops doctor --fix`, and
 `agentops demo --serve`. Version `v1.9.0` adds a local read-only MCP server
 for session/report lookup.
+Version `v1.9.1` updates release smoke validation for the MCP protocol tests
+without changing the public command surface.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.9.0`:
+The following surfaces are treated as public contracts in `v1.9.1`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -83,7 +85,7 @@ optional structured fields, or new read-only tools.
 
 ## Adapter Matrix
 
-Supported in `v1.9.0`:
+Supported in `v1.9.1`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -105,7 +107,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.9.0` stable contract:
+The following are intentionally outside the `v1.9.1` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -118,7 +120,7 @@ The following are intentionally outside the `v1.9.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.9.0`.
+local template output shape, not a live ingestion API in `v1.9.1`.
 
 ## Reports
 
