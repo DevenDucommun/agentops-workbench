@@ -41,7 +41,7 @@ PAI exports sanitized `agentops-event-v1` JSONL after a run. AgentOps ingests th
 MVP command:
 
 ```bash
-agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+agentops import ./fixtures/pai-export-session.jsonl
 ```
 
 This is the best first PAI integration because:
@@ -70,8 +70,8 @@ This matters because:
 The developer runs Claude, Codex, or a PAI-backed workflow, exports a sanitized session, and runs:
 
 ```bash
-agentops ingest ./session.jsonl
-agentops report --session latest > report.md
+agentops import ./session.jsonl
+agentops save report --session latest --out report.md
 ```
 
 Value: immediate audit trail without uploading data.
@@ -128,27 +128,26 @@ type Adapter = {
 
 Build in this order:
 
-1. `agentops-jsonl` canonical fixture adapter.
-2. `pai-export-jsonl` post-hoc adapter, likely identical to canonical JSONL with PAI-specific source metadata.
-3. `codex-jsonl` sanitized AgentOps JSONL export adapter.
-4. `claude-code-jsonl` sanitized AgentOps JSONL export adapter.
-5. `codex-exec-jsonl` native adapter for `codex exec --json` captures.
-6. `claude-code-stream-json` native adapter for `claude -p --output-format stream-json` captures.
-7. `forensic-text` best-effort adapter for saved terminal transcripts and copied coding-agent text.
-8. hook-stream adapter for future live capture.
+1. `agentops-jsonl` canonical adapter — handles every sanitized
+   `agentops.event.v1` export (synthetic fixtures, PAI/KAI, Claude Code, Codex);
+   provenance lives in each record's `source` field.
+2. `codex-exec-jsonl` native adapter for `codex exec --json` captures.
+3. `claude-code-stream-json` native adapter for `claude -p --output-format stream-json` captures.
+4. `forensic-text` best-effort adapter for saved terminal transcripts and copied coding-agent text.
+5. hook-stream adapter for future live capture.
 
 ## Implemented Adapters
 
-These adapter identifiers are stable in `v1.0.0`; see
-[Compatibility policy](COMPATIBILITY.md) for the support matrix and boundaries.
+See [Compatibility policy](COMPATIBILITY.md) for the support matrix and
+boundaries. As of `v2.0.0` the per-source export adapters
+(`pai-export-jsonl`, `claude-code-jsonl`, `codex-jsonl`) are folded into
+`agentops-jsonl`, since they shared one schema and parser.
 
 The current implementation supports normalized JSONL export artifacts:
 
-- `agentops-jsonl`: canonical `agentops.event.v1` JSONL.
-- `pai-export-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "pai"`.
-- `claude-code-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "claude-code"`.
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL, any `source`
+  (`pai`, `claude-code`, `codex`, or none).
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream.
-- `codex-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "codex"`.
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream.
 - `forensic-text`: lower-fidelity plain terminal transcript or copied coding-agent text.
 
@@ -174,7 +173,7 @@ merged with observed JSONL/tool evidence.
 
 ## Open Research Before Native Direct Adapters
 
-Native adapter research is documented in [Native adapter research](NATIVE_ADAPTER_RESEARCH.md).
+Native adapter research is documented in [Native adapter research](archive/NATIVE_ADAPTER_RESEARCH.md).
 
 Before implementing direct Claude/Codex adapters, collect sanitized examples of each artifact shape:
 

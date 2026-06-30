@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.11.0`.
+Status: stable for `v2.0.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -32,7 +32,7 @@ artifacts.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.11.0`:
+The following surfaces are treated as public contracts in `v2.0.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -88,28 +88,43 @@ contract is the documented tool names and read-only behavior in
 optional structured fields, or new read-only tools.
 
 The `v1.10.0` OpenInference export is an additive deterministic JSON span
-bundle available through `agentops export --format openinference-json`.
+bundle available through `agentops save trace`.
 Compatible changes may add optional attributes or spans, but must continue to
 omit raw payload JSON by default.
 
 The `v1.11.0` simplified commands are additive workflows over existing review,
 gate, export, dashboard, and report behavior. `status`, `look`, `check`,
-`save`, and `open` are now the recommended regular-user surface. Older
-commands remain available as advanced compatibility commands.
+`save`, and `open` are now the recommended regular-user surface.
+
+The `v2.0.0` release is a **breaking** simplification. It removes the duplicate
+advanced commands `review`, `inspect`, `report`, `export`, `gate`,
+`repo-report`, `pr`, `dashboard`, plus the `ingest` and `show` aliases. Each is
+reached through a simple verb: `look` (inspect/review), `save report|json|repo-json|trace|pr`
+(report/export/repo-report/pr), `check` (gate, now with `--format text|json|github`),
+and `open` (dashboard). `import` and `capture` are retained. Two niche
+sub-options are not re-exposed on the simple verbs: the Markdown-only repo
+report (`repo-report --format markdown`) and `export --include-raw-payloads`;
+their library functions remain. `v2.0.0` also consolidates the per-source JSONL
+adapter IDs into `agentops-jsonl` (see Adapter Matrix).
 
 ## Adapter Matrix
 
-Supported in `v1.11.0`:
+Supported in `v2.0.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
-| `agentops-jsonl` | Canonical `agentops.event.v1` JSONL | Stable |
-| `pai-export-jsonl` | Sanitized PAI/KAI-style AgentOps JSONL export | Stable |
-| `claude-code-jsonl` | Sanitized Claude Code AgentOps JSONL export | Stable |
-| `codex-jsonl` | Sanitized Codex AgentOps JSONL export | Stable |
+| `agentops-jsonl` | Canonical `agentops.event.v1` JSONL — any sanitized export (Claude Code, Codex, PAI/KAI, ...); `source` field carries provenance | Stable |
 | `claude-code-stream-json` | Explicit `claude -p --output-format stream-json` JSONL capture | Supported native stream |
 | `codex-exec-jsonl` | Explicit `codex exec --json` JSONL capture | Supported native stream |
 | `forensic-text` | Saved terminal transcript or copied coding-agent text | Experimental forensic import |
+
+The `v2.0.0` release consolidated the previously separate `pai-export-jsonl`,
+`claude-code-jsonl`, and `codex-jsonl` adapter IDs into `agentops-jsonl`. They
+were functionally identical (same `agentops.event.v1` schema, same parser),
+differing only by a detection label; their provenance is now read from each
+record's `source` field. This is a breaking change to the adapter identifier
+surface — pass canonical exports without `--adapter` (auto-detected) or with
+`--adapter agentops-jsonl`.
 
 Native stream adapters are tested with synthetic fixtures and clear diagnostics
 for unsupported shapes. They are not private transcript parsers.
@@ -121,7 +136,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.11.0` stable contract:
+The following are intentionally outside the `v2.0.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -134,7 +149,7 @@ The following are intentionally outside the `v1.11.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.11.0`.
+local template output shape, not a live ingestion API in `v2.0.0`.
 
 ## Reports
 
@@ -166,7 +181,7 @@ user experience. `v1.0.0` supports migrating known pre-1.0 local schemas covered
 by `test/store-migration.test.ts`.
 
 Users should not depend on raw table layouts for automation. Use
-`agentops export --format json` for portable data.
+`agentops save json` for portable data.
 
 ## Privacy Contract
 
@@ -178,9 +193,6 @@ Run before public release:
 
 ```bash
 bun run ci
-bun run smoke:install
-bun run smoke:package
-bun run smoke:pack-install
 bun run smoke:large-session
 bun run smoke:dashboard
 ```

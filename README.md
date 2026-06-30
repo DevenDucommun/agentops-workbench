@@ -10,8 +10,9 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.11.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.11.0)
-- Current `main`: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Latest published release: [`v1.11.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.11.0)
+- Current `main` (unreleased, heading to `v2.0.0`): breaking simplification — single simple-verb CLI surface and consolidated `agentops-jsonl` adapter
+- Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
@@ -139,12 +140,6 @@ Validate large synthetic-session performance:
 bun run smoke:large-session
 ```
 
-Validate packed package installation:
-
-```bash
-bun run smoke:pack-install
-```
-
 Validate tracked synthetic demo artifacts:
 
 ```bash
@@ -199,12 +194,14 @@ Specific saves are available when needed:
 ./bin/agentops save gate
 ```
 
-Advanced compatibility commands such as `capture`, `import`, `review`,
-`report`, `export`, `gate`, `repo-report`, `adapters`, `config`,
-`dashboard`, and `scan-publication` remain available. See
-[CLI reference](docs/CLI.md) for command details.
+Advanced commands `capture`, `import`, `adapters`, `config`, `sessions`, and
+`scan-publication` remain available. The `v1.x` `review`, `report`, `export`,
+`gate`, `repo-report`, `pr`, `inspect`, `dashboard`, `ingest`, and `show`
+commands were removed in `v2.0.0`; their functions are reached through the
+simple verbs (`look`, `save`, `check`, `open`). See
+[CLI reference](docs/CLI.md) and [Compatibility policy](docs/COMPATIBILITY.md).
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.11.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v2.0.0`
 surfaces and experimental boundaries.
 
 ## MCP Server
@@ -221,11 +218,10 @@ See [MCP server](docs/MCP.md) for available tools and client configuration.
 AgentOps currently ingests normalized post-hoc JSONL exports plus native Claude
 Code and Codex CLI event streams:
 
-- `agentops-jsonl`: canonical `agentops.event.v1` JSONL
-- `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
-- `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL — any sanitized export
+  (Claude Code, Codex, PAI/KAI, ...); provenance is preserved in each record's
+  `source` field
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream
-- `codex-jsonl`: sanitized Codex AgentOps JSONL export
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
 - `forensic-text`: best-effort plain terminal transcript or copied coding-agent text
 
@@ -246,15 +242,17 @@ Advanced capture commands can still write explicit local JSONL artifacts:
 Raw captures are written under `.agentops/captures/` by default and should be
 reviewed before publishing or turning into fixtures.
 
-PAI-compatible post-hoc exports use the same canonical JSONL schema:
+PAI-compatible post-hoc exports use the same canonical JSONL schema and are
+auto-detected as `agentops-jsonl`:
 
 ```bash
-./bin/agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+./bin/agentops import ./fixtures/pai-export-session.jsonl
 ./bin/agentops look
 ./bin/agentops save report
 ```
 
-Synthetic Claude Code and Codex exports are also represented as sanitized AgentOps JSONL:
+Synthetic Claude Code and Codex exports are the same canonical AgentOps JSONL,
+distinguished only by their `source` field:
 
 ```bash
 ./bin/agentops import ./fixtures/claude-code-session.jsonl
@@ -264,9 +262,10 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
-The `claude-code-jsonl` and `codex-jsonl` fixtures are normalized export
-examples. The `codex-exec-jsonl` fixture represents the native
-`codex exec --json` stream shape with synthetic data.
+The `claude-code-session` and `codex-session` fixtures are canonical
+`agentops-jsonl` export examples (`source: claude-code` / `source: codex`). The
+`codex-exec-session` fixture represents the native `codex exec --json` stream
+shape with synthetic data.
 The `claude-code-stream-json` fixture represents the native
 `claude -p --output-format stream-json --verbose` stream shape with synthetic
 data.
@@ -340,24 +339,16 @@ Architecture and compatibility:
 - [Packaging strategy](docs/PACKAGING.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 
-Planning and release docs:
+Release docs:
 
-- [Roadmap to 1.0](docs/ROADMAP.md)
-- [Roadmap after 1.0](docs/ROADMAP_POST_1_0.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Release template](docs/RELEASE_TEMPLATE.md)
 - [Changelog](CHANGELOG.md)
 
-Research and historical context:
-
-- [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
-- [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
-- [PAI integration plan](docs/PAI_INTEGRATION.md)
-- [Project brief](docs/PROJECT_BRIEF.md)
-- [Preliminary plan](docs/PRELIMINARY_PLAN.md)
-- [Decision 0001: post-hoc PAI first](docs/decisions/0001-posthoc-pai-first.md)
-- [v0.1.0 release checklist](docs/releases/v0.1.0-checklist.md)
-- [v0.1.0 readiness result](docs/releases/v0.1.0-readiness-result.md)
+Historical planning and research notes live under
+[docs/archive](docs/archive/): roadmaps, project brief, preliminary plan,
+research landscape, native adapter research, PAI integration plan, design
+decisions, and pre-1.0 release records.
 
 Spec Kit artifacts:
 

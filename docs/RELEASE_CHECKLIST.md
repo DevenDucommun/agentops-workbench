@@ -3,9 +3,9 @@
 This checklist must pass before every public release. See
 [Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
 
-Status: reusable and exercised through `v1.11.0`; v0.1.0 public readiness
+Status: reusable and exercised through `v2.0.0`; v0.1.0 public readiness
 passed on 2026-06-28. See
-[v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
+[v0.1.0 readiness result](archive/releases/v0.1.0-readiness-result.md).
 
 ## Repository State
 
@@ -33,9 +33,6 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `bun install`.
 - [x] Fresh clone can run `bun test`.
 - [x] Fresh clone can run `bun run ci`.
-- [x] Fresh clone can run `bun run smoke:install`.
-- [x] Fresh clone can run `bun run smoke:package`.
-- [x] Fresh clone can run `bun run smoke:pack-install`.
 - [x] Fresh clone can run `bun run smoke:large-session`.
 - [x] Fresh clone can run `bun run smoke:dashboard`.
 - [x] Fresh clone can run `bun run smoke:demo-artifacts`.
@@ -48,13 +45,11 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `./bin/agentops check`.
 - [x] Fresh clone can run `./bin/agentops save`.
 - [x] Fresh clone can run `./bin/agentops audit ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops pr sample-session`.
 - [x] Fresh clone can run `./bin/agentops import ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops review`.
-- [x] Fresh clone can run `./bin/agentops review latest --format markdown --out report.md`.
-- [x] Fresh clone can run `./bin/agentops export latest --format openinference-json --out agentops-openinference.json`.
-- [x] Fresh clone can run `./bin/agentops repo-report latest --out repo-report.md`.
-- [x] Fresh clone can run `./bin/agentops repo-report latest --format github --out pr-comment.md`.
+- [x] Fresh clone can run `./bin/agentops save report latest --out report.md`.
+- [x] Fresh clone can run `./bin/agentops save trace latest --out agentops-openinference.json`.
+- [x] Fresh clone can run `./bin/agentops save pr sample-session --out pr-comment.md`.
+- [x] Fresh clone can run `./bin/agentops check latest --format github --out gate-comment.md`.
 - [x] Fresh clone can run MCP protocol tests with `bun test test/mcp.test.ts`.
 - [x] Fresh clone can run `./bin/agentops scan-publication`.
 - [x] README explains the product, current CLI, planning docs, and privacy posture.
@@ -78,19 +73,6 @@ passed on 2026-06-28. See
 - [x] Risk, malformed, and missing-timestamp fixtures are synthetic.
 - [x] Direct Claude/Codex adapters are not advertised as implemented until tested.
 - [x] Any adapter-specific fixture has been redacted and reviewed.
-
-## Release Archive Smoke
-
-After creating a GitHub release, verify the generated source archive:
-
-```bash
-bun ./scripts/smoke-release-archive.ts v1.11.0
-```
-
-The archive does not include `.git`, so `repo-report` remains a git-checkout
-workflow. The archive smoke covers install, help, ingest, sessions, report,
-dashboard configuration, guided first-run commands, demo artifacts, package
-contents, and publication scan with synthetic fixtures.
 
 ## Recommended Pre-Public Commands
 

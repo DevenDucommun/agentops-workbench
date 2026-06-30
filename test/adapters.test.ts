@@ -3,32 +3,33 @@ import { expect, test } from "bun:test";
 import { detectAdapters, loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { defaultConfig } from "../src/config";
 
-test("detects PAI export JSONL artifacts", () => {
+test("detects PAI export JSONL artifacts as canonical AgentOps JSONL", () => {
   const input = loadAdapterInput("fixtures/pai-export-session.jsonl");
   const adapter = resolveAdapter(input);
 
-  expect(adapter.id).toBe("pai-export-jsonl");
+  expect(adapter.id).toBe("agentops-jsonl");
 });
 
-test("parses PAI exports through the shared event schema", () => {
+test("parses PAI exports through the shared event schema, preserving source", () => {
   const input = {
     sourcePath: "fixtures/pai-export-session.jsonl",
     content: readFileSync("fixtures/pai-export-session.jsonl", "utf8")
   };
-  const adapter = resolveAdapter(input, "pai-export-jsonl");
+  const adapter = resolveAdapter(input, "agentops-jsonl");
   const transcript = adapter.parse(input, defaultConfig);
 
   expect(transcript.session.id).toBe("pai-export-sample");
   expect(transcript.session.source).toBe("pai");
-  expect(transcript.session.sourceAdapter).toBe("pai-export-jsonl");
+  expect(transcript.session.sourceAdapter).toBe("agentops-jsonl");
   expect(transcript.events).toHaveLength(4);
 });
 
-test("detects sanitized Claude Code export JSONL artifacts", () => {
+test("detects sanitized Claude Code export JSONL as canonical AgentOps JSONL", () => {
   const input = loadAdapterInput("fixtures/claude-code-session.jsonl");
   const adapter = resolveAdapter(input);
 
-  expect(adapter.id).toBe("claude-code-jsonl");
+  expect(adapter.id).toBe("agentops-jsonl");
+  expect(adapter.parse(input, defaultConfig).session.source).toBe("claude-code");
 });
 
 test("detects and parses native Claude Code stream JSONL streams", () => {
@@ -90,11 +91,12 @@ test("reports unsupported Claude Code stream JSONL shapes", () => {
   expect(() => adapter.parse(input, defaultConfig)).toThrow("assistant event must include a message object");
 });
 
-test("detects sanitized Codex export JSONL artifacts", () => {
+test("detects sanitized Codex export JSONL as canonical AgentOps JSONL", () => {
   const input = loadAdapterInput("fixtures/codex-session.jsonl");
   const adapter = resolveAdapter(input);
 
-  expect(adapter.id).toBe("codex-jsonl");
+  expect(adapter.id).toBe("agentops-jsonl");
+  expect(adapter.parse(input, defaultConfig).session.source).toBe("codex");
 });
 
 test("reports unsupported Codex exec JSONL shapes", () => {

@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 test("dashboard API reads sessions from SQLite", async () => {
-  const ingest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/sample-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -81,7 +81,7 @@ test("dashboard API reads sessions from SQLite", async () => {
 });
 
 test("dashboard decision payload surfaces missing evidence and blocked readiness", async () => {
-  const ingest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/risky-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -160,7 +160,7 @@ test("dashboard decision payload surfaces missing evidence and blocked readiness
 
 test("dashboard demo fixtures cover ready, needs-review, and blocked states", async () => {
   for (const fixture of ["fixtures/sample-session.jsonl", "fixtures/needs-review-session.jsonl", "fixtures/risky-session.jsonl"]) {
-    const ingest = await runCli(["ingest", fixture]);
+    const ingest = await runCli(["import", fixture]);
     expect(ingest.exitCode).toBe(0);
   }
 
@@ -187,7 +187,7 @@ test("dashboard demo fixtures cover ready, needs-review, and blocked states", as
 });
 
 test("dashboard API includes tool usage summary", async () => {
-  const ingest = await runCli(["ingest", "fixtures/codex-exec-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/codex-exec-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -207,7 +207,7 @@ test("dashboard API includes tool usage summary", async () => {
 });
 
 test("dashboard API includes Claude stream tool usage summary", async () => {
-  const ingest = await runCli(["ingest", "fixtures/claude-code-stream-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/claude-code-stream-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -262,7 +262,7 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
 });
 
 test("dashboard serves sanitized JSON evidence bundles for sessions", async () => {
-  const ingest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/risky-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -397,9 +397,9 @@ test("dashboard distinguishes inferred forensic evidence from verified evidence"
 });
 
 test("dashboard compares two sessions with decision and evidence deltas", async () => {
-  const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  const riskyIngest = await runCli(["import", "fixtures/risky-session.jsonl"]);
   expect(riskyIngest.exitCode).toBe(0);
-  const sampleIngest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  const sampleIngest = await runCli(["import", "fixtures/sample-session.jsonl"]);
   expect(sampleIngest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -448,7 +448,7 @@ test("dashboard compares two sessions with decision and evidence deltas", async 
 });
 
 test("dashboard serves markdown reports for sessions", async () => {
-  const ingest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/sample-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -470,7 +470,7 @@ test("dashboard serves markdown reports for sessions", async () => {
 });
 
 test("dashboard CLI check validates local configuration without starting a server", async () => {
-  const result = await runCli(["dashboard", "--check", "--port", "4930"]);
+  const result = await runCli(["open", "--check", "--port", "4930"]);
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("Dashboard configuration OK");
   expect(result.stdout).toContain("Host: 127.0.0.1");

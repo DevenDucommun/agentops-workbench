@@ -6,8 +6,8 @@ AgentOps Workbench is currently developed privately with the intent to become pu
 
 ```bash
 bun test
-./bin/agentops ingest ./fixtures/sample-session.jsonl
-./bin/agentops report --session latest > report.md
+./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops save report --session latest --out report.md
 ```
 
 ## Public-Safety Requirements
@@ -30,7 +30,7 @@ Use synthetic fixtures unless a redacted fixture has been explicitly reviewed.
 Read these before larger changes:
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
+- [Roadmap](docs/archive/ROADMAP.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 - [MVP spec](specs/001-agentops-workbench/spec.md)
 

@@ -28,7 +28,7 @@ bun install --frozen-lockfile
 Repo-aware advanced reports require a git checkout:
 
 ```bash
-./bin/agentops repo-report latest --out repo-report.md
+./bin/agentops save pr latest --out pr-comment.md
 ```
 
 ## PATH-Based Local Command
@@ -80,13 +80,15 @@ bun install --frozen-lockfile
 ./bin/agentops save
 ```
 
-This does not work from a source archive because `.git` is not present:
+Repo-aware output still runs from a source archive, but without `.git` it
+compares against an empty diff, so the result is not meaningful:
 
 ```bash
-./bin/agentops repo-report latest
+./bin/agentops save pr latest
 ```
 
-Use a fresh git clone when you need `repo-report`.
+Repo-aware PR comments are only meaningful from a git checkout. Use a fresh git
+clone when you need them.
 
 ## Five-Minute Synthetic Demo
 
@@ -121,12 +123,6 @@ The package still requires Bun at runtime because `bin/agentops` uses:
 #!/usr/bin/env bun
 ```
 
-Validate package contents with:
-
-```bash
-bun run smoke:package
-```
-
 Validate large synthetic-session ingest/report behavior with:
 
 ```bash
@@ -137,12 +133,8 @@ See [Packaging strategy](PACKAGING.md) for the decision, deferred alternatives,
 and package content rules.
 
 Bun standalone executables and dedicated GitHub release assets remain deferred
-options. Any future package workflow should include CI or smoke verification
-equivalent to:
-
-```bash
-bun run smoke:install
-```
+options. Reintroduce packaging-specific smoke verification as part of the
+release checklist when npm publication is approved.
 
 ## Platform Support
 
@@ -150,5 +142,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.11.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v2.0.0` command,
 adapter, schema, and packaging boundaries.
