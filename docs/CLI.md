@@ -140,9 +140,16 @@ agentops check
 agentops check sample-session
 agentops check --json
 agentops check --save
+agentops check --format github --save
 ```
 
-`--save` writes `agentops-gate.json`.
+Formats are `text`, `json` (default for `--save`/`--json`), and `github`. The
+GitHub format is a PR-comment Markdown body; it is written to a file or stdout
+and never posted to GitHub.
+
+`--save` writes a default file whose name matches the format:
+`agentops-gate.json` (json), `agentops-gate-comment.md` (github), or
+`agentops-gate.txt` (text). Use `--out <file>` to override.
 
 ### `agentops save`
 

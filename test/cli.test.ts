@@ -401,3 +401,22 @@ test("runs quality gates with CI-friendly exit codes and formats", async () => {
   expect(failed.stdout).toContain("FAIL FAILED");
   expect(failed.stdout).toContain("High-severity risks");
 });
+
+test("check --save default filename matches the requested format", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-check-save-test-"));
+  process.chdir(dir);
+  process.env.AGENTOPS_DB = join(dir, ".agentops", "agentops.db");
+
+  await runCli(["import", join(originalCwd, "fixtures/sample-session.jsonl")]);
+
+  const jsonSave = await runCli(["check", "--save"]);
+  expect(jsonSave.stdout).toContain("agentops-gate.json");
+  expect(JSON.parse(readFileSync("agentops-gate.json", "utf8")).schemaVersion).toBe("agentops.gate.v1");
+
+  const githubSave = await runCli(["check", "--format", "github", "--save"]);
+  expect(githubSave.stdout).toContain("agentops-gate-comment.md");
+  expect(existsSync("agentops-gate-comment.md")).toBe(true);
+  expect(readFileSync("agentops-gate-comment.md", "utf8")).toContain("AgentOps Quality Gate");
+  // github output must not be written into the JSON default
+  expect(readFileSync("agentops-gate.json", "utf8")).toContain("agentops.gate.v1");
+});

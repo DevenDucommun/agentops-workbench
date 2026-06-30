@@ -491,7 +491,8 @@ function runCheck(args: string[]): CliResult {
     return { stderr: "Usage: agentops check [latest|session-id] [--format text|json|github] [--out file] [--save]\n", exitCode: 1 };
   }
   const format = explicitFormat ?? (args.includes("--json") || args.includes("--save") ? "json" : "text");
-  const outPath = readOption(args, "--out") ?? (args.includes("--save") ? "agentops-gate.json" : null);
+  const saveDefault = format === "github" ? "agentops-gate-comment.md" : format === "text" ? "agentops-gate.txt" : "agentops-gate.json";
+  const outPath = readOption(args, "--out") ?? (args.includes("--save") ? saveDefault : null);
   const config = loadConfig(configPath);
   const store = openStore();
   const sessionId = getSessionId(store, sessionArg);
