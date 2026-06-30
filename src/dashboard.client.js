@@ -98,7 +98,7 @@
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("decision").innerHTML = "";
       renderComparison(null);
-      document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops import first.</div>';
+      document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops run or agentops audit first.</div>';
       document.getElementById("quality").innerHTML = "";
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
       document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';

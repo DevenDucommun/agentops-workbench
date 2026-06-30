@@ -27,5 +27,4 @@ gh release create <tag> --target main --title <tag> --notes-file <notes.md>
 ```
 
 - Close the GitHub milestone.
-- Update wiki release status when needed.
 - Confirm local `main` is clean and tagged.

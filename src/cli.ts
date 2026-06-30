@@ -77,60 +77,21 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
     if (command === "run") {
       if (args[0] !== "codex" && args[0] !== "claude") {
-        return { stderr: "Usage: agentops run codex|claude <prompt>\n", exitCode: 1 };
+        return { stderr: "Usage: agentops run codex|claude <prompt> [--no-ingest]\n", exitCode: 1 };
       }
-      const captureArgs = args.includes("--ingest") || args.includes("--dry-run") ? args : [...args, "--ingest"];
-      const request = parseCaptureArgs(captureArgs);
+      // run ingests by default; --no-ingest writes the artifact only. Strip the flag
+      // before parsing because provider option parsing rejects unknown flags.
+      const wantsIngest = !args.includes("--no-ingest");
+      const request = parseCaptureArgs(args.filter((arg) => arg !== "--no-ingest"));
       const result = await runCapture(request);
-      let stdout = formatCaptureResult(result, { next: request.ingest && !result.dryRun ? null : "import" });
-      if (request.ingest && !result.dryRun) {
+      const doIngest = wantsIngest && !result.dryRun;
+      let stdout = formatCaptureResult(result, { next: doIngest ? null : "audit" });
+      if (doIngest) {
         stdout += "\n" + ingestArtifact(result.outputPath, result.adapterId);
         stdout += "Next: agentops look\nNext: agentops check\nNext: agentops open\n";
       }
       const stderr = result.stderr.trim().length > 0 ? result.stderr : undefined;
       return { stdout, stderr, exitCode: 0 };
-    }
-
-    if (command === "capture") {
-      const request = parseCaptureArgs(args);
-      const result = await runCapture(request);
-      let stdout = formatCaptureResult(result);
-      if (request.ingest && !result.dryRun) {
-        stdout += "\n" + ingestArtifact(result.outputPath, result.adapterId);
-      }
-      const stderr = result.stderr.trim().length > 0 ? result.stderr : undefined;
-      return { stdout, stderr, exitCode: 0 };
-    }
-
-    if (command === "import") {
-      const sourcePath = args[0];
-      if (!sourcePath) return { stderr: `Usage: agentops import <session.jsonl|transcript.txt>\n`, exitCode: 1 };
-      if (isDatabasePath(sourcePath)) {
-        return {
-          stderr:
-            `agentops import expects a session artifact or transcript, not the SQLite database.\n\n` +
-            "Use one of these instead:\n" +
-            "  agentops sessions\n" +
-            "  agentops look\n" +
-            "  agentops save report\n",
-          exitCode: 1
-        };
-      }
-
-      const adapterId = readOption(args, "--adapter");
-      const configPath = readOption(args, "--config") ?? "agentops.config.json";
-      const config = loadConfig(configPath);
-      const input = loadAdapterInput(sourcePath);
-      const adapter = resolveAdapter(input, adapterId ?? undefined);
-      const store = openStore();
-      const result = ingestInput(store, input, adapter.id, config);
-      const stdout = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
-      store.db.close();
-
-      return {
-        stdout,
-        exitCode: 0
-      };
     }
 
     if (command === "adapters") {
@@ -380,7 +341,9 @@ function runDemo(args: string[]): CliResult {
 
 function runAudit(args: string[]): CliResult {
   const sourcePath = args[0];
-  if (!sourcePath) return { stderr: "Usage: agentops audit <session.jsonl|transcript.txt> [--out audit.md]\n", exitCode: 1 };
+  if (!sourcePath || sourcePath.startsWith("--")) {
+    return { stderr: "Usage: agentops audit <session.jsonl|transcript.txt> [--out audit.md] [--quiet]\n", exitCode: 1 };
+  }
   if (isDatabasePath(sourcePath)) {
     return { stderr: "agentops audit expects a session artifact or transcript, not the SQLite database.\n", exitCode: 1 };
   }
@@ -388,11 +351,21 @@ function runAudit(args: string[]): CliResult {
   const adapterId = readOption(args, "--adapter");
   const configPath = readOption(args, "--config") ?? "agentops.config.json";
   const outPath = readOption(args, "--out");
+  const quiet = args.includes("--quiet");
   const config = loadConfig(configPath);
   const input = loadAdapterInput(sourcePath);
   const adapter = resolveAdapter(input, adapterId ?? undefined);
   const store = openStore();
   const result = ingestInput(store, input, adapter.id, config);
+
+  // --quiet ingests only (no inspection/gate), exits 0 — for scripting or loading
+  // an artifact before viewing it with look/open.
+  if (quiet) {
+    const stdout = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
+    store.db.close();
+    return { stdout, exitCode: 0 };
+  }
+
   const importSummary = formatAuditImportSummary(result.sessionId, result.eventCount, adapter.id);
   const review = generateSessionInspection(store, result.sessionId, config);
   const gate = evaluateQualityGate(store, result.sessionId, config, { gitChanges: getGitChangesOrEmpty() });
@@ -507,17 +480,41 @@ function runCheck(args: string[]): CliResult {
   return { ...written, exitCode: result.status === "passed" ? 0 : 1 };
 }
 
+const REMOVED_SAVE_KINDS: Record<string, string> = {
+  "repo-json": "Use: agentops save json --repo",
+  trace: "Use: agentops save json --format openinference",
+  gate: "Use: agentops check --save"
+};
+
 function runSave(args: string[]): CliResult {
   const kind = args[0];
   if (!kind || kind.startsWith("--")) {
     return runSaveBundle(args);
   }
-  if (!kind || !["report", "pr", "json", "repo-json", "trace", "gate"].includes(kind)) {
-    return { stderr: "Usage: agentops save [report|pr|json|repo-json|trace|gate] [file]\n", exitCode: 1 };
+  if (!["report", "pr", "json"].includes(kind)) {
+    const hint = REMOVED_SAVE_KINDS[kind] ? `\n${REMOVED_SAVE_KINDS[kind]}` : "";
+    return {
+      stderr: `Usage: agentops save [report|pr|json] [file]\njson flags: --repo (repo-scoped), --format openinference${hint}\n`,
+      exitCode: 1
+    };
   }
+
   const remaining = args.slice(1);
   const configPath = readOption(args, "--config") ?? "agentops.config.json";
-  const outPath = readOption(args, "--out") ?? readSaveOutputPath(remaining) ?? defaultSavePath(kind);
+  const repo = remaining.includes("--repo");
+  const format = readOption(remaining, "--format");
+  if (kind !== "json" && (repo || format)) {
+    return { stderr: "--repo and --format apply only to: agentops save json\n", exitCode: 1 };
+  }
+  if (format && format !== "openinference") {
+    return { stderr: "Usage: agentops save json --format openinference\n", exitCode: 1 };
+  }
+  if (repo && format === "openinference") {
+    return { stderr: "OpenInference export is session-scoped; drop --repo.\n", exitCode: 1 };
+  }
+
+  const variant = kind === "json" ? (format === "openinference" ? "openinference" : repo ? "repo" : "session") : kind;
+  const outPath = readOption(args, "--out") ?? readSaveOutputPath(remaining) ?? defaultSavePath(variant);
   const sessionArg = readSessionArg(remaining);
   const config = loadConfig(configPath);
   const store = openStore();
@@ -527,22 +524,19 @@ function runSave(args: string[]): CliResult {
     return { stderr: noSessionsMessage(), exitCode: 1 };
   }
 
-  const gateResult = kind === "gate" ? evaluateQualityGate(store, sessionId, config, { gitChanges: getGitChangesOrEmpty() }) : null;
   const output =
     kind === "report"
       ? generateMarkdownReport(store, sessionId, config)
       : kind === "pr"
         ? generateGithubRepoComment(store, sessionId, getGitChangesOrEmpty(), config)
-        : kind === "json"
-          ? generateSessionJsonExport(store, sessionId, config)
-          : kind === "repo-json"
+        : variant === "openinference"
+          ? generateOpenInferenceJsonExport(store, sessionId, config)
+          : variant === "repo"
             ? generateRepoJsonExport(store, sessionId, getGitChangesOrEmpty(), config)
-            : kind === "trace"
-              ? generateOpenInferenceJsonExport(store, sessionId, config)
-              : formatGateJson(gateResult!);
+            : generateSessionJsonExport(store, sessionId, config);
   store.db.close();
-  const written = outputResult(output, outPath, saveLabel(kind));
-  return { ...written, exitCode: gateResult && gateResult.status === "failed" ? 1 : 0 };
+  const written = outputResult(output, outPath, saveLabel(variant));
+  return { ...written, exitCode: 0 };
 }
 
 function runSaveBundle(args: string[]): CliResult {
@@ -577,7 +571,7 @@ function runSaveBundle(args: string[]): CliResult {
 }
 
 function readSaveOutputPath(args: string[]): string | null {
-  const optionNamesWithValues = new Set(["--session", "--config", "--out"]);
+  const optionNamesWithValues = new Set(["--session", "--config", "--out", "--format"]);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
@@ -591,39 +585,35 @@ function readSaveOutputPath(args: string[]): string | null {
   return null;
 }
 
-function defaultSavePath(kind: string): string {
-  switch (kind) {
+function defaultSavePath(variant: string): string {
+  switch (variant) {
     case "report":
       return "agentops-report.md";
     case "pr":
       return "agentops-pr-comment.md";
-    case "json":
+    case "session":
       return "agentops-session.json";
-    case "repo-json":
+    case "repo":
       return "agentops-repo.json";
-    case "trace":
+    case "openinference":
       return "agentops-openinference.json";
-    case "gate":
-      return "agentops-gate.json";
     default:
-      throw new Error(`Unsupported save kind: ${kind}`);
+      throw new Error(`Unsupported save variant: ${variant}`);
   }
 }
 
-function saveLabel(kind: string): string {
-  switch (kind) {
+function saveLabel(variant: string): string {
+  switch (variant) {
     case "pr":
       return "PR comment";
-    case "json":
+    case "session":
       return "JSON export";
-    case "repo-json":
+    case "repo":
       return "repo JSON export";
-    case "trace":
+    case "openinference":
       return "OpenInference export";
-    case "gate":
-      return "quality gate";
     default:
-      return kind;
+      return variant;
   }
 }
 
@@ -775,36 +765,38 @@ function help(): string {
 Usage:
   agentops init
   agentops demo
-  agentops run codex <prompt>
-  agentops run claude <prompt>
-  agentops audit <session.jsonl|transcript.txt>
+  agentops run codex|claude <prompt> [--no-ingest]
+  agentops audit <session.jsonl|transcript.txt> [--quiet]
   agentops status
   agentops look [latest|session-id]
   agentops check [latest|session-id]
-  agentops save [report|pr|json|repo-json|trace|gate] [file]
+  agentops save [report|pr|json] [file]
   agentops open
   agentops mcp
 
+Get a run in:
+  agentops run codex|claude <prompt>   launch the agent and ingest the result
+  agentops run ... --no-ingest         write the JSONL artifact only
+  agentops audit <artifact>            ingest an existing artifact and show the verdict
+  agentops audit <artifact> --quiet    ingest only (no inspection or gate)
+
 Save artifacts (agentops save <kind>):
-  report     Markdown session report      pr        GitHub PR comment
-  json       Session JSON export          repo-json Repo-scoped JSON export
-  trace      OpenInference span export    gate      Quality gate JSON
+  report   Markdown session report
+  pr       GitHub PR comment
+  json     Session JSON export  (--repo for repo-scoped, --format openinference for spans)
 
 Quality gate output (for CI/PR):
-  agentops check [latest|session-id] [--format text|json|github] [--out file]
+  agentops check [latest|session-id] [--format text|json|github] [--out file] [--save]
 
 Advanced:
   agentops doctor [--fix]
   agentops demo --serve
-  agentops capture codex <prompt> [--output .agentops/captures/codex.jsonl] [--ingest]
-  agentops capture claude <prompt> [--output .agentops/captures/claude.jsonl] [--ingest]
-  agentops import <session.jsonl|transcript.txt>
   agentops adapters [--input <session.jsonl>]
   agentops config --check
   agentops sessions
   agentops scan-publication
 
-Capture:
+Capture options (passed to agentops run):
   ${captureUsage("codex")}
   ${captureUsage("claude")}
 

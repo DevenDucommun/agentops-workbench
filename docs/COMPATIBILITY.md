@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v2.0.0`.
+Status: stable for `v3.0.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -32,7 +32,7 @@ artifacts.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v2.0.0`:
+The following surfaces are treated as public contracts in `v3.0.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -60,10 +60,10 @@ The `v1.2.0` dashboard views and evidence bundles are additive local review
 workflows. Browser JSON endpoints are intended for the local dashboard and are
 not a remote API compatibility guarantee.
 
-The `v1.3.0` `run`, `review`, and `import` commands are additive convenience
-workflows over the existing capture, ingest, inspect, report, repo-report, and
-export behavior. `agentops ingest` remains supported as a compatibility alias
-for `agentops import`.
+The `v1.3.0` `run`, `review`, and `import` commands were additive convenience
+workflows over that release's capture, ingest, inspect, report, repo-report, and
+export behavior. (`review` was removed in `v2.0.0`; `import` and its `ingest`
+alias were removed in `v3.0.0` — use `agentops audit --quiet`.)
 
 The `v1.5.0` `gate` command is an additive deterministic check over stored
 session analysis and current git metadata. Gate JSON uses
@@ -88,7 +88,7 @@ contract is the documented tool names and read-only behavior in
 optional structured fields, or new read-only tools.
 
 The `v1.10.0` OpenInference export is an additive deterministic JSON span
-bundle available through `agentops save trace`.
+bundle available through `agentops save json --format openinference`.
 Compatible changes may add optional attributes or spans, but must continue to
 omit raw payload JSON by default.
 
@@ -101,15 +101,28 @@ advanced commands `review`, `inspect`, `report`, `export`, `gate`,
 `repo-report`, `pr`, `dashboard`, plus the `ingest` and `show` aliases. Each is
 reached through a simple verb: `look` (inspect/review), `save report|json|repo-json|trace|pr`
 (report/export/repo-report/pr), `check` (gate, now with `--format text|json|github`),
-and `open` (dashboard). `import` and `capture` are retained. Two niche
+and `open` (dashboard). (`import` and `capture` were retained in `v2.0.0` but
+removed in `v3.0.0` — see the `v3.0.0` note below.) Two niche
 sub-options are not re-exposed on the simple verbs: the Markdown-only repo
 report (`repo-report --format markdown`) and `export --include-raw-payloads`;
 their library functions remain. `v2.0.0` also consolidates the per-source JSONL
 adapter IDs into `agentops-jsonl` (see Adapter Matrix).
 
+The `v3.0.0` release is a further **breaking** product simplification of the
+get-data-in and save surfaces:
+
+- Ingest verbs collapse from four to two. `capture` is folded into
+  `agentops run --no-ingest` (write the artifact only), and `import` is folded
+  into `agentops audit --quiet` (ingest only). `run` and `audit` are the two
+  intents: launch a new run vs review an existing artifact.
+- `save` kinds drop from six to three (`report`, `pr`, `json`). Repo-scoped and
+  OpenInference JSON become flags on `json` (`save json --repo`,
+  `save json --format openinference`); `save gate` is removed (use
+  `check --save`). Removed kinds return a migration hint.
+
 ## Adapter Matrix
 
-Supported in `v2.0.0`:
+Supported in `v3.0.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -129,14 +142,14 @@ surface — pass canonical exports without `--adapter` (auto-detected) or with
 Native stream adapters are tested with synthetic fixtures and clear diagnostics
 for unsupported shapes. They are not private transcript parsers.
 
-`agentops capture codex` and `agentops capture claude` are convenience commands
+`agentops run codex` and `agentops run claude` capture and ingest these explicit local artifacts
 for producing these explicit local artifacts. Captured stdout is written to
 ignored local paths such as `.agentops/captures/`; provider stderr remains
 separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v2.0.0` stable contract:
+The following are intentionally outside the `v3.0.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -149,7 +162,7 @@ The following are intentionally outside the `v2.0.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v2.0.0`.
+local template output shape, not a live ingestion API in `v3.0.0`.
 
 ## Reports
 

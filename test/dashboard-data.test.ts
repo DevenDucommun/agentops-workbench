@@ -24,7 +24,7 @@ afterEach(() => {
 
 async function ingest(...fixtures: string[]): Promise<void> {
   for (const fixture of fixtures) {
-    const result = await runCli(["import", fixture]);
+    const result = await runCli(["audit", fixture, "--quiet"]);
     expect(result.exitCode).toBe(0);
   }
 }

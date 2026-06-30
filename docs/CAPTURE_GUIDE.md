@@ -9,7 +9,7 @@ AgentOps can be used in two ways:
 
 - Live capture: start the agent through AgentOps with `agentops run`.
 - Retrospective audit: import an existing JSONL artifact or lower-fidelity
-  plain-text transcript with `agentops import`.
+  plain-text transcript with `agentops audit`.
 
 AgentOps does not run as a daemon. It either launches the provider command and
 saves its JSONL stream, or it analyzes an artifact that already exists.
@@ -31,13 +31,13 @@ machine-readable artifact:
 
 ```bash
 codex exec --json "review the current diff" > codex-session.jsonl
-./bin/agentops import codex-session.jsonl
+./bin/agentops audit codex-session.jsonl --quiet
 ./bin/agentops look
 ```
 
 ```bash
 claude -p --output-format stream-json --verbose "review the current diff" > claude-session.jsonl
-./bin/agentops import claude-session.jsonl
+./bin/agentops audit claude-session.jsonl --quiet
 ./bin/agentops look
 ```
 
@@ -45,7 +45,7 @@ Plain terminal output or a copied chat transcript can be imported for
 lower-confidence forensic analysis:
 
 ```bash
-./bin/agentops import transcript.txt
+./bin/agentops audit transcript.txt --quiet
 ./bin/agentops look
 ```
 
@@ -89,23 +89,22 @@ AgentOps can run Codex non-interactive mode and capture `codex exec --json`
 stdout to an ignored local JSONL file:
 
 ```bash
-./bin/agentops capture codex "summarize the repo risk areas" \
+./bin/agentops run codex "summarize the repo risk areas" \
   --output .agentops/captures/codex-session.jsonl
 ```
 
-Use `--ingest` to capture and ingest in one step:
+`run` ingests by default; add `--no-ingest` to write the artifact only:
 
 ```bash
-./bin/agentops capture codex "review the current change" \
+./bin/agentops run codex "review the current change" \
   --output .agentops/captures/codex-session.jsonl \
-  --ingest
 ```
 
 For a run that should not persist Codex session rollout files, pass
 `--ephemeral` through the capture command:
 
 ```bash
-./bin/agentops capture codex "review the current change" \
+./bin/agentops run codex "review the current change" \
   --ephemeral \
   --output .agentops/captures/codex-session.jsonl
 ```
@@ -125,7 +124,7 @@ Then import the capture:
 
 ```bash
 ./bin/agentops adapters --input .agentops/captures/codex-session.jsonl
-./bin/agentops import .agentops/captures/codex-session.jsonl
+./bin/agentops audit .agentops/captures/codex-session.jsonl --quiet
 ./bin/agentops save report latest --out .agentops/captures/report.md
 ```
 
@@ -135,16 +134,15 @@ AgentOps can run Claude Code print mode and capture stream JSON to an ignored
 local JSONL file:
 
 ```bash
-./bin/agentops capture claude "review the current change" \
+./bin/agentops run claude "review the current change" \
   --output .agentops/captures/claude-session.jsonl
 ```
 
-Use `--ingest` to capture and ingest in one step:
+`run` ingests by default; add `--no-ingest` to write the artifact only:
 
 ```bash
-./bin/agentops capture claude "review the current change" \
+./bin/agentops run claude "review the current change" \
   --output .agentops/captures/claude-session.jsonl \
-  --ingest
 ```
 
 The capture command invokes `claude -p --output-format stream-json --verbose`.
@@ -163,7 +161,7 @@ Hook lifecycle events can be included, but they increase the sensitivity of the
 artifact and should stay local unless explicitly sanitized:
 
 ```bash
-./bin/agentops capture claude "review the current change" \
+./bin/agentops run claude "review the current change" \
   --include-hook-events \
   --output .agentops/captures/claude-session-hooks.jsonl
 ```
@@ -183,7 +181,7 @@ Then import the capture:
 
 ```bash
 ./bin/agentops adapters --input .agentops/captures/claude-session.jsonl
-./bin/agentops import .agentops/captures/claude-session.jsonl
+./bin/agentops audit .agentops/captures/claude-session.jsonl --quiet
 ./bin/agentops save report latest --out .agentops/captures/report.md
 ```
 
@@ -195,7 +193,7 @@ after a run. AgentOps should not read private PAI memory stores.
 Expected flow:
 
 ```bash
-./bin/agentops import .agentops/captures/pai-export.jsonl
+./bin/agentops audit .agentops/captures/pai-export.jsonl --quiet
 ./bin/agentops save report --out .agentops/captures/report.md
 ```
 

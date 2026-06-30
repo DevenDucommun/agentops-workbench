@@ -45,9 +45,9 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `./bin/agentops check`.
 - [x] Fresh clone can run `./bin/agentops save`.
 - [x] Fresh clone can run `./bin/agentops audit ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops import ./fixtures/sample-session.jsonl`.
+- [x] Fresh clone can run `./bin/agentops audit ./fixtures/sample-session.jsonl --quiet`.
 - [x] Fresh clone can run `./bin/agentops save report latest --out report.md`.
-- [x] Fresh clone can run `./bin/agentops save trace latest --out agentops-openinference.json`.
+- [x] Fresh clone can run `./bin/agentops save json --format openinference latest --out agentops-openinference.json`.
 - [x] Fresh clone can run `./bin/agentops save pr sample-session --out pr-comment.md`.
 - [x] Fresh clone can run `./bin/agentops check latest --format github --out gate-comment.md`.
 - [x] Fresh clone can run MCP protocol tests with `bun test test/mcp.test.ts`.
@@ -90,7 +90,7 @@ bun test test/mcp.test.ts
 ./bin/agentops status
 ./bin/agentops look
 ./bin/agentops check
-./bin/agentops save trace --out /tmp/agentops-openinference.json
+./bin/agentops save json --format openinference --out /tmp/agentops-openinference.json
 ./bin/agentops audit ./fixtures/sample-session.jsonl --out /tmp/agentops-audit.md
 ./bin/agentops save pr --out /tmp/agentops-pr-comment.md
 ./bin/agentops scan-publication

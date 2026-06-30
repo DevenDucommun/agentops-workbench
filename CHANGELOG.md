@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.0.0 - 2026-06-30
+
+Breaking product simplification. Fewer commands and fewer concepts for the user:
+two get-data-in intents, three save kinds.
+
+### Removed (breaking)
+
+- `capture` command — folded into `agentops run`. `run` captures and ingests by
+  default; `run --no-ingest` writes the JSONL artifact only.
+- `import` command — folded into `agentops audit --quiet` (ingest only, no
+  inspection or gate).
+- `save repo-json` / `save trace` / `save gate` kinds. `save` is now
+  `report｜pr｜json`; repo-scoped and OpenInference JSON are flags on `json`
+  (`save json --repo`, `save json --format openinference`). For the gate JSON
+  use `check --save`. Removed kinds print a migration hint.
+
+### Changed
+
+- `agentops run` accepts `--no-ingest` and the former capture options
+  (`--output`, `--ephemeral`, `--sandbox`, `--model`, `--profile`,
+  `--include-hook-events`, `--no-session-persistence`, `--permission-mode`).
+- `agentops audit` accepts `--quiet`.
+- Help text now frames the surface as two intents (`run` vs `audit`) and three
+  save kinds.
+
 ## v2.0.0 - 2026-06-30
 
 Breaking simplification pass. The simple verbs (`look`, `check`, `save`,

@@ -104,7 +104,7 @@ export async function runCapture(request: CaptureRequest, executor: CaptureExecu
   };
 }
 
-export function formatCaptureResult(result: CaptureResult, options: { next?: "import" | "look" | null } = {}): string {
+export function formatCaptureResult(result: CaptureResult, options: { next?: "audit" | "look" | null } = {}): string {
   if (result.dryRun) {
     return [
       "Capture command (dry run)",
@@ -120,7 +120,7 @@ export function formatCaptureResult(result: CaptureResult, options: { next?: "im
       ? null
       : options.next === "look"
         ? "Next: agentops look"
-        : `Next: agentops import ${shellQuote(result.outputPath)}`;
+        : `Next: agentops audit ${shellQuote(result.outputPath)}`;
 
   return [
     `Captured ${result.provider} session`,
@@ -132,14 +132,14 @@ export function formatCaptureResult(result: CaptureResult, options: { next?: "im
 }
 
 export function captureUsage(provider?: CaptureProvider): string {
-  const command = provider ? `agentops capture ${provider}` : "agentops capture codex|claude";
+  const command = provider ? `agentops run ${provider}` : "agentops run codex|claude";
   const providerOptions =
     provider === "codex"
       ? " [--ephemeral] [--sandbox read-only|workspace-write|danger-full-access] [--model <model>] [--profile <name>]"
       : provider === "claude"
         ? " [--include-hook-events] [--no-session-persistence] [--model <model>] [--permission-mode <mode>]"
         : "";
-  return `Usage: ${command} <prompt> [--output .agentops/captures/session.jsonl] [--ingest] [--dry-run]${providerOptions}`;
+  return `Usage: ${command} <prompt> [--output .agentops/captures/session.jsonl] [--no-ingest] [--dry-run]${providerOptions}`;
 }
 
 function parseProviderOptions(provider: CaptureProvider, args: string[]) {

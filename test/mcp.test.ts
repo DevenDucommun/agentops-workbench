@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 test("serves read-only AgentOps MCP tools", async () => {
-  const ingest = await runCli(["import", "fixtures/sample-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const initialized = request("initialize");
