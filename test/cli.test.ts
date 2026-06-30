@@ -166,6 +166,7 @@ test("guides first-run setup with doctor and demo commands", async () => {
   expect(doctor.exitCode).toBe(0);
   expect(doctor.stdout).toContain("# AgentOps Doctor");
   expect(doctor.stdout).toContain("Bun runtime");
+  expect(doctor.stdout).toContain(".agentops ignore");
   expect(doctor.stdout).toContain("Recommended next command");
 
   const demo = await runCli(["demo"]);
@@ -174,6 +175,7 @@ test("guides first-run setup with doctor and demo commands", async () => {
   expect(demo.stdout).toContain("sample-session (ready");
   expect(demo.stdout).toContain("risky-session (blocked");
   expect(demo.stdout).toContain("agentops dashboard");
+  expect(demo.stdout).toContain("Dashboard URL: http://127.0.0.1:4927");
 
   const sessions = await runCli(["sessions"]);
   expect(sessions.exitCode).toBe(0);
