@@ -10,7 +10,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Latest published release: [`v2.0.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v2.0.0) — breaking simplification: single simple-verb CLI surface and consolidated `agentops-jsonl` adapter
+- Latest published release: [`v3.0.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.0.0) — product simplification: two ingest verbs (`run`/`audit`) and three save kinds (`report｜pr｜json`)
 - Current `main`: tracks the latest release
 - Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
