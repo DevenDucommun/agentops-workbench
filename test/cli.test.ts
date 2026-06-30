@@ -26,6 +26,7 @@ test("lists adapters and detection diagnostics", async () => {
   expect(list.stdout).toContain("claude-code-stream-json");
   expect(list.stdout).toContain("codex-jsonl");
   expect(list.stdout).toContain("pai-export-jsonl");
+  expect(list.stdout).toContain("forensic-text");
 
   const detected = await runCli(["adapters", "--input", "fixtures/codex-session.jsonl"]);
   expect(detected.exitCode).toBe(0);
@@ -146,12 +147,12 @@ test("gives clearer guidance for common command mistakes", async () => {
 
   const dbAsInput = await runCli(["ingest", ".agentops/agentops.db"]);
   expect(dbAsInput.exitCode).toBe(1);
-  expect(dbAsInput.stderr).toContain("expects a JSONL session artifact, not the SQLite database");
+  expect(dbAsInput.stderr).toContain("expects a session artifact or transcript, not the SQLite database");
   expect(dbAsInput.stderr).toContain("agentops review");
 
   const dbAsImport = await runCli(["import", ".agentops/agentops.db"]);
   expect(dbAsImport.exitCode).toBe(1);
-  expect(dbAsImport.stderr).toContain("agentops import expects a JSONL session artifact");
+  expect(dbAsImport.stderr).toContain("agentops import expects a session artifact or transcript");
 });
 
 test("inspect and sessions include usage metadata when available", async () => {
@@ -196,4 +197,25 @@ test("ingests native Claude Code stream JSONL without explicit adapter selection
   expect(inspect.stdout).toContain("Total Tokens");
   expect(inspect.stdout).toContain("1,180");
   expect(inspect.stdout).toContain("0.0123 USD");
+});
+
+test("imports forensic plain-text transcripts without explicit adapter selection", async () => {
+  const ingest = await runCli(["import", "fixtures/forensic-terminal-transcript.txt"]);
+  expect(ingest.exitCode).toBe(0);
+  expect(ingest.stdout).toContain("Adapter: forensic-text");
+
+  const inspect = await runCli(["review", "forensic-terminal-transcript"]);
+  expect(inspect.exitCode).toBe(0);
+  expect(inspect.stdout).toContain("Plain-text forensic import");
+  expect(inspect.stdout).toContain("bun test");
+  expect(inspect.stdout).toContain("observed, exit 0");
+
+  const weak = await runCli(["import", "fixtures/forensic-final-only.txt"]);
+  expect(weak.exitCode).toBe(0);
+  expect(weak.stdout).toContain("Adapter: forensic-text");
+
+  const report = await runCli(["review", "forensic-final-only", "--format", "markdown"]);
+  expect(report.exitCode).toBe(0);
+  expect(report.stdout).toContain("weak-forensic-transcript");
+  expect(report.stdout).toContain("No test, lint, typecheck, or verification command recorded.");
 });

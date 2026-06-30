@@ -57,6 +57,7 @@ export function generateSessionInspection(
       ["Verification Commands", String(verification.length)],
       ...usageRows(usage)
     ]),
+    ...forensicEvidenceQuality(session.source_adapter),
     "## Timeline",
     events.length
       ? events.map((event) => `- ${event.idx}. **${event.type}**${event.role ? ` (${event.role})` : ""}: ${event.summary}`).join("\n")
@@ -78,6 +79,18 @@ export function generateSessionInspection(
   ];
 
   return `${sections.join("\n\n")}\n`;
+}
+
+function forensicEvidenceQuality(sourceAdapter: string | null): string[] {
+  if (sourceAdapter !== "forensic-text") return [];
+  return [
+    "## Evidence Quality",
+    [
+      "- Plain-text forensic import: lower-fidelity than provider JSONL.",
+      "- Command statuses distinguish observed shell prompts from inferred narrative mentions.",
+      "- Prefer `agentops run` or provider JSONL when you need full-fidelity evidence."
+    ].join("\n")
+  ];
 }
 
 export function formatAdapterList(adapters: Array<{ id: string; displayName: string; artifactHint: string }>): string {

@@ -141,3 +141,28 @@ test("parses native Codex exec edge and partial fixtures", () => {
   expect(partialTranscript.session.id).toBe("codex-partial-sample");
   expect(partialTranscript.events.some((event) => event.type === "tool_call" && event.status === "in_progress")).toBe(true);
 });
+
+test("detects and parses forensic plain-text terminal transcripts", () => {
+  const input = loadAdapterInput("fixtures/forensic-terminal-transcript.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("forensic-text");
+  expect(transcript.session.id).toBe("forensic-terminal-transcript");
+  expect(transcript.session.source).toBe("forensic-text");
+  expect(transcript.session.sourceAdapter).toBe("forensic-text");
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === 'rg -n "health|routes" src test')).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === "bun test" && event.status === "observed")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "file_edit" && event.path === "src/server.ts")).toBe(true);
+  expect(transcript.events.at(-1)?.type).toBe("final_response");
+});
+
+test("accepts final-only forensic text as a low-confidence audit", () => {
+  const input = loadAdapterInput("fixtures/forensic-final-only.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("forensic-text");
+  expect(transcript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
+});

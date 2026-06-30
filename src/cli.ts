@@ -56,11 +56,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
     if (command === "ingest" || command === "import") {
       const sourcePath = args[0];
-      if (!sourcePath) return { stderr: `Usage: agentops ${command} <session.jsonl>\n`, exitCode: 1 };
+      if (!sourcePath) return { stderr: `Usage: agentops ${command} <session.jsonl|transcript.txt>\n`, exitCode: 1 };
       if (isDatabasePath(sourcePath)) {
         return {
           stderr:
-            `agentops ${command} expects a JSONL session artifact, not the SQLite database.\n\n` +
+            `agentops ${command} expects a session artifact or transcript, not the SQLite database.\n\n` +
             "Use one of these instead:\n" +
             "  agentops sessions\n" +
             "  agentops review\n" +
@@ -364,8 +364,8 @@ Usage:
   agentops report latest --out report.md
   agentops capture codex <prompt> [--output .agentops/captures/codex.jsonl] [--ingest]
   agentops capture claude <prompt> [--output .agentops/captures/claude.jsonl] [--ingest]
-  agentops import <session.jsonl>
-  agentops ingest <session.jsonl>
+  agentops import <session.jsonl|transcript.txt>
+  agentops ingest <session.jsonl|transcript.txt>
   agentops adapters
   agentops adapters --input <session.jsonl>
   agentops config --check

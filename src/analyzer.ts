@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { getCommands, getEvents, getFileChanges } from "./store";
+import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
   eventId: number | null;
@@ -73,6 +73,24 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const commands = getCommands(store, sessionId);
   const fileChanges = getFileChanges(store, sessionId);
   const events = getEvents(store, sessionId);
+  const session = getSession(store, sessionId);
+
+  if (session?.source_adapter === "forensic-text") {
+    flags.push({
+      eventId: null,
+      severity: "low",
+      category: "forensic-import",
+      message: "Plain-text forensic import uses inferred evidence. Prefer agentops run or provider JSONL for full-fidelity audit."
+    });
+    if (commands.length === 0) {
+      flags.push({
+        eventId: null,
+        severity: "medium",
+        category: "weak-forensic-transcript",
+        message: "Plain-text transcript did not include observable shell commands, so command and verification evidence is missing."
+      });
+    }
+  }
 
   for (const command of commands) {
     if (destructiveCommandPattern.test(command.command)) {
