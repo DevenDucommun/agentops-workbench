@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.9.1` complete; later milestones proposed.
+Status: `v1.10.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -365,12 +365,33 @@ Exit criteria:
 - Tools use the existing local SQLite store, report, and gate logic.
 - No MCP tool mutates sessions or reads private transcript stores.
 
+### v1.10.0: OpenInference JSON Export
+
+Status: complete in `v1.10.0`.
+
+Purpose: make AgentOps evidence portable into broader observability workflows
+without adding network upload, hosted services, or OTLP collector requirements.
+
+Scope:
+
+- Add `agentops export --format openinference-json`.
+- Map sessions, events, commands, risks, and token usage into a deterministic
+  JSON span bundle using OpenInference-style attributes.
+- Keep raw payload JSON omitted.
+- Document that this is local JSON export, not OTLP/protobuf export.
+
+Exit criteria:
+
+- Export is deterministic and covered by tests.
+- Existing `agentops.export.v1` JSON remains compatible.
+- No new upload or collector configuration is introduced.
+
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.9.1`
+These are intentionally not planned until the `v1.1.0` through `v1.10.0`
 sequence proves demand:
 
-- OpenTelemetry or OpenInference export.
+- OTLP/protobuf export and collector upload.
 - LLM-as-judge evaluation backed by deterministic evidence.
 - Team policy packs.
 - Hosted dashboard.

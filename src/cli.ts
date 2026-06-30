@@ -5,7 +5,7 @@ import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./ad
 import { analyzeSession } from "./analyzer";
 import { defaultConfig, formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
-import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
+import { generateOpenInferenceJsonExport, generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
 import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
@@ -234,8 +234,8 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const scope = readOption(args, "--scope") ?? "session";
       const outPath = readOption(args, "--out");
       const includeRawPayloads = args.includes("--include-raw-payloads");
-      if (format !== "json" || !["session", "repo"].includes(scope)) {
-        return { stderr: "Usage: agentops export --session latest --format json [--scope session|repo]\n", exitCode: 1 };
+      if (!["json", "openinference-json"].includes(format) || !["session", "repo"].includes(scope) || (format === "openinference-json" && scope !== "session")) {
+        return { stderr: "Usage: agentops export [latest|session-id] --format json|openinference-json [--scope session|repo] [--out file]\n", exitCode: 1 };
       }
 
       const config = loadConfig(configPath);
@@ -246,9 +246,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
         return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const output =
-        scope === "repo"
-          ? generateRepoJsonExport(store, sessionId, getGitChanges(), config, { includeRawPayloads })
-          : generateSessionJsonExport(store, sessionId, config, { includeRawPayloads });
+        format === "openinference-json"
+          ? generateOpenInferenceJsonExport(store, sessionId, config)
+          : scope === "repo"
+            ? generateRepoJsonExport(store, sessionId, getGitChanges(), config, { includeRawPayloads })
+            : generateSessionJsonExport(store, sessionId, config, { includeRawPayloads });
       store.db.close();
       return outputResult(output, outPath, "JSON export");
     }
@@ -719,6 +721,7 @@ Advanced:
   agentops ingest <session.jsonl|transcript.txt>
   agentops report latest --out report.md
   agentops export latest --format json
+  agentops export latest --format openinference-json
   agentops gate latest
   agentops gate latest --format json --out agentops-gate.json
   agentops repo-report latest

@@ -187,6 +187,11 @@ test("ingests then lists and inspects sessions", async () => {
   expect(payload.schemaVersion).toBe("agentops.export.v1");
   expect(payload.kind).toBe("session");
   expect(payload.events.every((event) => event.rawJson === undefined)).toBe(true);
+
+  const openInference = await runCli(["export", "--session", "latest", "--format", "openinference-json"]);
+  expect(openInference.exitCode).toBe(0);
+  expect(openInference.stdout).toContain("agentops.openinference.v1");
+  expect(openInference.stdout).toContain("openinference.span.kind");
 });
 
 test("guides first-run setup with doctor and demo commands", async () => {

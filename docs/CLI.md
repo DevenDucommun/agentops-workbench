@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.9.1`. See
+The documented command surface is stable in `v1.10.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -285,10 +285,12 @@ Exports stored data as deterministic JSON.
 ```bash
 agentops export latest --format json --out agentops-session.json
 agentops export latest --format json --scope repo --out agentops-repo.json
+agentops export latest --format openinference-json --out agentops-openinference.json
 ```
 
-By default, exports omit raw payload JSON and local source artifact paths. See
-[JSON export](EXPORT.md).
+By default, exports omit raw payload JSON and local source artifact paths.
+`openinference-json` also omits raw payload JSON and writes a local span bundle,
+not OTLP protobuf. See [JSON export](EXPORT.md).
 
 ### `agentops gate`
 

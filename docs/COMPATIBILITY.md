@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.9.1`.
+Status: stable for `v1.10.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -24,11 +24,13 @@ automation through `agentops init`, `agentops doctor --fix`, and
 `agentops demo --serve`. Version `v1.9.0` adds a local read-only MCP server
 for session/report lookup.
 Version `v1.9.1` updates release smoke validation for the MCP protocol tests
-without changing the public command surface.
+without changing the public command surface. Version `v1.10.0` adds
+OpenInference-style JSON span export without adding OTLP upload or collector
+configuration.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.9.1`:
+The following surfaces are treated as public contracts in `v1.10.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -83,9 +85,14 @@ contract is the documented tool names and read-only behavior in
 [MCP server](MCP.md). Compatible changes may add optional tool arguments,
 optional structured fields, or new read-only tools.
 
+The `v1.10.0` OpenInference export is an additive deterministic JSON span
+bundle available through `agentops export --format openinference-json`.
+Compatible changes may add optional attributes or spans, but must continue to
+omit raw payload JSON by default.
+
 ## Adapter Matrix
 
-Supported in `v1.9.1`:
+Supported in `v1.10.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -107,20 +114,20 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.9.1` stable contract:
+The following are intentionally outside the `v1.10.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
 - Live hook tailing or real-time agent control.
 - Hosted dashboard operation, auth, teams, or remote API compatibility.
 - MCP write tools, live agent control, or remote MCP hosting.
-- OpenTelemetry/OTLP export.
+- OTLP/protobuf export or collector upload.
 - Npm publication. The package remains `"private": true` until a future release
   checklist explicitly approves publishing.
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.9.1`.
+local template output shape, not a live ingestion API in `v1.10.0`.
 
 ## Reports
 

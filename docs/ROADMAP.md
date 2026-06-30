@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.9.1`
+Current public release: `v1.10.0`
 
 Implemented:
 
@@ -64,6 +64,7 @@ Implemented:
   `agentops demo --serve`.
 - Read-only MCP server for local session lookup, inspection, reports, quality
   gates, and repo reports.
+- Deterministic OpenInference-style JSON span export.
 
 Current boundaries:
 
@@ -302,6 +303,7 @@ Planned milestones:
 - `v1.8.0`: guided setup automation for local init, safe doctor fixes, and
   one-command demo serving.
 - `v1.9.0`: read-only MCP server for local session/report lookup.
+- `v1.10.0`: OpenInference-style JSON span export.
 
 Still deferred beyond the planned post-1.0 ladder:
 

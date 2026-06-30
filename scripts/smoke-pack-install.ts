@@ -41,6 +41,7 @@ runAndExpect(["bun", "./bin/agentops", "import", "./fixtures/forensic-terminal-t
 runAndExpect(["bun", "./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", packageDir);
 runAndExpect(["bun", "./bin/agentops", "gate", "sample-session"], "Status: PASSED", packageDir);
 runAndExpect(["bun", "./bin/agentops", "export", "--session", "latest", "--format", "json"], "agentops.export.v1", packageDir);
+runAndExpect(["bun", "./bin/agentops", "export", "--session", "latest", "--format", "openinference-json"], "agentops.openinference.v1", packageDir);
 
 if (!existsSync(dbPath)) fail(`Expected package smoke database to exist at ${dbPath}`);
 

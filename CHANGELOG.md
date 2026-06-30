@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.10.0 - 2026-06-30
+
+### Added
+
+- `agentops export --format openinference-json` for deterministic
+  OpenInference-style JSON span bundles.
+- Export tests covering stable span IDs, AgentOps evidence attributes, token
+  usage attributes, and raw payload omission.
+
 ## v1.9.1 - 2026-06-30
 
 ### Changed
