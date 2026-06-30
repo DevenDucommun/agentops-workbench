@@ -6,7 +6,7 @@ import type { UsageSummary } from "./types";
 
 export function generateSessionList(store: Store, limit = 20): string {
   const sessions = listSessions(store, limit);
-  if (sessions.length === 0) return "No sessions found. Run `agentops import <session.jsonl>` first.\n";
+  if (sessions.length === 0) return noSessionsMessage();
 
   const rows = sessions.map((session) => [
     session.id,
@@ -20,6 +20,19 @@ export function generateSessionList(store: Store, limit = 20): string {
   ]);
 
   return `${table(["Session", "Adapter", "Agent", "Repo", "Events", "Risks", "Tokens", "Ingested"], rows)}\n`;
+}
+
+export function noSessionsMessage(): string {
+  return [
+    "No sessions found.",
+    "",
+    "Try one:",
+    "  agentops demo",
+    "  agentops audit <session.jsonl|transcript.txt>",
+    "  agentops run codex \"review the current diff\"",
+    "  agentops run claude \"review the current diff\"",
+    ""
+  ].join("\n");
 }
 
 export function generateSessionInspection(

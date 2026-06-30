@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.6.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.6.0)
-- Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.7.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.7.0)
+- Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
@@ -44,11 +44,9 @@ Run locally:
 git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
 bun install --frozen-lockfile
-./bin/agentops import ./fixtures/sample-session.jsonl
-./bin/agentops review
-./bin/agentops report latest --out report.md
-./bin/agentops export latest --format json --out agentops-session.json
-./bin/agentops config --check
+./bin/agentops doctor
+./bin/agentops demo
+./bin/agentops review sample-session
 ./bin/agentops dashboard
 ```
 
@@ -77,8 +75,7 @@ or:
 For after-the-fact review, import an existing machine-readable JSONL artifact:
 
 ```bash
-./bin/agentops import path/to/session.jsonl
-./bin/agentops review
+./bin/agentops audit path/to/session.jsonl
 ```
 
 To create an auditable artifact without the AgentOps wrapper, run the provider
@@ -93,8 +90,7 @@ Plain terminal output and copied chat text can be imported for best-effort
 forensic review:
 
 ```bash
-./bin/agentops import path/to/transcript.txt
-./bin/agentops review
+./bin/agentops audit path/to/transcript.txt
 ```
 
 Forensic text imports are lower-fidelity than provider JSONL. Reports label the
@@ -120,8 +116,7 @@ Useful synthetic dashboard states:
 Generate a repo-aware PR report:
 
 ```bash
-./bin/agentops repo-report latest --out repo-report.md
-./bin/agentops repo-report latest --format github --out pr-comment.md
+./bin/agentops pr --out pr-comment.md
 ```
 
 Check public-readiness hygiene:
@@ -168,8 +163,12 @@ Common commands:
 ```bash
 ./bin/agentops run codex "review the current change"
 ./bin/agentops run claude "review the current change"
+./bin/agentops doctor
+./bin/agentops demo
+./bin/agentops audit ./fixtures/sample-session.jsonl
 ./bin/agentops review
 ./bin/agentops review latest --format markdown --out report.md
+./bin/agentops pr --out pr-comment.md
 ./bin/agentops capture codex "review the current change" --output .agentops/captures/codex-session.jsonl
 ./bin/agentops capture claude "review the current change" --output .agentops/captures/claude-session.jsonl
 ./bin/agentops import ./fixtures/sample-session.jsonl
@@ -191,7 +190,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.6.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.7.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts

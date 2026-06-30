@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.6.0`
+Current public release: `v1.7.0`
 
 Implemented:
 
@@ -58,6 +58,8 @@ Implemented:
   output for local CI/PR workflows.
 - Source-first distribution decision, platform support boundaries, and
   reproducible synthetic demo artifacts under `docs/demo/`.
+- Guided first-run commands: `agentops doctor`, `agentops demo`,
+  `agentops audit`, and `agentops pr`.
 
 Current boundaries:
 
@@ -291,6 +293,8 @@ Planned milestones:
 - `v1.5.0`: deterministic quality gates and PR/CI workflow support.
 - `v1.6.0`: distribution, install polish, platform support decisions, and
   adoption path.
+- `v1.7.0`: guided first-run simplification for setup, demo, audit, and
+  PR-ready report workflows.
 
 Still deferred beyond the planned post-1.0 ladder:
 

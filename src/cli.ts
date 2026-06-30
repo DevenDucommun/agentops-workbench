@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { analyzeSession } from "./analyzer";
@@ -7,10 +8,10 @@ import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from 
 import { generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
 import { getGitChanges } from "./git";
-import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
+import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
-import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, openStore, type Store } from "./store";
+import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, listSessions, openStore, type Store } from "./store";
 import { startDashboardServer, type DashboardServer } from "./dashboard";
 
 type CliResult = {
@@ -26,6 +27,22 @@ export async function runCli(argv: string[]): Promise<CliResult> {
   try {
     if (!command || command === "--help" || command === "-h") {
       return { stdout: help(), exitCode: 0 };
+    }
+
+    if (command === "doctor") {
+      return runDoctor(args);
+    }
+
+    if (command === "demo") {
+      return runDemo(args);
+    }
+
+    if (command === "audit") {
+      return runAudit(args);
+    }
+
+    if (command === "pr") {
+      return runPr(args);
     }
 
     if (command === "run") {
@@ -76,9 +93,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const input = loadAdapterInput(sourcePath);
       const adapter = resolveAdapter(input, adapterId ?? undefined);
       const store = openStore();
-      const transcript = adapter.parse(input, config);
-      const result = ingestTranscript(store, transcript, config);
-      analyzeSession(store, result.sessionId, config);
+      const result = ingestInput(store, input, adapter.id, config);
       const stdout = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
       store.db.close();
 
@@ -133,7 +148,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const output =
         format === "inspect"
@@ -155,7 +170,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const output = generateSessionInspection(store, sessionId, config);
       store.db.close();
@@ -171,7 +186,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const report = generateMarkdownReport(store, sessionId, config);
       store.db.close();
@@ -188,7 +203,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       if (!["markdown", "github"].includes(format)) {
         store.db.close();
@@ -218,7 +233,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const output =
         scope === "repo"
@@ -241,7 +256,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const sessionId = getSessionId(store, sessionArg);
       if (!sessionId) {
         store.db.close();
-        return { stderr: "No sessions found. Run `agentops run codex|claude <prompt>` or `agentops import <session.jsonl>` first.\n", exitCode: 1 };
+        return { stderr: noSessionsMessage(), exitCode: 1 };
       }
       const result = evaluateQualityGate(store, sessionId, config, { gitChanges: getGitChangesOrEmpty() });
       store.db.close();
@@ -359,18 +374,158 @@ function waitForShutdown(server: DashboardServer): Promise<void> {
   });
 }
 
+function runDoctor(args: string[]): CliResult {
+  const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const configResult = validateConfigFile(configPath);
+  const store = openStore();
+  const sessions = listSessions(store, 1);
+  const databasePath = store.path;
+  store.db.close();
+  const codexAvailable = commandAvailable("codex");
+  const claudeAvailable = commandAvailable("claude");
+
+  const checks = [
+    doctorCheck("Bun runtime", true, `bun ${Bun.version}`),
+    doctorCheck("Git checkout", existsSync(".git"), existsSync(".git") ? ".git found" : ".git not found; repo-aware reports need a git checkout"),
+    doctorCheck(
+      "Config",
+      configResult.errors.length === 0,
+      configResult.errors.length === 0 ? (configResult.exists ? `${configResult.path} OK` : "using built-in defaults") : configResult.errors.join("; "),
+      "error"
+    ),
+    doctorCheck("SQLite store", true, databasePath),
+    doctorCheck("Codex CLI", codexAvailable, codexAvailable ? "available on PATH" : "not found on PATH"),
+    doctorCheck("Claude CLI", claudeAvailable, claudeAvailable ? "available on PATH" : "not found on PATH"),
+    doctorCheck("Stored sessions", true, `${sessions.length > 0 ? "at least one" : "none"} found`)
+  ];
+  const ok = checks.every((check) => check.ok || check.level === "warn");
+  const next = sessions.length > 0 ? "agentops review" : "agentops demo";
+  const lines = [
+    "# AgentOps Doctor",
+    "",
+    ...checks.map((check) => `- ${check.ok ? "PASS" : check.level === "warn" ? "WARN" : "FAIL"} ${check.label}: ${check.detail}`),
+    "",
+    "Recommended next command:",
+    `  ${next}`,
+    ""
+  ];
+  return { stdout: lines.join("\n"), exitCode: ok ? 0 : 1 };
+}
+
+function runDemo(args: string[]): CliResult {
+  const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const config = loadConfig(configPath);
+  const store = openStore();
+  const fixtures = [
+    ["fixtures/sample-session.jsonl", "ready"],
+    ["fixtures/needs-review-session.jsonl", "needs review"],
+    ["fixtures/risky-session.jsonl", "blocked"],
+    ["fixtures/forensic-terminal-transcript.txt", "forensic"]
+  ] as const;
+  const imported = fixtures.map(([sourcePath, state]) => {
+    const input = loadAdapterInput(sourcePath);
+    const adapter = resolveAdapter(input);
+    const result = ingestInput(store, input, adapter.id, config);
+    return { ...result, adapterId: adapter.id, state };
+  });
+  const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
+  store.db.close();
+
+  const lines = [
+    "# AgentOps Demo",
+    "",
+    "Imported synthetic sessions:",
+    ...imported.map((item) => `- ${item.sessionId} (${item.state}, ${item.adapterId}, ${item.eventCount} events)`),
+    "",
+    `Sample gate: ${sampleGate.status.toUpperCase()} - ${sampleGate.summary}`,
+    "",
+    "Next commands:",
+    "  agentops review sample-session",
+    "  agentops gate sample-session",
+    "  agentops dashboard",
+    "",
+    "Static demo artifacts: docs/demo/",
+    ""
+  ];
+  return { stdout: lines.join("\n"), exitCode: 0 };
+}
+
+function runAudit(args: string[]): CliResult {
+  const sourcePath = args[0];
+  if (!sourcePath) return { stderr: "Usage: agentops audit <session.jsonl|transcript.txt> [--out audit.md]\n", exitCode: 1 };
+  if (isDatabasePath(sourcePath)) {
+    return { stderr: "agentops audit expects a session artifact or transcript, not the SQLite database.\n", exitCode: 1 };
+  }
+
+  const adapterId = readOption(args, "--adapter");
+  const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const outPath = readOption(args, "--out");
+  const config = loadConfig(configPath);
+  const input = loadAdapterInput(sourcePath);
+  const adapter = resolveAdapter(input, adapterId ?? undefined);
+  const store = openStore();
+  const result = ingestInput(store, input, adapter.id, config);
+  const importSummary = formatAuditImportSummary(result.sessionId, result.eventCount, adapter.id);
+  const review = generateSessionInspection(store, result.sessionId, config);
+  const gate = evaluateQualityGate(store, result.sessionId, config, { gitChanges: getGitChangesOrEmpty() });
+  const gateText = formatGateText(gate);
+  store.db.close();
+
+  const output = ["# AgentOps Audit", "", importSummary.trim(), "", review.trim(), "", gateText.trim(), ""].join("\n");
+  const written = outputResult(output, outPath, "audit");
+  return { ...written, exitCode: gate.status === "passed" ? 0 : 1 };
+}
+
+function runPr(args: string[]): CliResult {
+  const sessionArg = readSessionArg(args);
+  const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const outPath = readOption(args, "--out");
+  const config = loadConfig(configPath);
+  const store = openStore();
+  const sessionId = getSessionId(store, sessionArg);
+  if (!sessionId) {
+    store.db.close();
+    return { stderr: noSessionsMessage(), exitCode: 1 };
+  }
+  const output = generateGithubRepoComment(store, sessionId, getGitChanges(), config);
+  store.db.close();
+  return outputResult(output, outPath, "PR comment");
+}
+
 function ingestArtifact(sourcePath: string, adapterId: string): string {
   const config = loadConfig("agentops.config.json");
   const input = loadAdapterInput(sourcePath);
   const adapter = resolveAdapter(input, adapterId);
   const store = openStore();
-  const transcript = adapter.parse(input, config);
-  const result = ingestTranscript(store, transcript, config);
-  analyzeSession(store, result.sessionId, config);
+  const result = ingestInput(store, input, adapter.id, config);
   const output = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
   store.db.close();
 
   return output;
+}
+
+function formatAuditImportSummary(sessionId: string, eventCount: number, adapterId: string): string {
+  return [`Ingested session ${sessionId} (${eventCount} events)`, `Adapter: ${adapterId}`].join("\n");
+}
+
+function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
+  const adapter = resolveAdapter(input, adapterId);
+  const transcript = adapter.parse(input, config);
+  const result = ingestTranscript(store, transcript, config);
+  analyzeSession(store, result.sessionId, config);
+  return result;
+}
+
+function doctorCheck(label: string, ok: boolean, detail: string, level: "error" | "warn" = "warn") {
+  return { label, ok, detail, level };
+}
+
+function commandAvailable(command: string): boolean {
+  const result = spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return result.status === 0;
 }
 
 function getGitChangesOrEmpty() {
@@ -415,27 +570,31 @@ function help(): string {
   return `AgentOps Workbench
 
 Usage:
+  agentops doctor
+  agentops demo
   agentops run codex <prompt>
   agentops run claude <prompt>
+  agentops audit <session.jsonl|transcript.txt>
   agentops review [latest|session-id]
-  agentops report latest --out report.md
+  agentops pr [latest|session-id] [--out pr-comment.md]
+  agentops dashboard
+
+Advanced:
   agentops capture codex <prompt> [--output .agentops/captures/codex.jsonl] [--ingest]
   agentops capture claude <prompt> [--output .agentops/captures/claude.jsonl] [--ingest]
   agentops import <session.jsonl|transcript.txt>
   agentops ingest <session.jsonl|transcript.txt>
-  agentops adapters
-  agentops adapters --input <session.jsonl>
-  agentops config --check
-  agentops sessions
-  agentops inspect latest
-  agentops import <session.jsonl> --adapter pai-export-jsonl
-  agentops report latest
+  agentops report latest --out report.md
   agentops export latest --format json
   agentops gate latest
   agentops gate latest --format json --out agentops-gate.json
   agentops repo-report latest
   agentops repo-report latest --format github
-  agentops dashboard
+  agentops adapters
+  agentops adapters --input <session.jsonl>
+  agentops config --check
+  agentops sessions
+  agentops inspect latest
   agentops scan-publication
 
 Capture:

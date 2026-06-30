@@ -18,17 +18,16 @@ git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
 bun install --frozen-lockfile
 ./bin/agentops --help
-./bin/agentops import ./fixtures/sample-session.jsonl
-./bin/agentops review
-./bin/agentops review latest --format markdown --out report.md
-./bin/agentops gate latest
+./bin/agentops doctor
+./bin/agentops demo
+./bin/agentops review sample-session
+./bin/agentops gate sample-session
 ```
 
 Repo-aware reports require a git checkout:
 
 ```bash
-./bin/agentops repo-report latest --out repo-report.md
-./bin/agentops repo-report latest --format github --out pr-comment.md
+./bin/agentops pr --out pr-comment.md
 ```
 
 ## PATH-Based Local Command
@@ -38,8 +37,9 @@ For local use without typing `./bin/` each time:
 ```bash
 export PATH="$PWD/bin:$PATH"
 agentops --help
-agentops import ./fixtures/sample-session.jsonl
-agentops review
+agentops doctor
+agentops demo
+agentops review sample-session
 agentops sessions
 ```
 
@@ -66,9 +66,10 @@ This works from an extracted source archive:
 
 ```bash
 bun install --frozen-lockfile
-./bin/agentops import ./fixtures/sample-session.jsonl
-./bin/agentops review
-./bin/agentops review latest --format markdown --out report.md
+./bin/agentops doctor
+./bin/agentops demo
+./bin/agentops review sample-session
+./bin/agentops audit ./fixtures/sample-session.jsonl --out audit.md
 ```
 
 This does not work from a source archive because `.git` is not present:
@@ -141,5 +142,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.6.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.7.0` command,
 adapter, schema, and packaging boundaries.

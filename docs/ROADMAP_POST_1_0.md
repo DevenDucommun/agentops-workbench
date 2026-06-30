@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.6.0` complete; later milestones proposed.
+Status: `v1.7.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -288,9 +288,40 @@ Deferred:
 - Enterprise installer.
 - Binary distribution without evidence of user demand.
 
+### v1.7.0: Guided First-Run Simplification
+
+Tracking issue: [#79](https://github.com/DevenDucommun/agentops-workbench/issues/79)
+
+Status: complete in `v1.7.0`.
+
+Purpose: reduce first-use decision load by making setup checks, synthetic demos,
+artifact audits, and PR-ready reports reachable through short guided commands.
+
+Scope:
+
+- Add `agentops doctor` for local readiness checks and recommended next steps.
+- Add `agentops demo` for a one-command synthetic demo import path.
+- Add `agentops audit <artifact>` for import, review, and quality gate in one
+  command.
+- Add `agentops pr` as a short GitHub-ready repo report command.
+- Simplify top-level help and empty-session guidance.
+
+Exit criteria:
+
+- Guided commands are covered by CLI tests.
+- Install/package/archive smokes exercise the guided path.
+- README, CLI docs, and installation docs lead with the simplified path.
+- Existing advanced commands remain compatible.
+
+Deferred:
+
+- Hosted onboarding.
+- Automatic provider login or credential setup.
+- Posting PR comments directly to GitHub.
+
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.6.0`
+These are intentionally not planned until the `v1.1.0` through `v1.7.0`
 sequence proves demand:
 
 - AgentOps MCP server for read-only session/report lookup.
