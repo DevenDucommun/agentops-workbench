@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 test("dashboard API reads sessions from SQLite", async () => {
-  const ingest = await runCli(["import", "fixtures/sample-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -81,7 +81,7 @@ test("dashboard API reads sessions from SQLite", async () => {
 });
 
 test("dashboard decision payload surfaces missing evidence and blocked readiness", async () => {
-  const ingest = await runCli(["import", "fixtures/risky-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/risky-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -160,7 +160,7 @@ test("dashboard decision payload surfaces missing evidence and blocked readiness
 
 test("dashboard demo fixtures cover ready, needs-review, and blocked states", async () => {
   for (const fixture of ["fixtures/sample-session.jsonl", "fixtures/needs-review-session.jsonl", "fixtures/risky-session.jsonl"]) {
-    const ingest = await runCli(["import", fixture]);
+    const ingest = await runCli(["audit", fixture, "--quiet"]);
     expect(ingest.exitCode).toBe(0);
   }
 
@@ -187,7 +187,7 @@ test("dashboard demo fixtures cover ready, needs-review, and blocked states", as
 });
 
 test("dashboard API includes tool usage summary", async () => {
-  const ingest = await runCli(["import", "fixtures/codex-exec-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/codex-exec-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -207,7 +207,7 @@ test("dashboard API includes tool usage summary", async () => {
 });
 
 test("dashboard API includes Claude stream tool usage summary", async () => {
-  const ingest = await runCli(["import", "fixtures/claude-code-stream-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/claude-code-stream-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -262,7 +262,7 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
 });
 
 test("dashboard serves sanitized JSON evidence bundles for sessions", async () => {
-  const ingest = await runCli(["import", "fixtures/risky-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/risky-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -306,7 +306,7 @@ test("dashboard serves sanitized JSON evidence bundles for sessions", async () =
 });
 
 test("dashboard labels forensic text evidence quality", async () => {
-  const ingest = await runCli(["import", "fixtures/forensic-terminal-transcript.txt"]);
+  const ingest = await runCli(["audit", "fixtures/forensic-terminal-transcript.txt", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -353,7 +353,7 @@ test("dashboard labels forensic text evidence quality", async () => {
 });
 
 test("dashboard distinguishes inferred forensic evidence from verified evidence", async () => {
-  const ingest = await runCli(["import", "fixtures/forensic-copied-chat.txt"]);
+  const ingest = await runCli(["audit", "fixtures/forensic-copied-chat.txt", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -397,9 +397,9 @@ test("dashboard distinguishes inferred forensic evidence from verified evidence"
 });
 
 test("dashboard compares two sessions with decision and evidence deltas", async () => {
-  const riskyIngest = await runCli(["import", "fixtures/risky-session.jsonl"]);
+  const riskyIngest = await runCli(["audit", "fixtures/risky-session.jsonl", "--quiet"]);
   expect(riskyIngest.exitCode).toBe(0);
-  const sampleIngest = await runCli(["import", "fixtures/sample-session.jsonl"]);
+  const sampleIngest = await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"]);
   expect(sampleIngest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });
@@ -448,7 +448,7 @@ test("dashboard compares two sessions with decision and evidence deltas", async 
 });
 
 test("dashboard serves markdown reports for sessions", async () => {
-  const ingest = await runCli(["import", "fixtures/sample-session.jsonl"]);
+  const ingest = await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"]);
   expect(ingest.exitCode).toBe(0);
 
   const server = startDashboardServer({ port: 0 });

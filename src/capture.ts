@@ -104,7 +104,7 @@ export async function runCapture(request: CaptureRequest, executor: CaptureExecu
   };
 }
 
-export function formatCaptureResult(result: CaptureResult, options: { next?: "import" | "look" | null } = {}): string {
+export function formatCaptureResult(result: CaptureResult, options: { next?: "audit" | "look" | null } = {}): string {
   if (result.dryRun) {
     return [
       "Capture command (dry run)",
@@ -120,7 +120,7 @@ export function formatCaptureResult(result: CaptureResult, options: { next?: "im
       ? null
       : options.next === "look"
         ? "Next: agentops look"
-        : `Next: agentops import ${shellQuote(result.outputPath)}`;
+        : `Next: agentops audit ${shellQuote(result.outputPath)}`;
 
   return [
     `Captured ${result.provider} session`,

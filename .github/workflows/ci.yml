@@ -44,13 +44,13 @@ jobs:
       - name: CLI smoke test
         run: |
           ./bin/agentops config --check > /tmp/agentops-config-check.txt
-          ./bin/agentops import ./fixtures/sample-session.jsonl
-          ./bin/agentops import ./fixtures/claude-code-session.jsonl
-          ./bin/agentops import ./fixtures/codex-session.jsonl
-          ./bin/agentops import ./fixtures/codex-exec-session.jsonl
-          ./bin/agentops import ./fixtures/codex-exec-edge-session.jsonl
-          ./bin/agentops import ./fixtures/claude-code-stream-edge-session.jsonl
-          ./bin/agentops import ./fixtures/usage-session.jsonl
+          ./bin/agentops audit ./fixtures/sample-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/claude-code-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/codex-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/codex-exec-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/codex-exec-edge-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/claude-code-stream-edge-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/usage-session.jsonl --quiet
           ./bin/agentops adapters > /tmp/agentops-adapters.md
           ./bin/agentops adapters --input ./fixtures/codex-session.jsonl > /tmp/agentops-adapter-detection.md
           ./bin/agentops adapters --input ./fixtures/codex-exec-session.jsonl > /tmp/agentops-codex-exec-detection.md
@@ -60,8 +60,8 @@ jobs:
           ./bin/agentops look --session latest > /tmp/agentops-look.md
           ./bin/agentops save report --session latest --out /tmp/agentops-report.md
           ./bin/agentops save json --session latest --out /tmp/agentops-export.json
-          ./bin/agentops save repo-json --session latest --out /tmp/agentops-repo-export.json
-          ./bin/agentops save trace --session latest --out /tmp/agentops-openinference.json
+          ./bin/agentops save json --repo --session latest --out /tmp/agentops-repo-export.json
+          ./bin/agentops save json --format openinference --session latest --out /tmp/agentops-openinference.json
           ./bin/agentops save pr --session latest --out /tmp/agentops-github-comment.md
           ./bin/agentops check --session latest --format github --out /tmp/agentops-gate-github.md
           ./bin/agentops open --check > /tmp/agentops-dashboard-check.txt
