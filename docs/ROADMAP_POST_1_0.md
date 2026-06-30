@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.3.0` complete; later milestones proposed.
+Status: `v1.4.0` complete; later milestones proposed.
 
 Last reviewed: 2026-06-29. Updated for capture/import UX investigation on
 2026-06-30.
@@ -184,9 +184,9 @@ Deferred:
 
 Tracking issue: [#51](https://github.com/DevenDucommun/agentops-workbench/issues/51)
 
-Status: started. Initial implementation keeps the workflow simple by extending
-`agentops import <artifact>` with a `forensic-text` adapter instead of adding a
-separate forensic command.
+Status: complete in `v1.4.0`. The implementation keeps the workflow simple by
+extending `agentops import <artifact>` with a `forensic-text` adapter instead
+of adding a separate forensic command.
 
 Purpose: let users audit what they already have, including lower-fidelity plain
 terminal transcripts, without pretending inferred evidence is as strong as

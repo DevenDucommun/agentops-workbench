@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.3.0`
+Current public release: `v1.4.0`
 
 Implemented:
 

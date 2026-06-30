@@ -1,0 +1,7 @@
+Claude Code text output
+
+I inspected the dashboard files and ran `bun test`.
+
+Updated src/dashboard.ts to show clearer empty-state copy.
+
+Final: Dashboard empty-state copy updated. Tests passed.

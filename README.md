@@ -10,7 +10,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.3.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.3.0)
+- Public release: [`v1.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.4.0)
 - Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
@@ -174,7 +174,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.3.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.4.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
@@ -231,6 +231,8 @@ Forensic text import is intentionally narrower than transcript-store scraping:
 ```bash
 ./bin/agentops import ./fixtures/forensic-terminal-transcript.txt
 ./bin/agentops import ./fixtures/forensic-final-only.txt
+./bin/agentops import ./fixtures/forensic-codex-final-output.txt
+./bin/agentops import ./fixtures/forensic-claude-text-output.txt
 ```
 
 Use it for saved terminal output or copied chat text when JSONL is unavailable.

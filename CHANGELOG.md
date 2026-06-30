@@ -1,13 +1,14 @@
 # Changelog
 
-## Unreleased
+## v1.4.0 - 2026-06-30
 
 ### Added
 
 - Initial `forensic-text` adapter for best-effort import of saved terminal
   transcripts and copied coding-agent text through `agentops import`.
-- Synthetic forensic fixtures for command-rich terminal logs, final-answer-only
-  text, and copied chat text.
+- Synthetic forensic fixtures for command-rich terminal logs, Codex
+  final-output-only text, Claude text output, final-answer-only text, and
+  copied chat text.
 - Evidence-quality report language for forensic imports, including observed vs
   inferred command labels and weak-transcript risk flags.
 - Dashboard evidence-quality payload and card for structured JSONL vs forensic

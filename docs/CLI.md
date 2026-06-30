@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.3.0`. See
+The documented command surface is stable in `v1.4.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -134,6 +134,8 @@ agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
 agentops import ./fixtures/claude-code-stream-session.jsonl
 agentops import ./fixtures/codex-exec-session.jsonl
 agentops import ./fixtures/forensic-terminal-transcript.txt
+agentops import ./fixtures/forensic-codex-final-output.txt
+agentops import ./fixtures/forensic-claude-text-output.txt
 ```
 
 Forensic plain-text import uses the `forensic-text` adapter. It labels

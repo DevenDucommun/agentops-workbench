@@ -171,3 +171,32 @@ test("accepts final-only forensic text as a low-confidence audit", () => {
   expect(transcript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
   expect(transcript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
 });
+
+test("covers Codex final-output-only and Claude text forensic fixtures", () => {
+  const codexInput = loadAdapterInput("fixtures/forensic-codex-final-output.txt");
+  const codexAdapter = resolveAdapter(codexInput);
+  const codexTranscript = codexAdapter.parse(codexInput, defaultConfig);
+
+  expect(codexAdapter.id).toBe("forensic-text");
+  expect(codexTranscript.session.agent).toBe("Codex");
+  expect(codexTranscript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
+  expect(codexTranscript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
+
+  const claudeInput = loadAdapterInput("fixtures/forensic-claude-text-output.txt");
+  const claudeAdapter = resolveAdapter(claudeInput);
+  const claudeTranscript = claudeAdapter.parse(claudeInput, defaultConfig);
+
+  expect(claudeAdapter.id).toBe("forensic-text");
+  expect(claudeTranscript.session.agent).toBe("Claude Code");
+  expect(claudeTranscript.events.some((event) => event.type === "tool_call" && event.command === "bun test" && event.status === "inferred")).toBe(true);
+  expect(claudeTranscript.events.some((event) => event.type === "file_edit" && event.path === "src/dashboard.ts")).toBe(true);
+});
+
+test("does not auto-detect unsupported non-transcript text without markers", () => {
+  const input = {
+    sourcePath: "notes.bin",
+    content: "This is just a generic note with no agent, command, or file evidence."
+  };
+
+  expect(() => resolveAdapter(input)).toThrow("Could not detect an adapter");
+});
