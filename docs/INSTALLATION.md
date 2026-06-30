@@ -142,5 +142,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.7.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.7.1` command,
 adapter, schema, and packaging boundaries.

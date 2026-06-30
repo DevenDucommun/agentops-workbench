@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.1 - 2026-06-30
+
+### Changed
+
+- `agentops doctor` now checks that `.agentops/` is ignored by git.
+- `agentops demo` now prints the local dashboard command with host/port and
+  the dashboard URL.
+
 ## v1.7.0 - 2026-06-30
 
 ### Added

@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.7.0` complete; later milestones proposed.
+Status: `v1.7.1` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -321,7 +321,7 @@ Deferred:
 
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.7.0`
+These are intentionally not planned until the `v1.1.0` through `v1.7.1`
 sequence proves demand:
 
 - AgentOps MCP server for read-only session/report lookup.

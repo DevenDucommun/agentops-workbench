@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.7.0`. See
+The documented command surface is stable in `v1.7.1`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -64,9 +64,9 @@ Checks local readiness and prints the next recommended command.
 agentops doctor
 ```
 
-The check covers the Bun runtime, git checkout state, config validity, SQLite
-store path, stored sessions, and whether Codex and Claude CLIs are available on
-`PATH`.
+The check covers the Bun runtime, git checkout state, `.agentops/` ignore
+status, config validity, SQLite store path, stored sessions, and whether Codex
+and Claude CLIs are available on `PATH`.
 
 ### `agentops demo`
 
@@ -77,10 +77,10 @@ dashboard next steps.
 agentops demo
 agentops review sample-session
 agentops gate sample-session
-agentops dashboard
+agentops dashboard --host 127.0.0.1 --port 4927
 ```
 
-The demo uses only public synthetic fixtures.
+The demo uses only public synthetic fixtures and prints the dashboard URL.
 
 ### `agentops audit`
 

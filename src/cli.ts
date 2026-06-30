@@ -383,10 +383,12 @@ function runDoctor(args: string[]): CliResult {
   store.db.close();
   const codexAvailable = commandAvailable("codex");
   const claudeAvailable = commandAvailable("claude");
+  const agentOpsIgnored = isAgentOpsIgnored();
 
   const checks = [
     doctorCheck("Bun runtime", true, `bun ${Bun.version}`),
     doctorCheck("Git checkout", existsSync(".git"), existsSync(".git") ? ".git found" : ".git not found; repo-aware reports need a git checkout"),
+    doctorCheck(".agentops ignore", agentOpsIgnored, agentOpsIgnored ? ".agentops/ is ignored" : ".agentops/ is not ignored", "error"),
     doctorCheck(
       "Config",
       configResult.errors.length === 0,
@@ -414,6 +416,9 @@ function runDoctor(args: string[]): CliResult {
 
 function runDemo(args: string[]): CliResult {
   const configPath = readOption(args, "--config") ?? "agentops.config.json";
+  const host = readOption(args, "--host") ?? "127.0.0.1";
+  const port = parsePort(readOption(args, "--port"));
+  const dashboardUrl = `http://${host}:${port}`;
   const config = loadConfig(configPath);
   const store = openStore();
   const fixtures = [
@@ -442,7 +447,8 @@ function runDemo(args: string[]): CliResult {
     "Next commands:",
     "  agentops review sample-session",
     "  agentops gate sample-session",
-    "  agentops dashboard",
+    `  agentops dashboard --host ${host} --port ${port}`,
+    `Dashboard URL: ${dashboardUrl}`,
     "",
     "Static demo artifacts: docs/demo/",
     ""
@@ -522,6 +528,15 @@ function doctorCheck(label: string, ok: boolean, detail: string, level: "error" 
 
 function commandAvailable(command: string): boolean {
   const result = spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return result.status === 0;
+}
+
+function isAgentOpsIgnored(): boolean {
+  if (!existsSync(".git")) return true;
+  const result = spawnSync("git", ["check-ignore", "-q", ".agentops/"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
