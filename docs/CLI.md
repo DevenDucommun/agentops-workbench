@@ -117,7 +117,12 @@ Use `--input` to inspect detection diagnostics for a source artifact:
 
 ```bash
 agentops adapters --input ./fixtures/codex-session.jsonl
+agentops adapters --input ./fixtures/forensic-terminal-transcript.txt
 ```
+
+For forensic text, diagnostics include observed command, inferred command, file
+mention, and provider-marker signals so users can judge transcript strength
+before import.
 
 ### `agentops import <session.jsonl|transcript.txt>`
 

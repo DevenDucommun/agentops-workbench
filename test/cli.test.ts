@@ -32,6 +32,15 @@ test("lists adapters and detection diagnostics", async () => {
   expect(detected.exitCode).toBe(0);
   expect(detected.stdout).toContain("Codex Export JSONL (100%)");
   expect(detected.stdout).toContain("found Codex source metadata");
+
+  const forensic = await runCli(["adapters", "--input", "fixtures/forensic-terminal-transcript.txt"]);
+  expect(forensic.exitCode).toBe(0);
+  expect(forensic.stdout).toContain("Forensic Plain Text");
+  expect(forensic.stdout).toContain("2 observed commands");
+
+  const weakForensic = await runCli(["adapters", "--input", "fixtures/forensic-final-only.txt"]);
+  expect(weakForensic.exitCode).toBe(0);
+  expect(weakForensic.stdout).toContain("provider marker");
 });
 
 test("prints capture dry-run commands without invoking providers", async () => {

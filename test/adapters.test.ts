@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
-import { loadAdapterInput, resolveAdapter } from "../src/adapters";
+import { detectAdapters, loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { defaultConfig } from "../src/config";
 
 test("detects PAI export JSONL artifacts", () => {
@@ -144,10 +144,13 @@ test("parses native Codex exec edge and partial fixtures", () => {
 
 test("detects and parses forensic plain-text terminal transcripts", () => {
   const input = loadAdapterInput("fixtures/forensic-terminal-transcript.txt");
+  const detection = detectAdapters(input).find((result) => result.adapter.id === "forensic-text")?.detection;
   const adapter = resolveAdapter(input);
   const transcript = adapter.parse(input, defaultConfig);
 
   expect(adapter.id).toBe("forensic-text");
+  expect(detection?.reason).toContain("2 observed commands");
+  expect(detection?.reason).toContain("file mention");
   expect(transcript.session.id).toBe("forensic-terminal-transcript");
   expect(transcript.session.source).toBe("forensic-text");
   expect(transcript.session.sourceAdapter).toBe("forensic-text");
@@ -159,10 +162,12 @@ test("detects and parses forensic plain-text terminal transcripts", () => {
 
 test("accepts final-only forensic text as a low-confidence audit", () => {
   const input = loadAdapterInput("fixtures/forensic-final-only.txt");
+  const detection = detectAdapters(input).find((result) => result.adapter.id === "forensic-text")?.detection;
   const adapter = resolveAdapter(input);
   const transcript = adapter.parse(input, defaultConfig);
 
   expect(adapter.id).toBe("forensic-text");
+  expect(detection?.reason).toContain("provider marker");
   expect(transcript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
   expect(transcript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
 });

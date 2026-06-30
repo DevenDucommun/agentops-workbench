@@ -44,11 +44,14 @@ export function detectForensicText(content: string, sourcePath = ""): { matched:
   const signals = scoreSignals(text);
   const extension = extname(sourcePath).toLowerCase();
   const textExtension = [".txt", ".log", ".md", ".transcript"].includes(extension);
-  if (signals.commandCount > 0 || signals.fileCount > 0 || signals.providerCount > 0) {
+  if (signals.observedCommandCount > 0 || signals.inferredCommandCount > 0 || signals.fileCount > 0 || signals.providerCount > 0) {
     return {
       matched: true,
-      confidence: Math.min(0.75, 0.35 + signals.commandCount * 0.15 + signals.fileCount * 0.08 + signals.providerCount * 0.08),
-      reason: "found plain-text transcript markers"
+      confidence: Math.min(
+        0.75,
+        0.35 + signals.observedCommandCount * 0.15 + signals.inferredCommandCount * 0.1 + signals.fileCount * 0.08 + signals.providerCount * 0.08
+      ),
+      reason: formatDetectionReason(signals)
     };
   }
   if (textExtension) {
@@ -183,13 +186,23 @@ function forensicNote(summary: string, status: "inferred" | "missing" = "inferre
   };
 }
 
-function scoreSignals(text: string): { commandCount: number; fileCount: number; providerCount: number } {
+function scoreSignals(text: string): { observedCommandCount: number; inferredCommandCount: number; fileCount: number; providerCount: number } {
   const lines = text.split(/\r?\n/);
   return {
-    commandCount: lines.filter((line) => extractObservedCommand(line.trim()) || extractInferredCommand(line.trim())).length,
+    observedCommandCount: lines.filter((line) => extractObservedCommand(line.trim())).length,
+    inferredCommandCount: lines.filter((line) => !extractObservedCommand(line.trim()) && extractInferredCommand(line.trim())).length,
     fileCount: extractFilePaths(text).length,
     providerCount: /\b(Claude Code|Claude|Codex|OpenAI Codex)\b/i.test(text) ? 1 : 0
   };
+}
+
+function formatDetectionReason(signals: ReturnType<typeof scoreSignals>): string {
+  const parts = [];
+  if (signals.observedCommandCount > 0) parts.push(`${signals.observedCommandCount} observed command${signals.observedCommandCount === 1 ? "" : "s"}`);
+  if (signals.inferredCommandCount > 0) parts.push(`${signals.inferredCommandCount} inferred command${signals.inferredCommandCount === 1 ? "" : "s"}`);
+  if (signals.fileCount > 0) parts.push(`${signals.fileCount} file mention${signals.fileCount === 1 ? "" : "s"}`);
+  if (signals.providerCount > 0) parts.push("provider marker");
+  return `found forensic text markers: ${parts.join(", ")}`;
 }
 
 function extractObservedCommand(line: string): string | null {

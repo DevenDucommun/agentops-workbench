@@ -18,6 +18,9 @@
   plain-text transcripts, including weak-transcript warnings.
 - Analyzer/report logic now treats inferred forensic verification as review
   evidence instead of observed proof for final success claims.
+- `agentops adapters --input` now reports forensic plain-text marker counts,
+  including observed commands, inferred commands, file mentions, and provider
+  markers.
 
 ### Changed
 
