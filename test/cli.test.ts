@@ -158,39 +158,38 @@ test("ingests then lists and inspects sessions", async () => {
   expect(sessions.stdout).toContain("claude-code-sample");
   expect(sessions.stdout).toContain("agentops-jsonl");
 
-  const inspect = await runCli(["inspect", "--session", "latest"]);
-  expect(inspect.exitCode).toBe(0);
-  expect(inspect.stdout).toContain("# AgentOps Session Inspection");
-  expect(inspect.stdout).toContain("Claude Code");
-  expect(inspect.stdout).toContain("Verification Commands");
-  expect(inspect.stdout).toContain("Synthetic Claude Code export completed");
+  const look = await runCli(["look", "--session", "latest"]);
+  expect(look.exitCode).toBe(0);
+  expect(look.stdout).toContain("# AgentOps Session Inspection");
+  expect(look.stdout).toContain("Claude Code");
+  expect(look.stdout).toContain("Verification Commands");
+  expect(look.stdout).toContain("Synthetic Claude Code export completed");
 
-  const positionalInspect = await runCli(["inspect", "latest"]);
-  expect(positionalInspect.exitCode).toBe(0);
-  expect(positionalInspect.stdout).toContain("# AgentOps Session Inspection");
-
-  const review = await runCli(["review"]);
-  expect(review.exitCode).toBe(0);
-  expect(review.stdout).toContain("# AgentOps Session Inspection");
+  const positionalLook = await runCli(["look", "latest"]);
+  expect(positionalLook.exitCode).toBe(0);
+  expect(positionalLook.stdout).toContain("# AgentOps Session Inspection");
 
   const reportPath = join(tmpdir(), `agentops-report-${Date.now()}.md`);
-  const report = await runCli(["report", "latest", "--out", reportPath]);
+  const report = await runCli(["save", "report", "latest", "--out", reportPath]);
   expect(report.exitCode).toBe(0);
   expect(report.stdout).toContain(`Wrote report: ${reportPath}`);
   expect(existsSync(reportPath)).toBe(true);
   expect(readFileSync(reportPath, "utf8")).toContain("# AgentOps Session Report");
 
-  const exported = await runCli(["export", "--session", "latest", "--format", "json"]);
+  const jsonPath = join(tmpdir(), `agentops-export-${Date.now()}.json`);
+  const exported = await runCli(["save", "json", "latest", "--out", jsonPath]);
   expect(exported.exitCode).toBe(0);
-  const payload = JSON.parse(exported.stdout ?? "") as { schemaVersion: string; kind: string; events: Array<{ rawJson?: string }> };
+  const payload = JSON.parse(readFileSync(jsonPath, "utf8")) as { schemaVersion: string; kind: string; events: Array<{ rawJson?: string }> };
   expect(payload.schemaVersion).toBe("agentops.export.v1");
   expect(payload.kind).toBe("session");
   expect(payload.events.every((event) => event.rawJson === undefined)).toBe(true);
 
-  const openInference = await runCli(["export", "--session", "latest", "--format", "openinference-json"]);
+  const tracePath = join(tmpdir(), `agentops-trace-${Date.now()}.json`);
+  const openInference = await runCli(["save", "trace", "latest", "--out", tracePath]);
   expect(openInference.exitCode).toBe(0);
-  expect(openInference.stdout).toContain("agentops.openinference.v1");
-  expect(openInference.stdout).toContain("openinference.span.kind");
+  const trace = readFileSync(tracePath, "utf8");
+  expect(trace).toContain("agentops.openinference.v1");
+  expect(trace).toContain("openinference.span.kind");
 });
 
 test("guides first-run setup with doctor and demo commands", async () => {
@@ -232,10 +231,12 @@ test("audits artifacts and creates PR-ready output with short commands", async (
   expect(risky.exitCode).toBe(1);
   expect(risky.stdout).toContain("Status: FAILED");
 
-  const pr = await runCli(["pr", "sample-session"]);
+  const prPath = join(tmpdir(), `agentops-pr-${Date.now()}.md`);
+  const pr = await runCli(["save", "pr", "sample-session", "--out", prPath]);
   expect(pr.exitCode).toBe(0);
-  expect(pr.stdout).toContain("AgentOps Workbench Report");
-  expect(pr.stdout).toContain("AgentOps Quality Gate");
+  const prComment = readFileSync(prPath, "utf8");
+  expect(prComment).toContain("AgentOps Workbench Report");
+  expect(prComment).toContain("AgentOps Quality Gate");
 });
 
 test("supports simplified product workflow commands", async () => {
@@ -292,20 +293,16 @@ test("gives clearer guidance for common command mistakes", async () => {
   const outputAsCommand = await runCli(["report.md", "latest"]);
   expect(outputAsCommand.exitCode).toBe(1);
   expect(outputAsCommand.stderr).toContain("It looks like that is an output filename");
-  expect(outputAsCommand.stderr).toContain("agentops report latest --out report.md");
-
-  const dbAsInput = await runCli(["ingest", ".agentops/agentops.db"]);
-  expect(dbAsInput.exitCode).toBe(1);
-  expect(dbAsInput.stderr).toContain("expects a session artifact or transcript, not the SQLite database");
-  expect(dbAsInput.stderr).toContain("agentops review");
+  expect(outputAsCommand.stderr).toContain("agentops save report --out report.md");
 
   const dbAsImport = await runCli(["import", ".agentops/agentops.db"]);
   expect(dbAsImport.exitCode).toBe(1);
   expect(dbAsImport.stderr).toContain("agentops import expects a session artifact or transcript");
+  expect(dbAsImport.stderr).toContain("agentops look");
 });
 
 test("inspect and sessions include usage metadata when available", async () => {
-  const ingest = await runCli(["ingest", "fixtures/usage-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/usage-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
 
   const sessions = await runCli(["sessions"]);
@@ -313,7 +310,7 @@ test("inspect and sessions include usage metadata when available", async () => {
   expect(sessions.stdout).toContain("usage-session");
   expect(sessions.stdout).toContain("1,540");
 
-  const inspect = await runCli(["inspect", "--session", "usage-session"]);
+  const inspect = await runCli(["look", "--session", "usage-session"]);
   expect(inspect.exitCode).toBe(0);
   expect(inspect.stdout).toContain("Input Tokens");
   expect(inspect.stdout).toContain("Output Tokens");
@@ -322,11 +319,11 @@ test("inspect and sessions include usage metadata when available", async () => {
 });
 
 test("ingests native Codex exec JSONL without explicit adapter selection", async () => {
-  const ingest = await runCli(["ingest", "fixtures/codex-exec-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/codex-exec-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
   expect(ingest.stdout).toContain("Adapter: codex-exec-jsonl");
 
-  const inspect = await runCli(["inspect", "--session", "codex-exec-sample"]);
+  const inspect = await runCli(["look", "--session", "codex-exec-sample"]);
   expect(inspect.exitCode).toBe(0);
   expect(inspect.stdout).toContain("Codex");
   expect(inspect.stdout).toContain("bun run typecheck");
@@ -335,11 +332,11 @@ test("ingests native Codex exec JSONL without explicit adapter selection", async
 });
 
 test("ingests native Claude Code stream JSONL without explicit adapter selection", async () => {
-  const ingest = await runCli(["ingest", "fixtures/claude-code-stream-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/claude-code-stream-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
   expect(ingest.stdout).toContain("Adapter: claude-code-stream-json");
 
-  const inspect = await runCli(["inspect", "--session", "claude-stream-sample"]);
+  const inspect = await runCli(["look", "--session", "claude-stream-sample"]);
   expect(inspect.exitCode).toBe(0);
   expect(inspect.stdout).toContain("Claude Code");
   expect(inspect.stdout).toContain("bun test");
@@ -358,7 +355,7 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   expect(ingest.stdout).toContain("Prefer agentops run or provider JSONL");
   expect(ingest.stdout).toContain("Next: agentops look forensic-terminal-transcript");
 
-  const inspect = await runCli(["review", "forensic-terminal-transcript"]);
+  const inspect = await runCli(["look", "forensic-terminal-transcript"]);
   expect(inspect.exitCode).toBe(0);
   expect(inspect.stdout).toContain("Plain-text forensic import");
   expect(inspect.stdout).toContain("bun test");
@@ -371,22 +368,24 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   expect(weak.stdout).toContain("Observed commands: 0");
   expect(weak.stdout).toContain("transcript has no observable shell commands");
 
-  const report = await runCli(["review", "forensic-final-only", "--format", "markdown"]);
+  const reportPath = join(tmpdir(), `agentops-forensic-report-${Date.now()}.md`);
+  const report = await runCli(["save", "report", "forensic-final-only", "--out", reportPath]);
   expect(report.exitCode).toBe(0);
-  expect(report.stdout).toContain("weak-forensic-transcript");
-  expect(report.stdout).toContain("No test, lint, typecheck, or verification command recorded.");
+  const reportText = readFileSync(reportPath, "utf8");
+  expect(reportText).toContain("weak-forensic-transcript");
+  expect(reportText).toContain("No test, lint, typecheck, or verification command recorded.");
 });
 
 test("runs quality gates with CI-friendly exit codes and formats", async () => {
   const sample = await runCli(["import", "fixtures/sample-session.jsonl"]);
   expect(sample.exitCode).toBe(0);
 
-  const passed = await runCli(["gate", "sample-session"]);
+  const passed = await runCli(["check", "sample-session"]);
   expect(passed.exitCode).toBe(0);
   expect(passed.stdout).toContain("Status: PASSED");
   expect(passed.stdout).toContain("Verification evidence");
 
-  const json = await runCli(["gate", "sample-session", "--format", "json"]);
+  const json = await runCli(["check", "sample-session", "--format", "json"]);
   expect(json.exitCode).toBe(0);
   const payload = JSON.parse(json.stdout ?? "") as { schemaVersion: string; status: string; checks: Array<{ id: string }> };
   expect(payload.schemaVersion).toBe("agentops.gate.v1");
@@ -396,7 +395,7 @@ test("runs quality gates with CI-friendly exit codes and formats", async () => {
   const risky = await runCli(["import", "fixtures/risky-session.jsonl"]);
   expect(risky.exitCode).toBe(0);
 
-  const failed = await runCli(["gate", "risky-session", "--format", "github"]);
+  const failed = await runCli(["check", "risky-session", "--format", "github"]);
   expect(failed.exitCode).toBe(1);
   expect(failed.stdout).toContain("AgentOps Quality Gate");
   expect(failed.stdout).toContain("FAIL FAILED");

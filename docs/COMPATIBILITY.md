@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.11.0`.
+Status: stable for `v2.0.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -88,14 +88,24 @@ contract is the documented tool names and read-only behavior in
 optional structured fields, or new read-only tools.
 
 The `v1.10.0` OpenInference export is an additive deterministic JSON span
-bundle available through `agentops export --format openinference-json`.
+bundle available through `agentops save trace`.
 Compatible changes may add optional attributes or spans, but must continue to
 omit raw payload JSON by default.
 
 The `v1.11.0` simplified commands are additive workflows over existing review,
 gate, export, dashboard, and report behavior. `status`, `look`, `check`,
-`save`, and `open` are now the recommended regular-user surface. Older
-commands remain available as advanced compatibility commands.
+`save`, and `open` are now the recommended regular-user surface.
+
+The `v2.0.0` release is a **breaking** simplification. It removes the duplicate
+advanced commands `review`, `inspect`, `report`, `export`, `gate`,
+`repo-report`, `pr`, `dashboard`, plus the `ingest` and `show` aliases. Each is
+reached through a simple verb: `look` (inspect/review), `save report|json|repo-json|trace|pr`
+(report/export/repo-report/pr), `check` (gate, now with `--format text|json|github`),
+and `open` (dashboard). `import` and `capture` are retained. Two niche
+sub-options are not re-exposed on the simple verbs: the Markdown-only repo
+report (`repo-report --format markdown`) and `export --include-raw-payloads`;
+their library functions remain. `v2.0.0` also consolidates the per-source JSONL
+adapter IDs into `agentops-jsonl` (see Adapter Matrix).
 
 ## Adapter Matrix
 
@@ -171,7 +181,7 @@ user experience. `v1.0.0` supports migrating known pre-1.0 local schemas covered
 by `test/store-migration.test.ts`.
 
 Users should not depend on raw table layouts for automation. Use
-`agentops export --format json` for portable data.
+`agentops save json` for portable data.
 
 ## Privacy Contract
 

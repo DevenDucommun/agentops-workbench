@@ -45,13 +45,11 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `./bin/agentops check`.
 - [x] Fresh clone can run `./bin/agentops save`.
 - [x] Fresh clone can run `./bin/agentops audit ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops pr sample-session`.
 - [x] Fresh clone can run `./bin/agentops import ./fixtures/sample-session.jsonl`.
-- [x] Fresh clone can run `./bin/agentops review`.
-- [x] Fresh clone can run `./bin/agentops review latest --format markdown --out report.md`.
-- [x] Fresh clone can run `./bin/agentops export latest --format openinference-json --out agentops-openinference.json`.
-- [x] Fresh clone can run `./bin/agentops repo-report latest --out repo-report.md`.
-- [x] Fresh clone can run `./bin/agentops repo-report latest --format github --out pr-comment.md`.
+- [x] Fresh clone can run `./bin/agentops save report latest --out report.md`.
+- [x] Fresh clone can run `./bin/agentops save trace latest --out agentops-openinference.json`.
+- [x] Fresh clone can run `./bin/agentops save pr sample-session --out pr-comment.md`.
+- [x] Fresh clone can run `./bin/agentops check latest --format github --out gate-comment.md`.
 - [x] Fresh clone can run MCP protocol tests with `bun test test/mcp.test.ts`.
 - [x] Fresh clone can run `./bin/agentops scan-publication`.
 - [x] README explains the product, current CLI, planning docs, and privacy posture.

@@ -38,15 +38,15 @@ The CLI is the primary stable interface in `v1.0.0`.
 
 Implemented commands include:
 
-- `agentops ingest <session.jsonl>`
+- `agentops import <session.jsonl>`
 - `agentops adapters`
 - `agentops sessions`
-- `agentops inspect --session <id|latest>`
-- `agentops report --session latest`
-- `agentops report --session <id>`
-- `agentops repo-report`
-- `agentops repo-report --format github`
-- `agentops export --format json`
+- `agentops look --session <id|latest>`
+- `agentops save report --session latest`
+- `agentops save pr --session latest`
+- `agentops save json --session latest`
+- `agentops save trace --session latest`
+- `agentops check --session latest`
 - `agentops config --check`
 - `agentops open --check`
 - `agentops open`

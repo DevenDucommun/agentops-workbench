@@ -18,13 +18,13 @@ try {
     emptyServer.stop();
   }
 
-  const ingest = await runCli(["ingest", "fixtures/usage-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/usage-session.jsonl"]);
   if (ingest.exitCode !== 0) fail(ingest.stderr ?? "Dashboard smoke ingest failed.");
-  const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
+  const riskyIngest = await runCli(["import", "fixtures/risky-session.jsonl"]);
   if (riskyIngest.exitCode !== 0) fail(riskyIngest.stderr ?? "Dashboard risky fixture ingest failed.");
-  const sampleIngest = await runCli(["ingest", "fixtures/sample-session.jsonl"]);
+  const sampleIngest = await runCli(["import", "fixtures/sample-session.jsonl"]);
   if (sampleIngest.exitCode !== 0) fail(sampleIngest.stderr ?? "Dashboard sample fixture ingest failed.");
-  const reviewIngest = await runCli(["ingest", "fixtures/needs-review-session.jsonl"]);
+  const reviewIngest = await runCli(["import", "fixtures/needs-review-session.jsonl"]);
   if (reviewIngest.exitCode !== 0) fail(reviewIngest.stderr ?? "Dashboard needs-review fixture ingest failed.");
 
   const server = startDashboardServer({ port: 0 });

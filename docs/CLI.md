@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.11.0`. See
+The documented command surface is stable in `v2.0.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -129,7 +129,7 @@ agentops look
 agentops look sample-session
 ```
 
-`agentops show` is kept as a compatibility alias.
+Use `agentops look` (the `show` alias was removed in v2.0.0).
 
 ### `agentops check`
 
@@ -182,7 +182,7 @@ agentops open --port 4930
 agentops open --check
 ```
 
-`agentops dashboard` is kept as a compatibility alias.
+Use `agentops open` (the `dashboard` command was removed in v2.0.0).
 
 ### `agentops mcp`
 
@@ -314,7 +314,7 @@ Real terminal logs can include shell prompts, local paths, environment output,
 copied secrets, account names, and private project names. Keep raw transcripts
 in ignored local paths until redaction has been reviewed.
 
-`agentops ingest` is kept as a compatibility alias.
+The `ingest` alias was removed in v2.0.0; use `agentops import`.
 
 ### `agentops config --check`
 
@@ -337,100 +337,31 @@ agentops sessions
 agentops sessions --limit 5
 ```
 
-### `agentops inspect`
+### Inspecting and saving (use the simple verbs)
 
-Prints a compact inspection view for one session without generating a full report.
+`v2.0.0` removed the standalone `inspect`, `review`, `report`, `export`, `gate`,
+`repo-report`, `pr`, and `dashboard` commands. Each is now reached through a
+simple verb:
 
-```bash
-agentops inspect --session latest
-agentops inspect latest
-agentops inspect --session sample-session
-```
+| Old command | Use instead |
+| --- | --- |
+| `agentops inspect <id>` / `agentops review <id>` | `agentops look <id>` |
+| `agentops report <id> --out f.md` | `agentops save report <id> --out f.md` |
+| `agentops export <id> --format json` | `agentops save json <id> --out f.json` |
+| `agentops export <id> --format json --scope repo` | `agentops save repo-json <id> --out f.json` |
+| `agentops export <id> --format openinference-json` | `agentops save trace <id> --out f.json` |
+| `agentops gate <id>` | `agentops check <id>` |
+| `agentops gate <id> --format json\|github` | `agentops check <id> --format json\|github` |
+| `agentops repo-report <id> --format github` / `agentops pr <id>` | `agentops save pr <id> --out f.md` |
+| `agentops dashboard` | `agentops open` |
 
-### `agentops review`
+`agentops save` writes to a file (default name per kind, or `--out`). For a
+combined audit (inspect + gate) of a fresh artifact, use `agentops audit`.
 
-Reviews one session. With no options it prints the compact inspection view for
-the latest session.
-
-```bash
-agentops review
-agentops review latest --format markdown --out report.md
-agentops review latest --format github --out pr-comment.md
-agentops review latest --format json --out agentops-session.json
-```
-
-### `agentops report`
-
-Generates a Markdown report for one session.
-
-```bash
-agentops report latest --out report.md
-```
-
-### `agentops export`
-
-Exports stored data as deterministic JSON.
-
-```bash
-agentops export latest --format json --out agentops-session.json
-agentops export latest --format json --scope repo --out agentops-repo.json
-agentops export latest --format openinference-json --out agentops-openinference.json
-```
-
-By default, exports omit raw payload JSON and local source artifact paths.
-`openinference-json` also omits raw payload JSON and writes a local span bundle,
-not OTLP protobuf. See [JSON export](EXPORT.md).
-
-### `agentops gate`
-
-Evaluates deterministic quality gates for one session and exits non-zero when
-any gate fails.
-
-```bash
-agentops gate latest
-agentops gate latest --format json --out agentops-gate.json
-agentops gate latest --format github --out agentops-gate-comment.md
-```
-
-Formats are `text`, `json`, and `github`. The GitHub format is stdout/file
-only. It does not post comments. See [Quality gates](QUALITY_GATES.md).
-
-### `agentops repo-report`
-
-Compares the session against the current local git diff.
-
-```bash
-agentops repo-report latest --out repo-report.md
-agentops repo-report latest --format github --out pr-comment.md
-```
-
-The GitHub format includes quality gate status and is stdout-only. It does not
-post comments.
-
-### `agentops pr`
-
-Short form for a GitHub-ready repo report.
-
-```bash
-agentops pr
-agentops pr latest --out pr-comment.md
-```
-
-It is equivalent to `agentops repo-report latest --format github` and does not
-post comments.
-
-### `agentops dashboard`
-
-Starts the local dashboard server backed by the same SQLite store as the CLI.
-
-```bash
-agentops dashboard
-agentops dashboard --port 4930
-agentops dashboard --check
-```
-
-The default bind address is `127.0.0.1` and the default port is `4927`. See
-[Dashboard](DASHBOARD.md) for scope and browser verification.
+Notes on dropped sub-options: the Markdown-only repo report
+(`repo-report --format markdown`) and `export --include-raw-payloads` are not
+re-exposed on the simple verbs in `v2.0.0`; the underlying functions remain in
+the library. `agentops check --format github` covers the CI gate-comment case.
 
 ### `agentops scan-publication`
 

@@ -70,8 +70,8 @@ This matters because:
 The developer runs Claude, Codex, or a PAI-backed workflow, exports a sanitized session, and runs:
 
 ```bash
-agentops ingest ./session.jsonl
-agentops report --session latest > report.md
+agentops import ./session.jsonl
+agentops save report --session latest --out report.md
 ```
 
 Value: immediate audit trail without uploading data.

@@ -193,10 +193,12 @@ Specific saves are available when needed:
 ./bin/agentops save gate
 ```
 
-Advanced compatibility commands such as `capture`, `import`, `review`,
-`report`, `export`, `gate`, `repo-report`, `adapters`, `config`,
-`dashboard`, and `scan-publication` remain available. See
-[CLI reference](docs/CLI.md) for command details.
+Advanced commands `capture`, `import`, `adapters`, `config`, `sessions`, and
+`scan-publication` remain available. The `v1.x` `review`, `report`, `export`,
+`gate`, `repo-report`, `pr`, `inspect`, `dashboard`, `ingest`, and `show`
+commands were removed in `v2.0.0`; their functions are reached through the
+simple verbs (`look`, `save`, `check`, `open`). See
+[CLI reference](docs/CLI.md) and [Compatibility policy](docs/COMPATIBILITY.md).
 
 See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.11.0`
 surfaces and experimental boundaries.

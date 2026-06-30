@@ -6,8 +6,8 @@ AgentOps Workbench is currently developed privately with the intent to become pu
 
 ```bash
 bun test
-./bin/agentops ingest ./fixtures/sample-session.jsonl
-./bin/agentops report --session latest > report.md
+./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops save report --session latest --out report.md
 ```
 
 ## Public-Safety Requirements

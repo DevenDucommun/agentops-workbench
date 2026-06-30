@@ -1,15 +1,19 @@
 # Repo Report
 
-`repo-report` compares an ingested agent session with the current local git diff.
-
-The Markdown repo report and GitHub-format stdout output are stable local
-report surfaces in `v1.0.0`. The command does not post comments or call GitHub.
+The repo report compares an ingested agent session with the current local git
+diff. `agentops save pr` writes the GitHub-format repo comment (gate status
+included). The report only writes to a file or stdout; it never posts to GitHub.
 
 ```bash
 agentops audit ./fixtures/sample-session.jsonl
 agentops save report
 agentops save pr
 ```
+
+The `v1.x` `repo-report` command was removed in `v2.0.0`. The GitHub-format
+report is now `agentops save pr`; the Markdown-only repo report variant is not
+re-exposed on the simple verbs (the `generateMarkdownRepoReport` library
+function remains).
 
 ## What It Shows
 

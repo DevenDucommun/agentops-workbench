@@ -18,12 +18,12 @@ Recommended live capture:
 
 ```bash
 ./bin/agentops run codex "review the current diff"
-./bin/agentops review
+./bin/agentops look
 ```
 
 ```bash
 ./bin/agentops run claude "review the current diff"
-./bin/agentops review
+./bin/agentops look
 ```
 
 For after-the-fact audit, the source run must have produced a supported
@@ -32,13 +32,13 @@ machine-readable artifact:
 ```bash
 codex exec --json "review the current diff" > codex-session.jsonl
 ./bin/agentops import codex-session.jsonl
-./bin/agentops review
+./bin/agentops look
 ```
 
 ```bash
 claude -p --output-format stream-json --verbose "review the current diff" > claude-session.jsonl
 ./bin/agentops import claude-session.jsonl
-./bin/agentops review
+./bin/agentops look
 ```
 
 Plain terminal output or a copied chat transcript can be imported for
@@ -46,7 +46,7 @@ lower-confidence forensic analysis:
 
 ```bash
 ./bin/agentops import transcript.txt
-./bin/agentops review
+./bin/agentops look
 ```
 
 Use provider JSONL/stream JSON output when you want a session to be auditable
@@ -126,7 +126,7 @@ Then import the capture:
 ```bash
 ./bin/agentops adapters --input .agentops/captures/codex-session.jsonl
 ./bin/agentops import .agentops/captures/codex-session.jsonl
-./bin/agentops review latest --format markdown --out .agentops/captures/report.md
+./bin/agentops save report latest --out .agentops/captures/report.md
 ```
 
 ## Claude Code Native Stream JSON
@@ -184,7 +184,7 @@ Then import the capture:
 ```bash
 ./bin/agentops adapters --input .agentops/captures/claude-session.jsonl
 ./bin/agentops import .agentops/captures/claude-session.jsonl
-./bin/agentops review latest --format markdown --out .agentops/captures/report.md
+./bin/agentops save report latest --out .agentops/captures/report.md
 ```
 
 ## PAI/KAI Post-Hoc Export

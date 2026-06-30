@@ -28,7 +28,7 @@ bun install --frozen-lockfile
 Repo-aware advanced reports require a git checkout:
 
 ```bash
-./bin/agentops repo-report latest --out repo-report.md
+./bin/agentops save pr latest --out pr-comment.md
 ```
 
 ## PATH-Based Local Command
@@ -83,7 +83,7 @@ bun install --frozen-lockfile
 This does not work from a source archive because `.git` is not present:
 
 ```bash
-./bin/agentops repo-report latest
+./bin/agentops save pr latest
 ```
 
 Use a fresh git clone when you need `repo-report`.

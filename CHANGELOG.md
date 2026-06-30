@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.0.0 - 2026-06-30
+
+Breaking simplification pass. The simple verbs (`look`, `check`, `save`,
+`open`, `audit`, `run`, `status`) are now the single command surface.
+
+### Removed (breaking)
+
+- Duplicate advanced CLI commands `review`, `inspect`, `report`, `export`,
+  `gate`, `repo-report`, `pr`, `dashboard`, and the `ingest` / `show` aliases.
+  Use `look` (inspect/review), `save report|json|repo-json|trace|pr`
+  (report/export/repo-report/pr), `check` (gate), and `open` (dashboard).
+- Consolidated the `claude-code-jsonl`, `codex-jsonl`, and `pai-export-jsonl`
+  adapter IDs into `agentops-jsonl` (they shared one schema and parser);
+  provenance is read from each record's `source` field. Adapters: 7 → 4.
+- Packaging smoke scripts for the unshipped npm/binary distribution path
+  (`smoke:install`, `smoke:package`, `smoke:pack-install`,
+  `smoke:release-archive`).
+- Tracked generated `report.md` from the repo root.
+
+### Changed
+
+- `agentops check` gains `--format text|json|github`, preserving the CI
+  gate-comment output previously on `agentops gate`.
+- Moved historical planning/research/release docs under `docs/archive/`.
+- Top-level help now documents only the simplified surface.
+
+### Notes
+
+- Two niche sub-options are not re-exposed on the simple verbs: the
+  Markdown-only repo report (`repo-report --format markdown`) and
+  `export --include-raw-payloads`. Their library functions remain.
+
 ## v1.11.0 - 2026-06-30
 
 ### Added
