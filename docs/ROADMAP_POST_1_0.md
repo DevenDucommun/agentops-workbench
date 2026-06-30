@@ -1,6 +1,6 @@
 # Roadmap After 1.0
 
-Status: `v1.9.0` complete; later milestones proposed.
+Status: `v1.9.1` complete; later milestones proposed.
 
 Last reviewed: 2026-06-30. Updated for the completed quality-gates milestone.
 
@@ -367,7 +367,7 @@ Exit criteria:
 
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.9.0`
+These are intentionally not planned until the `v1.1.0` through `v1.9.1`
 sequence proves demand:
 
 - OpenTelemetry or OpenInference export.
