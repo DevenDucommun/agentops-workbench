@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -17,6 +17,7 @@
     "docs/COMPATIBILITY.md",
     "docs/CONFIGURATION.md",
     "docs/DASHBOARD.md",
+    "docs/MCP.md",
     "docs/QUALITY_GATES.md",
     "docs/demo/",
     "docs/REPO_REPORT.md",

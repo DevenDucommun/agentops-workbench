@@ -45,6 +45,12 @@ agentops sessions
 
 This is the currently recommended way to use the `agentops` command from a clone.
 
+The same PATH setup can be used by MCP clients that launch AgentOps over stdio:
+
+```bash
+agentops mcp
+```
+
 ## Bun Link
 
 `bun link` can expose the package binary from a local checkout, but this project is not yet published as a package and does not treat global linking as the primary install path.
@@ -142,5 +148,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.8.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.9.0` command,
 adapter, schema, and packaging boundaries.

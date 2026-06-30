@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.8.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.8.0)
-- Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.9.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.9.0)
+- Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
@@ -119,6 +119,12 @@ Generate a repo-aware PR report:
 ./bin/agentops pr --out pr-comment.md
 ```
 
+Expose local AgentOps evidence to MCP clients:
+
+```bash
+./bin/agentops mcp
+```
+
 Check public-readiness hygiene:
 
 ```bash
@@ -186,6 +192,7 @@ Common commands:
 ./bin/agentops gate latest --format json --out agentops-gate.json
 ./bin/agentops repo-report latest --out repo-report.md
 ./bin/agentops repo-report latest --format github --out pr-comment.md
+./bin/agentops mcp
 ./bin/agentops config --check
 ./bin/agentops dashboard --check
 ./bin/agentops scan-publication
@@ -193,8 +200,17 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.8.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.9.0`
 surfaces and experimental boundaries.
+
+## MCP Server
+
+`agentops mcp` starts a local stdio MCP server for read-only lookup of stored
+sessions, inspection output, session reports, quality gates, and repo reports.
+It does not ingest artifacts, run agents, post to GitHub, or read private
+transcript stores.
+
+See [MCP server](docs/MCP.md) for available tools and client configuration.
 
 ## Supported Artifacts
 

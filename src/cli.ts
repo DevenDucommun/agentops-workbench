@@ -13,6 +13,7 @@ import { formatPublicationScanResult, scanPublication } from "./publicationScan"
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, listSessions, openStore, type Store } from "./store";
 import { startDashboardServer, type DashboardServer } from "./dashboard";
+import { startMcpStdio } from "./mcp";
 
 type CliResult = {
   stdout?: string;
@@ -47,6 +48,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 
     if (command === "pr") {
       return runPr(args);
+    }
+
+    if (command === "mcp") {
+      const configPath = readOption(args, "--config") ?? "agentops.config.json";
+      return { exitCode: 0, keepAlive: startMcpStdio({ configPath }) };
     }
 
     if (command === "run") {
@@ -704,6 +710,7 @@ Usage:
   agentops review [latest|session-id]
   agentops pr [latest|session-id] [--out pr-comment.md]
   agentops dashboard
+  agentops mcp
 
 Advanced:
   agentops capture codex <prompt> [--output .agentops/captures/codex.jsonl] [--ingest]
