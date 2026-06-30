@@ -112,5 +112,5 @@ equivalent to:
 bun run smoke:install
 ```
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.1.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.2.0` command,
 adapter, schema, and packaging boundaries.

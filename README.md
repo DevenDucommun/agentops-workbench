@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.1.0)
-- Current `main`: stable local review workflow with first-class Codex and Claude Code capture commands, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.2.0)
+- Current `main`: stable local review workflow with first-class Codex and Claude Code capture commands, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -128,7 +128,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.1.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.2.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
