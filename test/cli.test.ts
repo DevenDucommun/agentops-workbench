@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -62,6 +62,14 @@ test("prints capture dry-run commands without invoking providers", async () => {
   expect(claude.stdout).toContain("Adapter: claude-code-stream-json");
 });
 
+test("prints run dry-run commands as the simple capture entrypoint", async () => {
+  const result = await runCli(["run", "codex", "review current diff", "--ephemeral", "--dry-run"]);
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("Capture command (dry run)");
+  expect(result.stdout).toContain("codex exec --json --ephemeral 'review current diff'");
+  expect(result.stdout).toContain("Adapter: codex-exec-jsonl");
+});
+
 test("validates config files", async () => {
   const defaults = await runCli(["config", "--check"]);
   expect(defaults.exitCode).toBe(0);
@@ -91,7 +99,7 @@ test("validates config files", async () => {
 });
 
 test("ingests then lists and inspects sessions", async () => {
-  const ingest = await runCli(["ingest", "fixtures/claude-code-session.jsonl"]);
+  const ingest = await runCli(["import", "fixtures/claude-code-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
   expect(ingest.stdout).toContain("Adapter: claude-code-jsonl");
 
@@ -107,12 +115,43 @@ test("ingests then lists and inspects sessions", async () => {
   expect(inspect.stdout).toContain("Verification Commands");
   expect(inspect.stdout).toContain("Synthetic Claude Code export completed");
 
+  const positionalInspect = await runCli(["inspect", "latest"]);
+  expect(positionalInspect.exitCode).toBe(0);
+  expect(positionalInspect.stdout).toContain("# AgentOps Session Inspection");
+
+  const review = await runCli(["review"]);
+  expect(review.exitCode).toBe(0);
+  expect(review.stdout).toContain("# AgentOps Session Inspection");
+
+  const reportPath = join(tmpdir(), `agentops-report-${Date.now()}.md`);
+  const report = await runCli(["report", "latest", "--out", reportPath]);
+  expect(report.exitCode).toBe(0);
+  expect(report.stdout).toContain(`Wrote report: ${reportPath}`);
+  expect(existsSync(reportPath)).toBe(true);
+  expect(readFileSync(reportPath, "utf8")).toContain("# AgentOps Session Report");
+
   const exported = await runCli(["export", "--session", "latest", "--format", "json"]);
   expect(exported.exitCode).toBe(0);
   const payload = JSON.parse(exported.stdout ?? "") as { schemaVersion: string; kind: string; events: Array<{ rawJson?: string }> };
   expect(payload.schemaVersion).toBe("agentops.export.v1");
   expect(payload.kind).toBe("session");
   expect(payload.events.every((event) => event.rawJson === undefined)).toBe(true);
+});
+
+test("gives clearer guidance for common command mistakes", async () => {
+  const outputAsCommand = await runCli(["report.md", "latest"]);
+  expect(outputAsCommand.exitCode).toBe(1);
+  expect(outputAsCommand.stderr).toContain("It looks like that is an output filename");
+  expect(outputAsCommand.stderr).toContain("agentops report latest --out report.md");
+
+  const dbAsInput = await runCli(["ingest", ".agentops/agentops.db"]);
+  expect(dbAsInput.exitCode).toBe(1);
+  expect(dbAsInput.stderr).toContain("expects a JSONL session artifact, not the SQLite database");
+  expect(dbAsInput.stderr).toContain("agentops review");
+
+  const dbAsImport = await runCli(["import", ".agentops/agentops.db"]);
+  expect(dbAsImport.exitCode).toBe(1);
+  expect(dbAsImport.stderr).toContain("agentops import expects a JSONL session artifact");
 });
 
 test("inspect and sessions include usage metadata when available", async () => {

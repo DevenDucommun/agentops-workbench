@@ -3,6 +3,48 @@
 AgentOps Workbench is safest when it ingests explicit, local, machine-readable
 artifacts. Do not point it at private memory stores or raw transcript folders.
 
+## Two Modes
+
+AgentOps can be used in two ways:
+
+- Live capture: start the agent through AgentOps with `agentops run`.
+- Retrospective audit: import an existing machine-readable JSONL artifact with
+  `agentops import`.
+
+AgentOps does not run as a daemon. It either launches the provider command and
+saves its JSONL stream, or it analyzes a JSONL artifact that already exists.
+
+Recommended live capture:
+
+```bash
+./bin/agentops run codex "review the current diff"
+./bin/agentops review
+```
+
+```bash
+./bin/agentops run claude "review the current diff"
+./bin/agentops review
+```
+
+For after-the-fact audit, the source run must have produced a supported
+machine-readable artifact:
+
+```bash
+codex exec --json "review the current diff" > codex-session.jsonl
+./bin/agentops import codex-session.jsonl
+./bin/agentops review
+```
+
+```bash
+claude -p --output-format stream-json --verbose "review the current diff" > claude-session.jsonl
+./bin/agentops import claude-session.jsonl
+./bin/agentops review
+```
+
+Plain terminal output or a copied chat transcript is not yet a reliable source
+artifact for forensic analysis. Use provider JSONL/stream JSON output when you
+want a session to be auditable later.
+
 ## Local Capture Directory
 
 Use an ignored local directory for captures:
@@ -52,12 +94,12 @@ codex exec --json "summarize the repo risk areas" \
   > .agentops/captures/codex-session.jsonl
 ```
 
-Then ingest the capture:
+Then import the capture:
 
 ```bash
 ./bin/agentops adapters --input .agentops/captures/codex-session.jsonl
-./bin/agentops ingest .agentops/captures/codex-session.jsonl
-./bin/agentops report --session latest > .agentops/captures/report.md
+./bin/agentops import .agentops/captures/codex-session.jsonl
+./bin/agentops review latest --format markdown --out .agentops/captures/report.md
 ```
 
 ## Claude Code Native Stream JSON
@@ -110,12 +152,12 @@ Partial message events are usually not needed for AgentOps reports and can make
 captures larger and more sensitive. Prefer full turn events unless debugging a
 streaming problem.
 
-Then ingest the capture:
+Then import the capture:
 
 ```bash
 ./bin/agentops adapters --input .agentops/captures/claude-session.jsonl
-./bin/agentops ingest .agentops/captures/claude-session.jsonl
-./bin/agentops report --session latest > .agentops/captures/report.md
+./bin/agentops import .agentops/captures/claude-session.jsonl
+./bin/agentops review latest --format markdown --out .agentops/captures/report.md
 ```
 
 ## PAI/KAI Post-Hoc Export
@@ -126,8 +168,8 @@ after a run. AgentOps should not read private PAI memory stores.
 Expected flow:
 
 ```bash
-./bin/agentops ingest .agentops/captures/pai-export.jsonl --adapter pai-export-jsonl
-./bin/agentops report --session latest > .agentops/captures/report.md
+./bin/agentops import .agentops/captures/pai-export.jsonl --adapter pai-export-jsonl
+./bin/agentops review latest --format markdown --out .agentops/captures/report.md
 ```
 
 The exported artifact should contain bounded action evidence: session summary,

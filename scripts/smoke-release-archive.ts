@@ -36,11 +36,11 @@ runAndExpect(["bun", "install", "--frozen-lockfile"], "Saved lockfile", { cwd: c
 runAndExpect(["./bin/agentops", "--help"], "AgentOps Workbench", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters"], "codex-exec-jsonl", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "adapters", "--input", "./fixtures/claude-code-stream-session.jsonl"], "Claude Code Stream JSON", { cwd: checkoutDir });
-runAndExpect(["./bin/agentops", "ingest", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", { cwd: checkoutDir });
-runAndExpect(["./bin/agentops", "ingest", "./fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample", { cwd: checkoutDir });
-runAndExpect(["./bin/agentops", "ingest", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "import", "./fixtures/sample-session.jsonl"], "Ingested session sample-session", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "import", "./fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "import", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkoutDir });
-runAndExpect(["./bin/agentops", "report", "--session", "latest"], "AgentOps Session Report", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "review", "latest", "--format", "markdown"], "AgentOps Session Report", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "dashboard", "--check"], "Dashboard configuration OK", { cwd: checkoutDir });
 runAndExpect(["bun", "run", "smoke:package"], "Package smoke passed", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "scan-publication"], "Public-readiness scan passed", { cwd: checkoutDir });

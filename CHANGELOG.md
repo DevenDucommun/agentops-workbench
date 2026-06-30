@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.3.0 - 2026-06-29
+
+### Added
+
+- `agentops run codex <prompt>` and `agentops run claude <prompt>` as the
+  simplified live-capture entrypoints.
+- `agentops review [latest|session-id]` for the default post-capture review
+  flow.
+- `agentops import <artifact>` as the user-facing retrospective import command,
+  with `agentops ingest` retained as a compatibility alias.
+- `--out <file>` support for review, report, repo-report, and export flows.
+- Clearer CLI diagnostics for passing output filenames as commands or passing
+  the SQLite database to import/ingest.
+
+### Changed
+
+- README, CLI docs, capture guide, installation docs, and release checklist now
+  teach the simpler `run` -> `review` and `import` -> `review` workflows.
+- Roadmap now separates `v1.3.0` simplified capture/import UX from `v1.4.0`
+  retrospective forensic import for lower-fidelity plain terminal transcripts.
+
 ## v1.2.0 - 2026-06-29
 
 ### Added

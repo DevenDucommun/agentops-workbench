@@ -1288,7 +1288,7 @@ function dashboardHtml(): string {
       document.getElementById("metrics").innerHTML = "";
       document.getElementById("decision").innerHTML = "";
       renderComparison(null);
-      document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops ingest first.</div>';
+      document.getElementById("timeline").innerHTML = '<div class="empty">No sessions found. Run agentops import first.</div>';
       document.getElementById("tab-risks").innerHTML = '<div class="empty">No risk data.</div>';
       document.getElementById("tab-tools").innerHTML = '<div class="empty">No tool calls.</div>';
       document.getElementById("tab-commands").innerHTML = '<div class="empty">No commands.</div>';

@@ -1,8 +1,9 @@
 # Roadmap After 1.0
 
-Status: `v1.2.0` complete; later milestones proposed.
+Status: `v1.3.0` complete; later milestones proposed.
 
-Last reviewed: 2026-06-29.
+Last reviewed: 2026-06-29. Updated for capture/import UX investigation on
+2026-06-30.
 
 ## Product Direction
 
@@ -29,6 +30,14 @@ Current public docs and tool direction point to these conclusions:
   Codex capture and hook templates a strong near-term target.
 - Claude Code supports machine-readable stream output and hook events. This
   makes Claude Code capture and hook templates a strong near-term target.
+- Local CLI validation on 2026-06-30 confirmed current Codex exposes
+  `codex exec --json` and current Claude Code exposes
+  `claude -p --output-format stream-json --verbose`. These are the reliable
+  full-fidelity capture modes for AgentOps.
+- Plain terminal output, copied chat text, and final-answer-only output are
+  weaker audit sources. They can support retrospective triage, but they need
+  explicit confidence/provenance labels so inferred evidence is not presented
+  as observed tool or command evidence.
 - MCP is becoming the common way to expose tools and local context to agents.
   AgentOps should provide a small MCP server for safe report/session lookup
   before attempting deeper live control.
@@ -125,11 +134,100 @@ Deferred:
 - Multi-user auth.
 - Remote dashboard API guarantees.
 
-### v1.3.0: Quality Gates And PR Workflow
+### v1.3.0: Simplified Capture And Import UX
 
 Tracking issue: [#50](https://github.com/DevenDucommun/agentops-workbench/issues/50)
 
-Purpose: turn AgentOps reports into repeatable local or CI checks.
+Status: complete in `v1.3.0`.
+
+Purpose: make the normal user path understandable without requiring users to
+know adapter names, SQLite, JSONL internals, or shell redirection.
+
+Scope:
+
+- Add `agentops run codex <prompt>` and `agentops run claude <prompt>` as the
+  recommended live capture entrypoints.
+- Add `agentops review [latest|session-id]` as the default post-capture review
+  command.
+- Add `agentops import <artifact>` as the user-facing retrospective command,
+  keeping `agentops ingest` as a compatibility alias.
+- Add `--out <file>` support to report, repo-report, export, and review
+  commands so users do not need shell redirection for common outputs.
+- Improve diagnostics for common mistakes, including passing `.agentops` SQLite
+  databases to import/ingest or typing an output filename as a command.
+- Update README, CLI docs, and capture guide around two modes:
+  live capture with `agentops run`, and after-the-fact audit with
+  `agentops import`.
+- Make the README explicit that reliable retrospective audit requires provider
+  machine-readable artifacts:
+  `codex exec --json ...` or
+  `claude -p --output-format stream-json --verbose ...`.
+
+Exit criteria:
+
+- A first-time user can run, review, export, and open the dashboard without
+  learning the SQLite store or adapter internals.
+- Existing `capture`, `ingest`, `inspect`, `report`, `repo-report`, and
+  `export` commands remain compatible.
+- CLI tests cover simplified commands and common user mistakes.
+- README and CLI docs explain when AgentOps must be in the command path and
+  when after-the-fact audit is possible.
+- Public-readiness scan and CI pass.
+
+Deferred:
+
+- Plain terminal transcript ingestion.
+- Direct private transcript-store parsing.
+- Quality gates and CI policy checks.
+
+### v1.4.0: Retrospective And Forensic Import
+
+Tracking issue: [#51](https://github.com/DevenDucommun/agentops-workbench/issues/51)
+
+Purpose: let users audit what they already have, including lower-fidelity plain
+terminal transcripts, without pretending inferred evidence is as strong as
+native JSONL evidence.
+
+Scope:
+
+- Add a best-effort plain-text transcript adapter for saved Claude/Codex
+  terminal output.
+- Detect likely commands, command status lines, file paths, final claims,
+  provider markers, and obvious verification evidence from plain text.
+- Add evidence provenance/confidence labels such as `observed`, `inferred`,
+  and `missing`.
+- Add report/dashboard language that distinguishes full-fidelity JSONL capture
+  from forensic plain-text import.
+- Add synthetic fixtures for Codex final-output-only text, Claude text output,
+  command-rich terminal logs, and weak copied-chat transcripts.
+- Add diagnostics that tell users when a transcript is too weak for meaningful
+  audit and suggest rerunning with `agentops run` or provider JSONL mode.
+- Document privacy risks for importing real terminal logs, including shell
+  prompts, local paths, environment output, and copied secrets.
+
+Exit criteria:
+
+- `agentops import transcript.txt` produces a useful report for command-rich
+  synthetic plain-text logs.
+- Final-answer-only transcripts are accepted only as low-confidence audits with
+  clear missing-evidence flags.
+- Reports and dashboard views never merge inferred evidence with observed
+  command/tool evidence without labeling it.
+- Fixture tests cover positive, weak, and unsupported transcript cases.
+- Docs make clear that native JSONL remains the recommended source for
+  full-fidelity audit.
+
+Deferred:
+
+- Private Claude/Codex transcript-store scraping.
+- OCR/screenshot transcript import.
+- LLM-based reconstruction from arbitrary chat logs.
+- Quality gates and CI policy checks.
+
+### v1.5.0: Quality Gates And PR Workflow
+
+Purpose: turn AgentOps reports into repeatable local or CI checks once capture
+and import semantics are clear.
 
 Scope:
 
@@ -156,9 +254,7 @@ Deferred:
 - Automatic PR posting by default.
 - Organization policy service.
 
-### v1.4.0: Distribution And Adoption
-
-Tracking issue: [#51](https://github.com/DevenDucommun/agentops-workbench/issues/51)
+### v1.6.0: Distribution And Adoption
 
 Purpose: make AgentOps easier to install, demo, and trust outside the original
 development environment.
@@ -188,7 +284,7 @@ Deferred:
 
 ## Later Candidates
 
-These are intentionally not planned until the `v1.1.0` through `v1.4.0`
+These are intentionally not planned until the `v1.1.0` through `v1.6.0`
 sequence proves demand:
 
 - AgentOps MCP server for read-only session/report lookup.

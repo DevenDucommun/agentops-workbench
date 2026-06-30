@@ -8,13 +8,13 @@ deterministic JSON.
 Session export:
 
 ```bash
-./bin/agentops export --session latest --format json > agentops-session.json
+./bin/agentops export latest --format json --out agentops-session.json
 ```
 
 Repo-aware export:
 
 ```bash
-./bin/agentops export --session latest --format json --scope repo > agentops-repo.json
+./bin/agentops export latest --format json --scope repo --out agentops-repo.json
 ```
 
 ## Schema
@@ -56,7 +56,7 @@ without exposing raw transcript content.
 Use `--include-raw-payloads` only for local debugging with trusted data:
 
 ```bash
-./bin/agentops export --session latest --format json --include-raw-payloads
+./bin/agentops export latest --format json --include-raw-payloads
 ```
 
 Do not publish exports that include raw payloads.

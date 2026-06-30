@@ -5,11 +5,55 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.2.0`. See
+The documented command surface is stable in `v1.3.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
 ## Commands
+
+## Simple Workflow
+
+Use AgentOps in one of two modes.
+
+For a new audited run, start the agent through AgentOps:
+
+```bash
+agentops run codex "review the current diff"
+agentops review
+agentops dashboard
+```
+
+or:
+
+```bash
+agentops run claude "review the current diff"
+agentops review
+agentops dashboard
+```
+
+For after-the-fact audit, import an existing machine-readable session artifact:
+
+```bash
+agentops import path/to/session.jsonl
+agentops review
+```
+
+AgentOps does not need a background service. For live capture, it must launch
+the agent command so it can save the JSONL stream. For retrospective audit, it
+only needs the saved JSONL artifact.
+
+### `agentops run`
+
+Runs Codex or Claude Code, captures the machine-readable session stream,
+ingests it into the local SQLite store, and prints the next review commands.
+
+```bash
+agentops run codex "review the current change"
+agentops run claude "review the current change"
+```
+
+This is the recommended entrypoint for normal use. It is equivalent to
+`agentops capture ... --ingest`.
 
 ### `agentops capture`
 
@@ -68,16 +112,18 @@ Use `--input` to inspect detection diagnostics for a source artifact:
 agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
-### `agentops ingest <session.jsonl>`
+### `agentops import <session.jsonl>`
 
-Ingests a post-hoc session artifact into the local SQLite store.
+Imports a post-hoc session artifact into the local SQLite store.
 
 ```bash
-agentops ingest ./fixtures/sample-session.jsonl
-agentops ingest ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
-agentops ingest ./fixtures/claude-code-stream-session.jsonl
-agentops ingest ./fixtures/codex-exec-session.jsonl
+agentops import ./fixtures/sample-session.jsonl
+agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+agentops import ./fixtures/claude-code-stream-session.jsonl
+agentops import ./fixtures/codex-exec-session.jsonl
 ```
+
+`agentops ingest` is kept as a compatibility alias.
 
 ### `agentops config --check`
 
@@ -106,7 +152,20 @@ Prints a compact inspection view for one session without generating a full repor
 
 ```bash
 agentops inspect --session latest
+agentops inspect latest
 agentops inspect --session sample-session
+```
+
+### `agentops review`
+
+Reviews one session. With no options it prints the compact inspection view for
+the latest session.
+
+```bash
+agentops review
+agentops review latest --format markdown --out report.md
+agentops review latest --format github --out pr-comment.md
+agentops review latest --format json --out agentops-session.json
 ```
 
 ### `agentops report`
@@ -114,7 +173,7 @@ agentops inspect --session sample-session
 Generates a Markdown report for one session.
 
 ```bash
-agentops report --session latest > report.md
+agentops report latest --out report.md
 ```
 
 ### `agentops export`
@@ -122,8 +181,8 @@ agentops report --session latest > report.md
 Exports stored data as deterministic JSON.
 
 ```bash
-agentops export --session latest --format json > agentops-session.json
-agentops export --session latest --format json --scope repo > agentops-repo.json
+agentops export latest --format json --out agentops-session.json
+agentops export latest --format json --scope repo --out agentops-repo.json
 ```
 
 By default, exports omit raw payload JSON and local source artifact paths. See
@@ -134,8 +193,8 @@ By default, exports omit raw payload JSON and local source artifact paths. See
 Compares the session against the current local git diff.
 
 ```bash
-agentops repo-report --session latest > repo-report.md
-agentops repo-report --session latest --format github > pr-comment.md
+agentops repo-report latest --out repo-report.md
+agentops repo-report latest --format github --out pr-comment.md
 ```
 
 The GitHub format is stdout-only. It does not post comments.

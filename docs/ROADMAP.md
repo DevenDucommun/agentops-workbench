@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.2.0`
+Current public release: `v1.3.0`
 
 Implemented:
 
@@ -50,6 +50,8 @@ Implemented:
 - Install smoke, package dry-run smoke, and release archive smoke automation.
 - Stable compatibility policy for schemas, adapters, CLI commands, config,
   reports, exports, migrations, and privacy defaults.
+- Simplified `agentops run`, `agentops review`, and `agentops import`
+  workflows, with `agentops ingest` retained as a compatibility alias.
 
 Current boundaries:
 
@@ -278,8 +280,10 @@ The post-1.0 roadmap is now tracked in
 
 Planned milestones:
 
-- `v1.3.0`: deterministic quality gates and PR/CI workflow support.
-- `v1.4.0`: distribution, install polish, platform support decisions, and
+- `v1.4.0`: retrospective and forensic import for lower-fidelity plain
+  Claude/Codex terminal transcripts, with explicit evidence provenance labels.
+- `v1.5.0`: deterministic quality gates and PR/CI workflow support.
+- `v1.6.0`: distribution, install polish, platform support decisions, and
   adoption path.
 
 Still deferred beyond the planned post-1.0 ladder:
@@ -289,10 +293,25 @@ Still deferred beyond the planned post-1.0 ladder:
 - LLM-as-judge scoring.
 - Live agent control or intervention.
 - Direct private memory-store ingestion.
-- Raw Claude Code transcript-file parsing.
+- Private Claude/Codex transcript-store scraping.
+- Unlabeled arbitrary transcript reconstruction.
 - Deep trace visualization comparable to a full observability platform.
 
 ## Historical Milestones
+
+### v1.3.0
+
+Delivered:
+
+- Simplified `agentops run codex|claude <prompt>` live-capture workflow.
+- `agentops review [latest|session-id]` as the default post-capture review
+  entrypoint.
+- User-facing `agentops import <artifact>` retrospective import command, with
+  `agentops ingest` retained as a compatibility alias.
+- `--out <file>` support for review, report, repo-report, and export commands.
+- README and capture docs now explicitly describe the native full-fidelity
+  Claude/Codex artifact modes and defer lower-fidelity plain transcript import
+  to the forensic import milestone.
 
 ### v1.2.0
 
