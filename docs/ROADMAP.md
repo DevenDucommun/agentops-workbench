@@ -11,7 +11,7 @@ supported.
 
 ## Current Status
 
-Current public release: `v1.5.0`
+Current public release: `v1.6.0`
 
 Implemented:
 
@@ -56,6 +56,8 @@ Implemented:
   labels for lower-fidelity transcript review.
 - Deterministic `agentops gate` checks with text, JSON, and GitHub-ready
   output for local CI/PR workflows.
+- Source-first distribution decision, platform support boundaries, and
+  reproducible synthetic demo artifacts under `docs/demo/`.
 
 Current boundaries:
 

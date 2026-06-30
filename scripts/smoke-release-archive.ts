@@ -44,6 +44,7 @@ runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkou
 runAndExpect(["./bin/agentops", "gate", "sample-session"], "Status: PASSED", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "review", "latest", "--format", "markdown"], "AgentOps Session Report", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "dashboard", "--check"], "Dashboard configuration OK", { cwd: checkoutDir });
+runAndExpect(["bun", "run", "smoke:demo-artifacts"], "Demo artifacts are up to date", { cwd: checkoutDir });
 runAndExpect(["bun", "run", "smoke:package"], "Package smoke passed", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "scan-publication"], "Public-readiness scan passed", { cwd: checkoutDir });
 

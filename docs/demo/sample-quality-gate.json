@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "agentops.gate.v1",
+  "sessionId": "sample-session",
+  "status": "passed",
+  "summary": "All quality gates passed.",
+  "checks": [
+    {
+      "id": "max-high-risks",
+      "label": "High-severity risks",
+      "status": "passed",
+      "message": "0 observed; maximum allowed is 0.",
+      "observed": 0,
+      "threshold": "<= 0"
+    },
+    {
+      "id": "required-verification",
+      "label": "Verification evidence",
+      "status": "passed",
+      "message": "1 observed verification command recorded.",
+      "observed": 1,
+      "threshold": ">= 1"
+    },
+    {
+      "id": "unsupported-final-claims",
+      "label": "Unsupported or inferred final claims",
+      "status": "passed",
+      "message": "0 observed; maximum allowed is 0.",
+      "observed": 0,
+      "threshold": "<= 0"
+    },
+    {
+      "id": "generated-file-churn",
+      "label": "Generated-file churn",
+      "status": "passed",
+      "message": "0 observed; maximum allowed is 0.",
+      "observed": 0,
+      "threshold": "<= 0"
+    }
+  ],
+  "repo": {
+    "changedFiles": 0
+  }
+}

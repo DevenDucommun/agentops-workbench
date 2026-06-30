@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.5.0`.
+Status: stable for `v1.6.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -14,11 +14,13 @@ changing the underlying artifact boundary. Version `v1.4.0` added a
 lower-fidelity `forensic-text` adapter for saved terminal transcripts and
 copied coding-agent text. It is additive and does not change the native JSONL
 recommendation for full-fidelity review. Version `v1.5.0` adds deterministic
-quality gates and GitHub-ready gate output for local or CI workflows.
+quality gates and GitHub-ready gate output for local or CI workflows. Version
+`v1.6.0` documents the source-first distribution boundary and adds synthetic
+demo artifacts for adoption.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.5.0`:
+The following surfaces are treated as public contracts in `v1.6.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -55,9 +57,13 @@ The `v1.5.0` `gate` command is an additive deterministic check over stored
 session analysis and current git metadata. Gate JSON uses
 `agentops.gate.v1`; compatible changes may add optional fields or checks.
 
+The `v1.6.0` distribution decision keeps fresh clones and GitHub release source
+archives as the supported install paths. Npm publication and standalone
+binaries remain outside the stable contract.
+
 ## Adapter Matrix
 
-Supported in `v1.5.0`:
+Supported in `v1.6.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -79,7 +85,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.5.0` stable contract:
+The following are intentionally outside the `v1.6.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -91,7 +97,7 @@ The following are intentionally outside the `v1.5.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.5.0`.
+local template output shape, not a live ingestion API in `v1.6.0`.
 
 ## Reports
 
