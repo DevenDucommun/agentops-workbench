@@ -352,6 +352,50 @@ test("dashboard labels forensic text evidence quality", async () => {
   }
 });
 
+test("dashboard distinguishes inferred forensic evidence from verified evidence", async () => {
+  const ingest = await runCli(["import", "fixtures/forensic-copied-chat.txt"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      evidenceQuality: {
+        level: string;
+        inferredCommandCount: number;
+        inferredFileCount: number;
+      };
+      decision: {
+        mergeReadiness: { status: string; reasons: string[]; missingEvidenceCount: number; verificationCount: number };
+        evidence: Array<{ id: string; status: string; command: string | null; commandStatus: string | null }>;
+      };
+      commands: Array<{ command: string; status: string | null }>;
+    };
+
+    expect(detailPayload.evidenceQuality).toEqual(
+      expect.objectContaining({
+        level: "forensic",
+        inferredCommandCount: 2,
+        inferredFileCount: 1
+      })
+    );
+    expect(detailPayload.commands).toContainEqual(expect.objectContaining({ command: "bun test", status: "inferred" }));
+    expect(detailPayload.decision.mergeReadiness.status).toBe("needs-review");
+    expect(detailPayload.decision.mergeReadiness.reasons.join(" ")).toContain("inferred command evidence");
+    expect(detailPayload.decision.mergeReadiness.missingEvidenceCount).toBe(0);
+    expect(detailPayload.decision.mergeReadiness.verificationCount).toBe(1);
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({ id: "test", status: "inferred-evidence", command: "bun test", commandStatus: "inferred" })
+    );
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({ id: "final-success", status: "inferred-evidence", command: "bun test", commandStatus: "inferred" })
+    );
+  } finally {
+    server.stop();
+  }
+});
+
 test("dashboard compares two sessions with decision and evidence deltas", async () => {
   const riskyIngest = await runCli(["ingest", "fixtures/risky-session.jsonl"]);
   expect(riskyIngest.exitCode).toBe(0);

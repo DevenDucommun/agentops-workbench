@@ -53,7 +53,8 @@ The dashboard currently provides:
 - session text and adapter filtering
 - evidence-quality summary for structured JSONL and forensic text imports
 - merge-readiness summary for a selected session
-- claim-vs-evidence matrix for tests, lint, typecheck, build, and final success
+- claim-vs-evidence matrix for tests, lint, typecheck, build, and final
+  success, with separate labels for verified, inferred, and missing evidence
 - risk severity drilldown with linked event, command, file, and evidence context
 - run comparison between two sessions
 - session timeline
@@ -82,6 +83,7 @@ states:
 | Needs review | `fixtures/needs-review-session.jsonl` | final success claim without verification evidence |
 | Blocked | `fixtures/risky-session.jsonl` | high risks, medium risks, and missing success evidence |
 | Forensic | `fixtures/forensic-terminal-transcript.txt` | `forensic-text` adapter, observed shell commands, inferred file changes |
+| Inferred forensic | `fixtures/forensic-copied-chat.txt` | inferred command evidence requires review instead of showing as fully verified |
 | Comparison | `sample-session` against `risky-session` | reduced risks and added verification |
 
 ## API

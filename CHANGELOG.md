@@ -12,6 +12,8 @@
   inferred command labels and weak-transcript risk flags.
 - Dashboard evidence-quality payload and card for structured JSONL vs forensic
   text imports.
+- Dashboard claim/evidence status now distinguishes inferred forensic evidence
+  from verified command evidence.
 
 ### Changed
 

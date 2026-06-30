@@ -145,7 +145,7 @@ type DashboardEvidenceRow = {
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "missing-evidence" | "not-claimed";
+  status: "verified" | "inferred-evidence" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
@@ -528,6 +528,7 @@ function buildDashboardDecision(
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
+  const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
   const reasons: string[] = [];
   let status: DashboardMergeReadiness["status"] = "ready";
 
@@ -542,6 +543,10 @@ function buildDashboardDecision(
   if (missingEvidenceCount > 0) {
     if (status === "ready") status = "needs-review";
     reasons.push(`${missingEvidenceCount} claimed check${missingEvidenceCount === 1 ? "" : "s"} missing command evidence.`);
+  }
+  if (inferredEvidenceCount > 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(`${inferredEvidenceCount} claimed check${inferredEvidenceCount === 1 ? " has" : "s have"} inferred command evidence.`);
   }
   if (verification.length === 0) {
     if (status === "ready") status = "needs-review";
@@ -605,18 +610,28 @@ function toEvidenceRow(input: {
   command: CommandRecord | null;
   risk: RiskFlagRecord | null;
 }): DashboardEvidenceRow {
+  const status = evidenceStatus(input.evidenceFound, input.claimed, input.command);
   return {
     id: input.id,
     label: input.label,
     claimed: input.claimed,
     evidenceFound: input.evidenceFound,
-    status: input.evidenceFound ? "verified" : input.claimed ? "missing-evidence" : "not-claimed",
+    status,
     command: input.command?.command ?? null,
     commandStatus: input.command?.status ?? null,
     commandExitCode: input.command?.exitCode ?? null,
     riskCategory: input.risk?.category ?? null,
     riskMessage: input.risk?.message ?? null
   };
+}
+
+function evidenceStatus(
+  evidenceFound: boolean,
+  claimed: boolean,
+  command: CommandRecord | null
+): DashboardEvidenceRow["status"] {
+  if (!evidenceFound) return claimed ? "missing-evidence" : "not-claimed";
+  return command?.status === "inferred" ? "inferred-evidence" : "verified";
 }
 
 function titleCase(value: string): string {
@@ -1645,12 +1660,14 @@ function dashboardHtml(): string {
 
     function evidencePillClass(status) {
       if (status === "verified") return "ok";
+      if (status === "inferred-evidence") return "neutral";
       if (status === "missing-evidence") return "missing";
       return "neutral";
     }
 
     function formatEvidenceStatus(status) {
       if (status === "verified") return "Evidence found";
+      if (status === "inferred-evidence") return "Inferred evidence";
       if (status === "missing-evidence") return "Missing evidence";
       return "Not claimed";
     }
