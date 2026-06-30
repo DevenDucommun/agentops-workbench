@@ -80,13 +80,15 @@ bun install --frozen-lockfile
 ./bin/agentops save
 ```
 
-This does not work from a source archive because `.git` is not present:
+Repo-aware output still runs from a source archive, but without `.git` it
+compares against an empty diff, so the result is not meaningful:
 
 ```bash
 ./bin/agentops save pr latest
 ```
 
-Use a fresh git clone when you need `repo-report`.
+Repo-aware PR comments are only meaningful from a git checkout. Use a fresh git
+clone when you need them.
 
 ## Five-Minute Synthetic Demo
 
@@ -140,5 +142,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v1.11.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v2.0.0` command,
 adapter, schema, and packaging boundaries.

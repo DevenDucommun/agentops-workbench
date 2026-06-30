@@ -10,8 +10,9 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.11.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.11.0)
-- Current `main`: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Latest published release: [`v1.11.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.11.0)
+- Current `main` (unreleased, heading to `v2.0.0`): breaking simplification — single simple-verb CLI surface and consolidated `agentops-jsonl` adapter
+- Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
@@ -200,7 +201,7 @@ commands were removed in `v2.0.0`; their functions are reached through the
 simple verbs (`look`, `save`, `check`, `open`). See
 [CLI reference](docs/CLI.md) and [Compatibility policy](docs/COMPATIBILITY.md).
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.11.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v2.0.0`
 surfaces and experimental boundaries.
 
 ## MCP Server
