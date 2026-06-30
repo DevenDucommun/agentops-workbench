@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.10.0`.
+Status: stable for `v1.11.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -26,11 +26,13 @@ for session/report lookup.
 Version `v1.9.1` updates release smoke validation for the MCP protocol tests
 without changing the public command surface. Version `v1.10.0` adds
 OpenInference-style JSON span export without adding OTLP upload or collector
-configuration.
+configuration. Version `v1.11.0` adds simplified product commands for status,
+inspection, quality checks, dashboard launch, and saving default review
+artifacts.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.10.0`:
+The following surfaces are treated as public contracts in `v1.11.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -90,9 +92,14 @@ bundle available through `agentops export --format openinference-json`.
 Compatible changes may add optional attributes or spans, but must continue to
 omit raw payload JSON by default.
 
+The `v1.11.0` simplified commands are additive workflows over existing review,
+gate, export, dashboard, and report behavior. `status`, `look`, `check`,
+`save`, and `open` are now the recommended regular-user surface. Older
+commands remain available as advanced compatibility commands.
+
 ## Adapter Matrix
 
-Supported in `v1.10.0`:
+Supported in `v1.11.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -114,7 +121,7 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.10.0` stable contract:
+The following are intentionally outside the `v1.11.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
 - Private PAI memory store reads.
@@ -127,7 +134,7 @@ The following are intentionally outside the `v1.10.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.10.0`.
+local template output shape, not a live ingestion API in `v1.11.0`.
 
 ## Reports
 

@@ -46,6 +46,10 @@ runAndExpect(["./bin/agentops", "import", "./fixtures/claude-code-stream-session
 runAndExpect(["./bin/agentops", "import", "./fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "import", "./fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "status"], "AgentOps Status", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "look"], "AgentOps Session Inspection", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "check"], "Status: PASSED", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "save"], "Saved AgentOps bundle", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "gate", "sample-session"], "Status: PASSED", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "review", "latest", "--format", "markdown"], "AgentOps Session Report", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "export", "latest", "--format", "openinference-json"], "agentops.openinference.v1", { cwd: checkoutDir });

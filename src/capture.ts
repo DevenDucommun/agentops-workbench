@@ -104,7 +104,7 @@ export async function runCapture(request: CaptureRequest, executor: CaptureExecu
   };
 }
 
-export function formatCaptureResult(result: CaptureResult, options: { next?: "import" | "review" } = {}): string {
+export function formatCaptureResult(result: CaptureResult, options: { next?: "import" | "review" | "look" | null } = {}): string {
   if (result.dryRun) {
     return [
       "Capture command (dry run)",
@@ -115,13 +115,22 @@ export function formatCaptureResult(result: CaptureResult, options: { next?: "im
     ].join("\n");
   }
 
+  const next =
+    options.next === null
+      ? null
+      : options.next === "review"
+        ? "Next: agentops review"
+        : options.next === "look"
+          ? "Next: agentops look"
+          : `Next: agentops import ${shellQuote(result.outputPath)}`;
+
   return [
     `Captured ${result.provider} session`,
     `Artifact: ${result.outputPath}`,
     `Adapter: ${result.adapterId}`,
-    options.next === "review" ? "Next: agentops review" : `Next: agentops import ${shellQuote(result.outputPath)}`,
+    next,
     ""
-  ].join("\n");
+  ].filter((line) => line !== null).join("\n");
 }
 
 export function captureUsage(provider?: CaptureProvider): string {
