@@ -203,6 +203,11 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   const ingest = await runCli(["import", "fixtures/forensic-terminal-transcript.txt"]);
   expect(ingest.exitCode).toBe(0);
   expect(ingest.stdout).toContain("Adapter: forensic-text");
+  expect(ingest.stdout).toContain("Evidence quality: forensic text");
+  expect(ingest.stdout).toContain("Observed commands: 2");
+  expect(ingest.stdout).toContain("Inferred files: 2");
+  expect(ingest.stdout).toContain("Prefer agentops run or provider JSONL");
+  expect(ingest.stdout).toContain("Next: agentops review forensic-terminal-transcript");
 
   const inspect = await runCli(["review", "forensic-terminal-transcript"]);
   expect(inspect.exitCode).toBe(0);
@@ -213,6 +218,9 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   const weak = await runCli(["import", "fixtures/forensic-final-only.txt"]);
   expect(weak.exitCode).toBe(0);
   expect(weak.stdout).toContain("Adapter: forensic-text");
+  expect(weak.stdout).toContain("Evidence quality: weak forensic text");
+  expect(weak.stdout).toContain("Observed commands: 0");
+  expect(weak.stdout).toContain("transcript has no observable shell commands");
 
   const report = await runCli(["review", "forensic-final-only", "--format", "markdown"]);
   expect(report.exitCode).toBe(0);

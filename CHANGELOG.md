@@ -14,6 +14,8 @@
   text imports.
 - Dashboard claim/evidence status now distinguishes inferred forensic evidence
   from verified command evidence.
+- `agentops import` now prints forensic evidence-quality diagnostics for
+  plain-text transcripts, including weak-transcript warnings.
 
 ### Changed
 

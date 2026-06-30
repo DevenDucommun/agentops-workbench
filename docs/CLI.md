@@ -134,6 +134,10 @@ agentops import ./fixtures/forensic-terminal-transcript.txt
 Forensic plain-text import uses the `forensic-text` adapter. It labels
 shell-prompt commands as `observed`, labels narrative command and file mentions
 as `inferred`, and flags final-answer-only transcripts as weak evidence.
+The import result prints a compact evidence-quality summary for forensic
+transcripts, including observed command count, inferred command count, inferred
+file count, and a warning when the transcript is too weak for meaningful
+verification.
 
 Real terminal logs can include shell prompts, local paths, environment output,
 copied secrets, account names, and private project names. Keep raw transcripts

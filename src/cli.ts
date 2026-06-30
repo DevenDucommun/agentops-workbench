@@ -9,7 +9,7 @@ import { getGitChanges } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
-import { getSessionId, ingestTranscript, openStore } from "./store";
+import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, openStore, type Store } from "./store";
 import { startDashboardServer, type DashboardServer } from "./dashboard";
 
 type CliResult = {
@@ -78,10 +78,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       const transcript = adapter.parse(input, config);
       const result = ingestTranscript(store, transcript, config);
       analyzeSession(store, result.sessionId, config);
+      const stdout = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
       store.db.close();
 
       return {
-        stdout: `Ingested session ${result.sessionId} (${result.eventCount} events)\nAdapter: ${adapter.id}\nDatabase: ${store.path}\n`,
+        stdout,
         exitCode: 0
       };
     }
@@ -343,9 +344,34 @@ function ingestArtifact(sourcePath: string, adapterId: string): string {
   const transcript = adapter.parse(input, config);
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
+  const output = formatIngestResult(store, result.sessionId, result.eventCount, adapter.id);
   store.db.close();
 
-  return `Ingested session ${result.sessionId} (${result.eventCount} events)\nAdapter: ${adapter.id}\nDatabase: ${store.path}\n`;
+  return output;
+}
+
+function formatIngestResult(store: Store, sessionId: string, eventCount: number, adapterId: string): string {
+  const lines = [`Ingested session ${sessionId} (${eventCount} events)`, `Adapter: ${adapterId}`, `Database: ${store.path}`];
+  if (adapterId === "forensic-text") {
+    const commands = getCommands(store, sessionId);
+    const files = getFileChanges(store, sessionId);
+    const risks = getRiskFlags(store, sessionId);
+    const observedCommands = commands.filter((command) => command.status === "observed").length;
+    const inferredCommands = commands.filter((command) => command.status === "inferred").length;
+    const inferredFiles = files.filter((file) => file.operation.startsWith("inferred")).length;
+    const weak = risks.some((risk) => risk.category === "weak-forensic-transcript");
+    lines.push(`Evidence quality: ${weak ? "weak forensic text" : "forensic text"}`);
+    lines.push(`Observed commands: ${observedCommands}`);
+    lines.push(`Inferred commands: ${inferredCommands}`);
+    lines.push(`Inferred files: ${inferredFiles}`);
+    lines.push(
+      weak
+        ? "Warning: transcript has no observable shell commands, so verification evidence is missing."
+        : "Warning: plain-text import may include inferred evidence. Prefer agentops run or provider JSONL for full-fidelity audit."
+    );
+    lines.push(`Next: agentops review ${sessionId}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function readOption(args: string[], name: string): string | null {
