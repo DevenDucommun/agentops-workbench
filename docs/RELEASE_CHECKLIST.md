@@ -3,7 +3,7 @@
 This checklist must pass before every public release. See
 [Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
 
-Status: reusable and exercised through `v1.9.1`; v0.1.0 public readiness
+Status: reusable and exercised through `v1.10.0`; v0.1.0 public readiness
 passed on 2026-06-28. See
 [v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
 
@@ -48,6 +48,7 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `./bin/agentops import ./fixtures/sample-session.jsonl`.
 - [x] Fresh clone can run `./bin/agentops review`.
 - [x] Fresh clone can run `./bin/agentops review latest --format markdown --out report.md`.
+- [x] Fresh clone can run `./bin/agentops export latest --format openinference-json --out agentops-openinference.json`.
 - [x] Fresh clone can run `./bin/agentops repo-report latest --out repo-report.md`.
 - [x] Fresh clone can run `./bin/agentops repo-report latest --format github --out pr-comment.md`.
 - [x] Fresh clone can run MCP protocol tests with `bun test test/mcp.test.ts`.
@@ -79,7 +80,7 @@ passed on 2026-06-28. See
 After creating a GitHub release, verify the generated source archive:
 
 ```bash
-bun ./scripts/smoke-release-archive.ts v1.9.1
+bun ./scripts/smoke-release-archive.ts v1.10.0
 ```
 
 The archive does not include `.git`, so `repo-report` remains a git-checkout
@@ -101,9 +102,11 @@ bun test test/mcp.test.ts
 ./bin/agentops doctor --fix
 ./bin/agentops demo
 ./bin/agentops audit ./fixtures/sample-session.jsonl --out /tmp/agentops-audit.md
+./bin/agentops export latest --format openinference-json --out /tmp/agentops-openinference.json
 ./bin/agentops pr --out /tmp/agentops-pr-comment.md
 ./bin/agentops scan-publication
 test -s /tmp/agentops-audit.md
+test -s /tmp/agentops-openinference.json
 test -s /tmp/agentops-pr-comment.md
 ```
 

@@ -48,6 +48,7 @@ runAndExpect(["./bin/agentops", "import", "./fixtures/forensic-terminal-transcri
 runAndExpect(["./bin/agentops", "sessions"], "codex-exec-sample", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "gate", "sample-session"], "Status: PASSED", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "review", "latest", "--format", "markdown"], "AgentOps Session Report", { cwd: checkoutDir });
+runAndExpect(["./bin/agentops", "export", "latest", "--format", "openinference-json"], "agentops.openinference.v1", { cwd: checkoutDir });
 runAndExpect(["./bin/agentops", "dashboard", "--check"], "Dashboard configuration OK", { cwd: checkoutDir });
 runAndExpect(["bun", "test", "test/mcp.test.ts"], "3 pass", { cwd: checkoutDir });
 runAndExpect(["bun", "run", "smoke:demo-artifacts"], "Demo artifacts are up to date", { cwd: checkoutDir });

@@ -44,6 +44,7 @@ runAndExpect(["agentops", "repo-report", "latest"], "AgentOps Repo Report");
 runAndExpect(["agentops", "repo-report", "latest", "--format", "github"], "AgentOps Workbench Report");
 runAndExpect(["agentops", "pr", "latest"], "AgentOps Workbench Report");
 runAndExpect(["agentops", "export", "latest", "--format", "json"], "agentops.export.v1");
+runAndExpect(["agentops", "export", "latest", "--format", "openinference-json"], "agentops.openinference.v1");
 runAndExpect(["agentops", "export", "latest", "--format", "json", "--scope", "repo"], "\"git\"");
 runAndExpect(["agentops", "dashboard", "--check"], "Dashboard configuration OK");
 runAndExpect(["agentops", "import", "fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text");

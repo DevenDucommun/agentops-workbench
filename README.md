@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.9.1`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.9.1)
-- Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.10.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.10.0)
+- Current `main`: stable local review workflow with guided first-run commands, simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
 - Native Codex exec JSONL ingestion: implemented
@@ -188,6 +188,7 @@ Common commands:
 ./bin/agentops report latest --out report.md
 ./bin/agentops export latest --format json --out agentops-session.json
 ./bin/agentops export latest --format json --scope repo --out agentops-repo.json
+./bin/agentops export latest --format openinference-json --out agentops-openinference.json
 ./bin/agentops gate latest
 ./bin/agentops gate latest --format json --out agentops-gate.json
 ./bin/agentops repo-report latest --out repo-report.md
@@ -200,7 +201,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.9.1`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.10.0`
 surfaces and experimental boundaries.
 
 ## MCP Server

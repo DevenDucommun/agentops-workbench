@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
-import { generateRepoJsonExport, generateSessionJsonExport } from "../src/export";
+import { generateOpenInferenceJsonExport, generateRepoJsonExport, generateSessionJsonExport } from "../src/export";
 import { parseJsonlTranscript } from "../src/parser";
 import { ingestTranscript, openStore } from "../src/store";
 
@@ -70,6 +70,40 @@ test("exports repo JSON with observed and unobserved git coverage", () => {
   expect(payload.git.observedChanges.map((change) => change.path)).toEqual(["src/server.ts"]);
   expect(payload.git.unobservedChanges.map((change) => change.path)).toEqual(["docs/new-note.md"]);
   expect(payload.git.agentOnlyFiles.map((file) => file.path)).toContain("test/server.test.ts");
+
+  store.db.close();
+});
+
+test("exports deterministic OpenInference-style spans without raw payloads", () => {
+  const store = openFixture("fixtures/sample-session.jsonl");
+  analyzeSession(store, "sample-session", defaultConfig);
+
+  const first = generateOpenInferenceJsonExport(store, "sample-session", defaultConfig);
+  const second = generateOpenInferenceJsonExport(store, "sample-session", defaultConfig);
+  const payload = JSON.parse(first) as {
+    schemaVersion: string;
+    kind: string;
+    session: { id: string; sourcePath?: string };
+    spans: Array<{
+      traceId: string;
+      spanId: string;
+      parentSpanId: string | null;
+      name: string;
+      attributes: Record<string, unknown>;
+      rawJson?: string;
+    }>;
+  };
+
+  expect(first).toBe(second);
+  expect(payload.schemaVersion).toBe("agentops.openinference.v1");
+  expect(payload.kind).toBe("openinference");
+  expect(payload.session.id).toBe("sample-session");
+  expect(payload.session.sourcePath).toBeUndefined();
+  expect(payload.spans.length).toBeGreaterThan(1);
+  expect(payload.spans[0].attributes["openinference.span.kind"]).toBe("AGENT");
+  expect(payload.spans.some((span) => span.attributes["openinference.span.kind"] === "TOOL")).toBe(true);
+  expect(payload.spans.some((span) => span.attributes["agentops.raw_payload.hash"])).toBe(true);
+  expect(JSON.stringify(payload)).not.toContain("rawJson");
 
   store.db.close();
 });

@@ -17,6 +17,12 @@ Repo-aware export:
 ./bin/agentops export latest --format json --scope repo --out agentops-repo.json
 ```
 
+OpenInference-style span export:
+
+```bash
+./bin/agentops export latest --format openinference-json --out agentops-openinference.json
+```
+
 ## Schema
 
 Current export schema:
@@ -43,6 +49,28 @@ Repo exports include the same session data plus:
 - `git.unobservedChanges`
 - `git.agentOnlyFiles`
 
+## OpenInference JSON
+
+OpenInference-style exports use:
+
+```text
+agentops.openinference.v1
+```
+
+This is a deterministic JSON span bundle for local interchange. It is not OTLP
+protobuf and does not send data to a collector.
+
+The export includes:
+
+- one root session span with `openinference.span.kind = AGENT`
+- event spans with AgentOps event metadata and raw payload hashes
+- command spans with `openinference.span.kind = TOOL`
+- risk spans with `openinference.span.kind = EVALUATOR`
+- token usage attributes when source data includes usage metadata
+
+The export is session-scoped. Repo-aware OpenInference export remains deferred
+until there is demand for a stable mapping of git diffs to trace spans.
+
 ## Privacy Defaults
 
 By default, JSON export omits:
@@ -60,6 +88,8 @@ Use `--include-raw-payloads` only for local debugging with trusted data:
 ```
 
 Do not publish exports that include raw payloads.
+
+OpenInference JSON export always omits raw payload JSON.
 
 ## Compatibility
 

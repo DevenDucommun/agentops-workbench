@@ -5,8 +5,10 @@ concepts and OpenTelemetry/GenAI-style fields.
 
 ## Status
 
-Status for `v1.0.0`: documented mapping only. OTLP export remains deferred
-until a concrete integration need appears.
+Status for `v1.10.0`: AgentOps provides deterministic local JSON exports,
+including `agentops.export.v1` and `agentops.openinference.v1`. OTLP/protobuf
+export and collector upload remain deferred until a concrete integration need
+appears.
 
 Reason:
 
@@ -33,7 +35,9 @@ Reason:
 
 ## Export Decision
 
-`agentops.export.v1` is the canonical portable format in `v1.0.0`.
+`agentops.export.v1` is the canonical AgentOps portable format.
+`agentops.openinference.v1` is a local OpenInference-style JSON span bundle for
+interchange with broader observability workflows.
 
-OTLP export is deferred. A future exporter should transform
-`agentops.export.v1` rather than reading private transcript artifacts directly.
+OTLP/protobuf export is deferred. A future exporter should transform
+AgentOps exports rather than reading private transcript artifacts directly.
