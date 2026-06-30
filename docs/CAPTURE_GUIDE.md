@@ -62,6 +62,8 @@ Reports label this evidence quality:
 
 - Shell-prompt commands are `observed`.
 - Commands and file changes mentioned in prose are `inferred`.
+- Inferred verification commands are review evidence, not full observed
+  verification.
 - Final-answer-only transcripts are accepted as weak audits and flagged for
   missing command evidence.
 

@@ -163,16 +163,27 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  const ranVerification = commands.some((command) => isVerificationCommand(command.command, config));
+  const observedCommands = commands.filter((command) => command.status !== "inferred");
+  const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
+  for (const command of inferredVerificationCommands) {
+    flags.push({
+      eventId: command.eventId,
+      severity: "medium",
+      category: "inferred-verification-evidence",
+      message: `Verification command was inferred from plain text, not observed: ${command.command}`
+    });
+  }
+
+  const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
-    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalEvent.summary, commands.map((command) => command.command));
+    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalEvent.summary, observedCommands.map((command) => command.command));
     for (const claim of unsupportedEvidenceClaims) {
       flags.push({
         eventId: finalEvent.id,
         severity: "medium",
         category: claim.category,
-        message: `Final response claims ${claim.label} success, but no matching ${claim.label} command was recorded.`
+        message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
       });
     }
     if (claimsSuccess(finalEvent.summary) && !ranVerification && unsupportedEvidenceClaims.length === 0) {

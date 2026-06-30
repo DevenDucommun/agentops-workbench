@@ -336,3 +336,25 @@ test("flags final-only forensic text as weak evidence", () => {
 
   store.db.close();
 });
+
+test("flags inferred forensic verification as review evidence", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/forensic-copied-chat.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "forensic-copied-chat", defaultConfig);
+
+  const commands = getCommands(store, "forensic-copied-chat");
+  const report = generateMarkdownReport(store, "forensic-copied-chat");
+
+  expect(commands.some((command) => command.command === "bun test" && command.status === "inferred")).toBe(true);
+  expect(report).toContain("`bun test` - inferred");
+  expect(report).toContain("inferred-verification-evidence");
+  expect(report).toContain("missing-test-evidence");
+  expect(report).toContain("no observed matching test command");
+
+  store.db.close();
+});

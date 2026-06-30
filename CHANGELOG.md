@@ -16,6 +16,8 @@
   from verified command evidence.
 - `agentops import` now prints forensic evidence-quality diagnostics for
   plain-text transcripts, including weak-transcript warnings.
+- Analyzer/report logic now treats inferred forensic verification as review
+  evidence instead of observed proof for final success claims.
 
 ### Changed
 
