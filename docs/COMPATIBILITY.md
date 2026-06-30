@@ -103,13 +103,18 @@ Supported in `v1.11.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
-| `agentops-jsonl` | Canonical `agentops.event.v1` JSONL | Stable |
-| `pai-export-jsonl` | Sanitized PAI/KAI-style AgentOps JSONL export | Stable |
-| `claude-code-jsonl` | Sanitized Claude Code AgentOps JSONL export | Stable |
-| `codex-jsonl` | Sanitized Codex AgentOps JSONL export | Stable |
+| `agentops-jsonl` | Canonical `agentops.event.v1` JSONL — any sanitized export (Claude Code, Codex, PAI/KAI, ...); `source` field carries provenance | Stable |
 | `claude-code-stream-json` | Explicit `claude -p --output-format stream-json` JSONL capture | Supported native stream |
 | `codex-exec-jsonl` | Explicit `codex exec --json` JSONL capture | Supported native stream |
 | `forensic-text` | Saved terminal transcript or copied coding-agent text | Experimental forensic import |
+
+The `v2.0.0` release consolidated the previously separate `pai-export-jsonl`,
+`claude-code-jsonl`, and `codex-jsonl` adapter IDs into `agentops-jsonl`. They
+were functionally identical (same `agentops.event.v1` schema, same parser),
+differing only by a detection label; their provenance is now read from each
+record's `source` field. This is a breaking change to the adapter identifier
+surface — pass canonical exports without `--adapter` (auto-detected) or with
+`--adapter agentops-jsonl`.
 
 Native stream adapters are tested with synthetic fixtures and clear diagnostics
 for unsupported shapes. They are not private transcript parsers.

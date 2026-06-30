@@ -28,12 +28,12 @@ export type Adapter = {
 export const agentOpsJsonlAdapter: Adapter = {
   id: "agentops-jsonl",
   displayName: "AgentOps JSONL",
-  artifactHint: "Canonical agentops.event.v1 JSONL",
+  artifactHint: "Canonical agentops.event.v1 JSONL (any source: claude-code, codex, pai, ...)",
   detect(input) {
     const first = firstJsonRecord(input.content);
     if (first?.schemaVersion === "agentops.event.v1") {
       if (typeof first.source === "string") {
-        return { matched: true, confidence: 0.8, reason: "found compatible agentops.event.v1 schemaVersion with source metadata" };
+        return { matched: true, confidence: 1, reason: `found agentops.event.v1 schemaVersion with source=${first.source}` };
       }
       return { matched: true, confidence: 1, reason: "found agentops.event.v1 schemaVersion" };
     }
@@ -45,44 +45,6 @@ export const agentOpsJsonlAdapter: Adapter = {
   parse(input, config) {
     return parseJsonlTranscript(input.sourcePath, input.content, {
       sourceAdapter: "agentops-jsonl",
-      config
-    });
-  }
-};
-
-export const claudeCodeJsonlAdapter: Adapter = {
-  id: "claude-code-jsonl",
-  displayName: "Claude Code Export JSONL",
-  artifactHint: "Sanitized agentops.event.v1 JSONL with source=claude-code",
-  detect(input) {
-    const first = firstJsonRecord(input.content);
-    if (first?.schemaVersion === "agentops.event.v1" && first?.source === "claude-code") {
-      return { matched: true, confidence: 1, reason: "found Claude Code source metadata" };
-    }
-    return { matched: false, confidence: 0, reason: "no Claude Code source metadata found" };
-  },
-  parse(input, config) {
-    return parseJsonlTranscript(input.sourcePath, input.content, {
-      sourceAdapter: "claude-code-jsonl",
-      config
-    });
-  }
-};
-
-export const codexJsonlAdapter: Adapter = {
-  id: "codex-jsonl",
-  displayName: "Codex Export JSONL",
-  artifactHint: "Sanitized agentops.event.v1 JSONL with source=codex",
-  detect(input) {
-    const first = firstJsonRecord(input.content);
-    if (first?.schemaVersion === "agentops.event.v1" && first?.source === "codex") {
-      return { matched: true, confidence: 1, reason: "found Codex source metadata" };
-    }
-    return { matched: false, confidence: 0, reason: "no Codex source metadata found" };
-  },
-  parse(input, config) {
-    return parseJsonlTranscript(input.sourcePath, input.content, {
-      sourceAdapter: "codex-jsonl",
       config
     });
   }
@@ -132,28 +94,6 @@ export const claudeCodeStreamJsonlAdapter: Adapter = {
   }
 };
 
-export const paiExportJsonlAdapter: Adapter = {
-  id: "pai-export-jsonl",
-  displayName: "PAI Export JSONL",
-  artifactHint: "Sanitized agentops.event.v1 JSONL with source=pai",
-  detect(input) {
-    const first = firstJsonRecord(input.content);
-    if (first?.schemaVersion === "agentops.event.v1" && first?.source === "pai") {
-      return { matched: true, confidence: 1, reason: "found PAI source metadata" };
-    }
-    if (first?.schemaVersion === "agentops.event.v1") {
-      return { matched: true, confidence: 0.85, reason: "found AgentOps JSONL compatible schema" };
-    }
-    return { matched: false, confidence: 0, reason: "no PAI export metadata found" };
-  },
-  parse(input, config) {
-    return parseJsonlTranscript(input.sourcePath, input.content, {
-      sourceAdapter: "pai-export-jsonl",
-      config
-    });
-  }
-};
-
 export const forensicTextAdapter: Adapter = {
   id: "forensic-text",
   displayName: "Forensic Plain Text",
@@ -169,9 +109,6 @@ export const forensicTextAdapter: Adapter = {
 export const adapters = [
   codexExecJsonlAdapter,
   claudeCodeStreamJsonlAdapter,
-  claudeCodeJsonlAdapter,
-  codexJsonlAdapter,
-  paiExportJsonlAdapter,
   agentOpsJsonlAdapter,
   forensicTextAdapter
 ];

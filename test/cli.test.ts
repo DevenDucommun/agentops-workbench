@@ -55,16 +55,15 @@ test("initializes local setup and applies safe doctor fixes", async () => {
 test("lists adapters and detection diagnostics", async () => {
   const list = await runCli(["adapters"]);
   expect(list.exitCode).toBe(0);
-  expect(list.stdout).toContain("claude-code-jsonl");
+  expect(list.stdout).toContain("agentops-jsonl");
   expect(list.stdout).toContain("claude-code-stream-json");
-  expect(list.stdout).toContain("codex-jsonl");
-  expect(list.stdout).toContain("pai-export-jsonl");
+  expect(list.stdout).toContain("codex-exec-jsonl");
   expect(list.stdout).toContain("forensic-text");
 
   const detected = await runCli(["adapters", "--input", "fixtures/codex-session.jsonl"]);
   expect(detected.exitCode).toBe(0);
-  expect(detected.stdout).toContain("Codex Export JSONL (100%)");
-  expect(detected.stdout).toContain("found Codex source metadata");
+  expect(detected.stdout).toContain("AgentOps JSONL (100%)");
+  expect(detected.stdout).toContain("source=codex");
 
   const forensic = await runCli(["adapters", "--input", "fixtures/forensic-terminal-transcript.txt"]);
   expect(forensic.exitCode).toBe(0);
@@ -152,12 +151,12 @@ test("validates config files", async () => {
 test("ingests then lists and inspects sessions", async () => {
   const ingest = await runCli(["import", "fixtures/claude-code-session.jsonl"]);
   expect(ingest.exitCode).toBe(0);
-  expect(ingest.stdout).toContain("Adapter: claude-code-jsonl");
+  expect(ingest.stdout).toContain("Adapter: agentops-jsonl");
 
   const sessions = await runCli(["sessions"]);
   expect(sessions.exitCode).toBe(0);
   expect(sessions.stdout).toContain("claude-code-sample");
-  expect(sessions.stdout).toContain("claude-code-jsonl");
+  expect(sessions.stdout).toContain("agentops-jsonl");
 
   const inspect = await runCli(["inspect", "--session", "latest"]);
   expect(inspect.exitCode).toBe(0);

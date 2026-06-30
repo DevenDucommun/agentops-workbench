@@ -58,13 +58,13 @@ Adapters parse runner-specific artifacts into the normalized event model.
 
 Implemented adapters:
 
-- `jsonl`: synthetic/sanitized session fixture format for stable tests.
-- `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export.
-- `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export.
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL — any sanitized export
+  (Claude Code, Codex, PAI/KAI, synthetic fixtures); provenance is read from
+  each record's `source` field.
 - `claude-code-stream-json`: native Claude Code stream JSON from explicit CLI
   capture.
-- `codex-jsonl`: sanitized Codex AgentOps JSONL export.
 - `codex-exec-jsonl`: native Codex exec JSONL from explicit CLI capture.
+- `forensic-text`: best-effort plain terminal/chat transcript import.
 
 Candidate future adapters:
 

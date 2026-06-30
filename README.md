@@ -215,11 +215,10 @@ See [MCP server](docs/MCP.md) for available tools and client configuration.
 AgentOps currently ingests normalized post-hoc JSONL exports plus native Claude
 Code and Codex CLI event streams:
 
-- `agentops-jsonl`: canonical `agentops.event.v1` JSONL
-- `pai-export-jsonl`: sanitized PAI/KAI-style AgentOps JSONL export
-- `claude-code-jsonl`: sanitized Claude Code AgentOps JSONL export
+- `agentops-jsonl`: canonical `agentops.event.v1` JSONL — any sanitized export
+  (Claude Code, Codex, PAI/KAI, ...); provenance is preserved in each record's
+  `source` field
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream
-- `codex-jsonl`: sanitized Codex AgentOps JSONL export
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
 - `forensic-text`: best-effort plain terminal transcript or copied coding-agent text
 
@@ -240,15 +239,17 @@ Advanced capture commands can still write explicit local JSONL artifacts:
 Raw captures are written under `.agentops/captures/` by default and should be
 reviewed before publishing or turning into fixtures.
 
-PAI-compatible post-hoc exports use the same canonical JSONL schema:
+PAI-compatible post-hoc exports use the same canonical JSONL schema and are
+auto-detected as `agentops-jsonl`:
 
 ```bash
-./bin/agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+./bin/agentops import ./fixtures/pai-export-session.jsonl
 ./bin/agentops look
 ./bin/agentops save report
 ```
 
-Synthetic Claude Code and Codex exports are also represented as sanitized AgentOps JSONL:
+Synthetic Claude Code and Codex exports are the same canonical AgentOps JSONL,
+distinguished only by their `source` field:
 
 ```bash
 ./bin/agentops import ./fixtures/claude-code-session.jsonl
@@ -258,9 +259,10 @@ Synthetic Claude Code and Codex exports are also represented as sanitized AgentO
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
-The `claude-code-jsonl` and `codex-jsonl` fixtures are normalized export
-examples. The `codex-exec-jsonl` fixture represents the native
-`codex exec --json` stream shape with synthetic data.
+The `claude-code-session` and `codex-session` fixtures are canonical
+`agentops-jsonl` export examples (`source: claude-code` / `source: codex`). The
+`codex-exec-session` fixture represents the native `codex exec --json` stream
+shape with synthetic data.
 The `claude-code-stream-json` fixture represents the native
 `claude -p --output-format stream-json --verbose` stream shape with synthetic
 data.

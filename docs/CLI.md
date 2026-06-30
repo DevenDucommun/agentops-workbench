@@ -294,7 +294,7 @@ This is an advanced compatibility command. Most users should use
 
 ```bash
 agentops import ./fixtures/sample-session.jsonl
-agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
+agentops import ./fixtures/pai-export-session.jsonl
 agentops import ./fixtures/claude-code-stream-session.jsonl
 agentops import ./fixtures/codex-exec-session.jsonl
 agentops import ./fixtures/forensic-terminal-transcript.txt

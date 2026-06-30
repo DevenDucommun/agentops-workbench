@@ -195,8 +195,8 @@ after a run. AgentOps should not read private PAI memory stores.
 Expected flow:
 
 ```bash
-./bin/agentops import .agentops/captures/pai-export.jsonl --adapter pai-export-jsonl
-./bin/agentops review latest --format markdown --out .agentops/captures/report.md
+./bin/agentops import .agentops/captures/pai-export.jsonl
+./bin/agentops save report --out .agentops/captures/report.md
 ```
 
 The exported artifact should contain bounded action evidence: session summary,
