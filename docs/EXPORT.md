@@ -14,13 +14,13 @@ Session export:
 Repo-aware export:
 
 ```bash
-./bin/agentops save repo-json latest --out agentops-repo.json
+./bin/agentops save json --repo latest --out agentops-repo.json
 ```
 
 OpenInference-style span export:
 
 ```bash
-./bin/agentops save trace latest --out agentops-openinference.json
+./bin/agentops save json --format openinference latest --out agentops-openinference.json
 ```
 
 ## Schema
@@ -82,7 +82,7 @@ It includes raw payload hashes when stored, which allows integrity comparison
 without exposing raw transcript content.
 
 `v2.0.0` removed the standalone `agentops export` command and its
-`--include-raw-payloads` flag; `agentops save json` / `save repo-json` always
+`--include-raw-payloads` flag; `agentops save json` (with or without `--repo`) always
 emit privacy-safe exports without raw payload JSON. The
 `generateSessionJsonExport`/`generateRepoJsonExport` library functions still
 accept an `includeRawPayloads` option for local debugging with trusted data.

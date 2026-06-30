@@ -173,9 +173,9 @@ Specific saves:
 agentops save report
 agentops save pr
 agentops save json
-agentops save repo-json
-agentops save trace
-agentops save gate
+agentops save json --repo
+agentops save json --format openinference
+agentops check --save
 agentops save pr custom-pr-comment.md
 ```
 
@@ -216,57 +216,30 @@ agentops audit path/to/transcript.txt --out audit.md
 
 ### `agentops run`
 
-Runs Codex or Claude Code, captures the machine-readable session stream,
-ingests it into the local SQLite store, and prints the next review commands.
+Runs Codex or Claude Code in machine-readable mode, captures the session stream
+to an ignored local JSONL file, ingests it into the local SQLite store, and
+prints the next review commands. This is the recommended entrypoint for a new
+run.
 
 ```bash
 agentops run codex "review the current change"
 agentops run claude "review the current change"
 ```
 
-This is the recommended entrypoint for normal use. It is equivalent to
-`agentops capture ... --ingest`.
-
-### `agentops capture`
-
-Runs a supported agent CLI in machine-readable mode and writes the JSONL stream
-to an ignored local capture file.
-
-This is an advanced compatibility command. Most users should use
-`agentops run codex|claude <prompt>`.
-
-Codex capture:
+Add `--no-ingest` to write the JSONL artifact without ingesting it, or
+`--dry-run` to print the provider command without invoking it:
 
 ```bash
-agentops capture codex "review the current change" \
+agentops run codex "review the current change" --no-ingest \
   --output .agentops/captures/codex-session.jsonl
+agentops run codex "review the current change" --ephemeral --dry-run
+agentops run claude "review the current change" --include-hook-events --dry-run
 ```
 
-Claude Code capture:
-
-```bash
-agentops capture claude "review the current change" \
-  --output .agentops/captures/claude-session.jsonl
-```
-
-Use `--ingest` to ingest the artifact immediately after a successful capture:
-
-```bash
-agentops capture codex "summarize the repo risk areas" --ingest
-agentops capture claude "review the current change" --ingest
-```
-
-Use `--dry-run` to inspect the provider command without invoking it:
-
-```bash
-agentops capture codex "review the current change" --ephemeral --dry-run
-agentops capture claude "review the current change" --include-hook-events --dry-run
-```
-
-Codex capture invokes `codex exec --json`. Supported Codex options are
+Codex runs invoke `codex exec --json`. Supported Codex options are
 `--ephemeral`, `--sandbox`, `--model`, and `--profile`.
 
-Claude capture invokes `claude -p --output-format stream-json --verbose`.
+Claude runs invoke `claude -p --output-format stream-json --verbose`.
 Supported Claude options are `--include-hook-events`, `--no-session-persistence`,
 `--model`, and `--permission-mode`.
 
@@ -292,36 +265,34 @@ For forensic text, diagnostics include observed command, inferred command, file
 mention, and provider-marker signals so users can judge transcript strength
 before import.
 
-### `agentops import <session.jsonl|transcript.txt>`
+### `agentops audit ... --quiet` (ingest only)
 
-Imports a post-hoc session artifact into the local SQLite store.
-
-This is an advanced compatibility command. Most users should use
-`agentops audit <artifact>`.
+`agentops audit <artifact>` ingests an existing artifact and prints the verdict
+(inspection + quality gate). Add `--quiet` to ingest only — no inspection or
+gate — for scripting or for loading an artifact before viewing it with `look`
+or `open`:
 
 ```bash
-agentops import ./fixtures/sample-session.jsonl
-agentops import ./fixtures/pai-export-session.jsonl
-agentops import ./fixtures/claude-code-stream-session.jsonl
-agentops import ./fixtures/codex-exec-session.jsonl
-agentops import ./fixtures/forensic-terminal-transcript.txt
-agentops import ./fixtures/forensic-codex-final-output.txt
-agentops import ./fixtures/forensic-claude-text-output.txt
+agentops audit ./fixtures/sample-session.jsonl --quiet
+agentops audit ./fixtures/pai-export-session.jsonl --quiet
+agentops audit ./fixtures/claude-code-stream-session.jsonl --quiet
+agentops audit ./fixtures/codex-exec-session.jsonl --quiet
+agentops audit ./fixtures/forensic-terminal-transcript.txt --quiet
 ```
 
 Forensic plain-text import uses the `forensic-text` adapter. It labels
 shell-prompt commands as `observed`, labels narrative command and file mentions
-as `inferred`, and flags final-answer-only transcripts as weak evidence.
-The import result prints a compact evidence-quality summary for forensic
-transcripts, including observed command count, inferred command count, inferred
-file count, and a warning when the transcript is too weak for meaningful
-verification.
+as `inferred`, and flags final-answer-only transcripts as weak evidence. The
+ingest summary reports observed/inferred command and file counts and warns when
+a transcript is too weak for meaningful verification.
 
 Real terminal logs can include shell prompts, local paths, environment output,
 copied secrets, account names, and private project names. Keep raw transcripts
 in ignored local paths until redaction has been reviewed.
 
-The `ingest` alias was removed in v2.0.0; use `agentops import`.
+The `capture` and `import` commands were removed in v3.0.0: use `agentops run`
+(with `--no-ingest` for capture-only) and `agentops audit` (with `--quiet` for
+ingest-only).
 
 ### `agentops config --check`
 
@@ -355,8 +326,8 @@ simple verb:
 | `agentops inspect <id>` / `agentops review <id>` | `agentops look <id>` |
 | `agentops report <id> --out f.md` | `agentops save report <id> --out f.md` |
 | `agentops export <id> --format json` | `agentops save json <id> --out f.json` |
-| `agentops export <id> --format json --scope repo` | `agentops save repo-json <id> --out f.json` |
-| `agentops export <id> --format openinference-json` | `agentops save trace <id> --out f.json` |
+| `agentops export <id> --format json --scope repo` | `agentops save json --repo <id> --out f.json` |
+| `agentops export <id> --format openinference-json` | `agentops save json --format openinference <id> --out f.json` |
 | `agentops gate <id>` | `agentops check <id>` |
 | `agentops gate <id> --format json\|github` | `agentops check <id> --format json\|github` |
 | `agentops repo-report <id> --format github` / `agentops pr <id>` | `agentops save pr <id> --out f.md` |

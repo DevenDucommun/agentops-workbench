@@ -38,14 +38,14 @@ The CLI is the primary stable interface in `v1.0.0`.
 
 Implemented commands include:
 
-- `agentops import <session.jsonl>`
+- `agentops audit <session.jsonl --quiet>`
 - `agentops adapters`
 - `agentops sessions`
 - `agentops look --session <id|latest>`
 - `agentops save report --session latest`
 - `agentops save pr --session latest`
 - `agentops save json --session latest`
-- `agentops save trace --session latest`
+- `agentops save json --format openinference --session latest`
 - `agentops check --session latest`
 - `agentops config --check`
 - `agentops open --check`

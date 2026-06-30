@@ -41,7 +41,7 @@ PAI exports sanitized `agentops-event-v1` JSONL after a run. AgentOps ingests th
 MVP command:
 
 ```bash
-agentops import ./fixtures/pai-export-session.jsonl
+agentops audit ./fixtures/pai-export-session.jsonl --quiet
 ```
 
 This is the best first PAI integration because:
@@ -70,7 +70,7 @@ This matters because:
 The developer runs Claude, Codex, or a PAI-backed workflow, exports a sanitized session, and runs:
 
 ```bash
-agentops import ./session.jsonl
+agentops audit ./session.jsonl --quiet
 agentops save report --session latest --out report.md
 ```
 

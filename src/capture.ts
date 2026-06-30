@@ -132,14 +132,14 @@ export function formatCaptureResult(result: CaptureResult, options: { next?: "au
 }
 
 export function captureUsage(provider?: CaptureProvider): string {
-  const command = provider ? `agentops capture ${provider}` : "agentops capture codex|claude";
+  const command = provider ? `agentops run ${provider}` : "agentops run codex|claude";
   const providerOptions =
     provider === "codex"
       ? " [--ephemeral] [--sandbox read-only|workspace-write|danger-full-access] [--model <model>] [--profile <name>]"
       : provider === "claude"
         ? " [--include-hook-events] [--no-session-persistence] [--model <model>] [--permission-mode <mode>]"
         : "";
-  return `Usage: ${command} <prompt> [--output .agentops/captures/session.jsonl] [--ingest] [--dry-run]${providerOptions}`;
+  return `Usage: ${command} <prompt> [--output .agentops/captures/session.jsonl] [--no-ingest] [--dry-run]${providerOptions}`;
 }
 
 function parseProviderOptions(provider: CaptureProvider, args: string[]) {

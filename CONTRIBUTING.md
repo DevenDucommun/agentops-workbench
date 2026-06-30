@@ -6,7 +6,7 @@ AgentOps Workbench is currently developed privately with the intent to become pu
 
 ```bash
 bun test
-./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops audit ./fixtures/sample-session.jsonl --quiet
 ./bin/agentops save report --session latest --out report.md
 ```
 

@@ -201,19 +201,21 @@ Specific saves are available when needed:
 ./bin/agentops save report
 ./bin/agentops save pr
 ./bin/agentops save json
-./bin/agentops save repo-json
-./bin/agentops save trace
-./bin/agentops save gate
+./bin/agentops save json --repo
+./bin/agentops save json --format openinference
+./bin/agentops check --save
 ```
 
-Advanced commands `capture`, `import`, `adapters`, `config`, `sessions`, and
-`scan-publication` remain available. The `v1.x` `review`, `report`, `export`,
-`gate`, `repo-report`, `pr`, `inspect`, `dashboard`, `ingest`, and `show`
-commands were removed in `v2.0.0`; their functions are reached through the
-simple verbs (`look`, `save`, `check`, `open`). See
+Advanced commands `adapters`, `config`, `sessions`, and `scan-publication`
+remain available. There are two intents — launch a new run (`agentops run`,
+with `--no-ingest` to write the artifact only) and review an existing artifact
+(`agentops audit`, with `--quiet` to ingest only). The `v1.x`
+`review｜report｜export｜gate｜repo-report｜pr｜inspect｜dashboard｜ingest｜show`
+commands were removed in `v2.0.0`; `capture`/`import` and the
+`save repo-json｜trace｜gate` kinds were folded into flags in `v3.0.0`. See
 [CLI reference](docs/CLI.md) and [Compatibility policy](docs/COMPATIBILITY.md).
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v2.0.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v3.0.0`
 surfaces and experimental boundaries.
 
 ## MCP Server
@@ -237,18 +239,13 @@ Code and Codex CLI event streams:
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
 - `forensic-text`: best-effort plain terminal transcript or copied coding-agent text
 
-First-class capture commands can create native Codex and Claude Code artifacts:
+`agentops run` launches Codex or Claude Code and ingests the result. Add
+`--no-ingest` to write the native JSONL artifact without ingesting it:
 
 ```bash
 ./bin/agentops run codex "summarize the repo risk areas"
 ./bin/agentops run claude "review the current change"
-```
-
-Advanced capture commands can still write explicit local JSONL artifacts:
-
-```bash
-./bin/agentops capture codex "summarize the repo risk areas" --ingest
-./bin/agentops capture claude "review the current change" --ingest
+./bin/agentops run codex "summarize the repo risk areas" --no-ingest
 ```
 
 Raw captures are written under `.agentops/captures/` by default and should be
@@ -258,7 +255,7 @@ PAI-compatible post-hoc exports use the same canonical JSONL schema and are
 auto-detected as `agentops-jsonl`:
 
 ```bash
-./bin/agentops import ./fixtures/pai-export-session.jsonl
+./bin/agentops audit ./fixtures/pai-export-session.jsonl --quiet
 ./bin/agentops look
 ./bin/agentops save report
 ```
@@ -267,10 +264,10 @@ Synthetic Claude Code and Codex exports are the same canonical AgentOps JSONL,
 distinguished only by their `source` field:
 
 ```bash
-./bin/agentops import ./fixtures/claude-code-session.jsonl
-./bin/agentops import ./fixtures/claude-code-stream-session.jsonl
-./bin/agentops import ./fixtures/codex-session.jsonl
-./bin/agentops import ./fixtures/codex-exec-session.jsonl
+./bin/agentops audit ./fixtures/claude-code-session.jsonl --quiet
+./bin/agentops audit ./fixtures/claude-code-stream-session.jsonl --quiet
+./bin/agentops audit ./fixtures/codex-session.jsonl --quiet
+./bin/agentops audit ./fixtures/codex-exec-session.jsonl --quiet
 ./bin/agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
