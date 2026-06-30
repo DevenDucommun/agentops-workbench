@@ -174,7 +174,7 @@ merged with observed JSONL/tool evidence.
 
 ## Open Research Before Native Direct Adapters
 
-Native adapter research is documented in [Native adapter research](NATIVE_ADAPTER_RESEARCH.md).
+Native adapter research is documented in [Native adapter research](archive/NATIVE_ADAPTER_RESEARCH.md).
 
 Before implementing direct Claude/Codex adapters, collect sanitized examples of each artifact shape:
 

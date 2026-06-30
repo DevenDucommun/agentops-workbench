@@ -5,7 +5,7 @@ This checklist must pass before every public release. See
 
 Status: reusable and exercised through `v1.11.0`; v0.1.0 public readiness
 passed on 2026-06-28. See
-[v0.1.0 readiness result](releases/v0.1.0-readiness-result.md).
+[v0.1.0 readiness result](archive/releases/v0.1.0-readiness-result.md).
 
 ## Repository State
 
@@ -33,9 +33,6 @@ passed on 2026-06-28. See
 - [x] Fresh clone can run `bun install`.
 - [x] Fresh clone can run `bun test`.
 - [x] Fresh clone can run `bun run ci`.
-- [x] Fresh clone can run `bun run smoke:install`.
-- [x] Fresh clone can run `bun run smoke:package`.
-- [x] Fresh clone can run `bun run smoke:pack-install`.
 - [x] Fresh clone can run `bun run smoke:large-session`.
 - [x] Fresh clone can run `bun run smoke:dashboard`.
 - [x] Fresh clone can run `bun run smoke:demo-artifacts`.
@@ -78,19 +75,6 @@ passed on 2026-06-28. See
 - [x] Risk, malformed, and missing-timestamp fixtures are synthetic.
 - [x] Direct Claude/Codex adapters are not advertised as implemented until tested.
 - [x] Any adapter-specific fixture has been redacted and reviewed.
-
-## Release Archive Smoke
-
-After creating a GitHub release, verify the generated source archive:
-
-```bash
-bun ./scripts/smoke-release-archive.ts v1.11.0
-```
-
-The archive does not include `.git`, so `repo-report` remains a git-checkout
-workflow. The archive smoke covers install, help, ingest, sessions, report,
-dashboard configuration, guided first-run commands, demo artifacts, package
-contents, and publication scan with synthetic fixtures.
 
 ## Recommended Pre-Public Commands
 

@@ -139,12 +139,6 @@ Validate large synthetic-session performance:
 bun run smoke:large-session
 ```
 
-Validate packed package installation:
-
-```bash
-bun run smoke:pack-install
-```
-
 Validate tracked synthetic demo artifacts:
 
 ```bash
@@ -340,24 +334,16 @@ Architecture and compatibility:
 - [Packaging strategy](docs/PACKAGING.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 
-Planning and release docs:
+Release docs:
 
-- [Roadmap to 1.0](docs/ROADMAP.md)
-- [Roadmap after 1.0](docs/ROADMAP_POST_1_0.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Release template](docs/RELEASE_TEMPLATE.md)
 - [Changelog](CHANGELOG.md)
 
-Research and historical context:
-
-- [Research and landscape](docs/RESEARCH_LANDSCAPE.md)
-- [Native adapter research](docs/NATIVE_ADAPTER_RESEARCH.md)
-- [PAI integration plan](docs/PAI_INTEGRATION.md)
-- [Project brief](docs/PROJECT_BRIEF.md)
-- [Preliminary plan](docs/PRELIMINARY_PLAN.md)
-- [Decision 0001: post-hoc PAI first](docs/decisions/0001-posthoc-pai-first.md)
-- [v0.1.0 release checklist](docs/releases/v0.1.0-checklist.md)
-- [v0.1.0 readiness result](docs/releases/v0.1.0-readiness-result.md)
+Historical planning and research notes live under
+[docs/archive](docs/archive/): roadmaps, project brief, preliminary plan,
+research landscape, native adapter research, PAI integration plan, design
+decisions, and pre-1.0 release records.
 
 Spec Kit artifacts:
 

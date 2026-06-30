@@ -10,3 +10,10 @@ Plans/
 .env
 .env.*
 !.env.example
+
+# Generated local review artifacts
+report.md
+agentops-report.md
+agentops-pr-comment.md
+agentops-gate.json
+agentops-session.json

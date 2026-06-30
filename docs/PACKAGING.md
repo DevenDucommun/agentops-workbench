@@ -67,32 +67,21 @@ package intentionally excludes:
 
 ## Verification
 
-Run:
+Packaging-specific smoke tests (`smoke:install`, `smoke:package`,
+`smoke:pack-install`, `smoke:release-archive`) were removed while npm
+publication is deferred, since they validated a distribution path that is not
+shipped. The supported install path is a fresh clone with Bun:
 
 ```bash
-bun run smoke:package
+git clone https://github.com/DevenDucommun/agentops-workbench.git
+cd agentops-workbench
+bun install --frozen-lockfile
+./bin/agentops --help
 ```
 
-The package smoke uses `npm pack --dry-run --json` with a temporary npm cache
-and checks that required runtime files are included while repository-only files
-are excluded.
-
-Run:
-
-```bash
-bun run smoke:pack-install
-```
-
-to create a real npm tarball locally, extract it, and smoke the CLI from the
-packed package contents.
-
-Keep using:
-
-```bash
-bun run smoke:install
-```
-
-to verify the clone/PATH-based install path.
+Reintroduce dedicated packaging smokes (npm `pack --dry-run`, packed-install,
+release-archive) as part of the release checklist when npm publication is
+actually approved.
 
 ## Platform Coverage
 

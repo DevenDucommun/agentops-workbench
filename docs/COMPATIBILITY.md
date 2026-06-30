@@ -178,9 +178,6 @@ Run before public release:
 
 ```bash
 bun run ci
-bun run smoke:install
-bun run smoke:package
-bun run smoke:pack-install
 bun run smoke:large-session
 bun run smoke:dashboard
 ```

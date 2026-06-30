@@ -121,12 +121,6 @@ The package still requires Bun at runtime because `bin/agentops` uses:
 #!/usr/bin/env bun
 ```
 
-Validate package contents with:
-
-```bash
-bun run smoke:package
-```
-
 Validate large synthetic-session ingest/report behavior with:
 
 ```bash
@@ -137,12 +131,8 @@ See [Packaging strategy](PACKAGING.md) for the decision, deferred alternatives,
 and package content rules.
 
 Bun standalone executables and dedicated GitHub release assets remain deferred
-options. Any future package workflow should include CI or smoke verification
-equivalent to:
-
-```bash
-bun run smoke:install
-```
+options. Reintroduce packaging-specific smoke verification as part of the
+release checklist when npm publication is approved.
 
 ## Platform Support
 
