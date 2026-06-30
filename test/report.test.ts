@@ -295,3 +295,66 @@ test("reports usage from native Claude Code stream JSONL", () => {
 
   store.db.close();
 });
+
+test("reports forensic text evidence quality and observed commands", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/forensic-terminal-transcript.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "forensic-terminal-transcript", defaultConfig);
+
+  const commands = getCommands(store, "forensic-terminal-transcript");
+  const report = generateMarkdownReport(store, "forensic-terminal-transcript");
+
+  expect(commands.some((command) => command.command === "bun test" && command.status === "observed" && command.exitCode === 0)).toBe(true);
+  expect(report).toContain("Adapter | forensic-text");
+  expect(report).toContain("## Evidence Quality");
+  expect(report).toContain("`bun test` - observed, exit 0");
+  expect(report).toContain("forensic-import");
+
+  store.db.close();
+});
+
+test("flags final-only forensic text as weak evidence", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/forensic-final-only.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "forensic-final-only", defaultConfig);
+
+  const report = generateMarkdownReport(store, "forensic-final-only");
+
+  expect(report).toContain("weak-forensic-transcript");
+  expect(report).toContain("missing-test-evidence");
+  expect(report).toContain("No test, lint, typecheck, or verification command recorded.");
+
+  store.db.close();
+});
+
+test("flags inferred forensic verification as review evidence", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-test-"));
+  const store = openStore(join(dir, "agentops.db"));
+  const input = loadAdapterInput("fixtures/forensic-copied-chat.txt");
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  ingestTranscript(store, transcript, defaultConfig);
+  analyzeSession(store, "forensic-copied-chat", defaultConfig);
+
+  const commands = getCommands(store, "forensic-copied-chat");
+  const report = generateMarkdownReport(store, "forensic-copied-chat");
+
+  expect(commands.some((command) => command.command === "bun test" && command.status === "inferred")).toBe(true);
+  expect(report).toContain("`bun test` - inferred");
+  expect(report).toContain("inferred-verification-evidence");
+  expect(report).toContain("missing-test-evidence");
+  expect(report).toContain("no observed matching test command");
+
+  store.db.close();
+});

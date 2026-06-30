@@ -5,7 +5,7 @@ AgentOps Workbench is local-first. Commands read session artifacts from disk, st
 For native Claude Code, Codex, and PAI/KAI-style artifact capture patterns, see
 [Capture guide](CAPTURE_GUIDE.md).
 
-The documented command surface is stable in `v1.3.0`. See
+The documented command surface is stable in `v1.4.0`. See
 [Compatibility policy](COMPATIBILITY.md) for compatibility guarantees and
 experimental boundaries.
 
@@ -31,7 +31,7 @@ agentops review
 agentops dashboard
 ```
 
-For after-the-fact audit, import an existing machine-readable session artifact:
+For after-the-fact audit, import an existing session artifact:
 
 ```bash
 agentops import path/to/session.jsonl
@@ -40,7 +40,14 @@ agentops review
 
 AgentOps does not need a background service. For live capture, it must launch
 the agent command so it can save the JSONL stream. For retrospective audit, it
-only needs the saved JSONL artifact.
+only needs the saved artifact. Native JSONL remains the recommended source for
+full-fidelity review. Plain text transcripts are accepted as lower-confidence
+forensic imports when JSONL is unavailable:
+
+```bash
+agentops import path/to/transcript.txt
+agentops review
+```
 
 ### `agentops run`
 
@@ -110,9 +117,14 @@ Use `--input` to inspect detection diagnostics for a source artifact:
 
 ```bash
 agentops adapters --input ./fixtures/codex-session.jsonl
+agentops adapters --input ./fixtures/forensic-terminal-transcript.txt
 ```
 
-### `agentops import <session.jsonl>`
+For forensic text, diagnostics include observed command, inferred command, file
+mention, and provider-marker signals so users can judge transcript strength
+before import.
+
+### `agentops import <session.jsonl|transcript.txt>`
 
 Imports a post-hoc session artifact into the local SQLite store.
 
@@ -121,7 +133,22 @@ agentops import ./fixtures/sample-session.jsonl
 agentops import ./fixtures/pai-export-session.jsonl --adapter pai-export-jsonl
 agentops import ./fixtures/claude-code-stream-session.jsonl
 agentops import ./fixtures/codex-exec-session.jsonl
+agentops import ./fixtures/forensic-terminal-transcript.txt
+agentops import ./fixtures/forensic-codex-final-output.txt
+agentops import ./fixtures/forensic-claude-text-output.txt
 ```
+
+Forensic plain-text import uses the `forensic-text` adapter. It labels
+shell-prompt commands as `observed`, labels narrative command and file mentions
+as `inferred`, and flags final-answer-only transcripts as weak evidence.
+The import result prints a compact evidence-quality summary for forensic
+transcripts, including observed command count, inferred command count, inferred
+file count, and a warning when the transcript is too weak for meaningful
+verification.
+
+Real terminal logs can include shell prompts, local paths, environment output,
+copied secrets, account names, and private project names. Keep raw transcripts
+in ignored local paths until redaction has been reviewed.
 
 `agentops ingest` is kept as a compatibility alias.
 

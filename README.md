@@ -10,8 +10,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Public release: [`v1.3.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.3.0)
-- Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Public release: [`v1.4.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v1.4.0)
+- Current `main`: stable local review workflow with simplified capture/import commands, first-class Codex and Claude Code capture commands, initial forensic plain-text import, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
@@ -80,9 +80,18 @@ codex exec --json "review the current diff" > codex-session.jsonl
 claude -p --output-format stream-json --verbose "review the current diff" > claude-session.jsonl
 ```
 
-Plain terminal output and copied chat text are not yet as complete as provider
-JSONL streams. A future forensic importer is planned for best-effort review of
-plain transcripts with lower-confidence evidence labels.
+Plain terminal output and copied chat text can be imported for best-effort
+forensic review:
+
+```bash
+./bin/agentops import path/to/transcript.txt
+./bin/agentops review
+```
+
+Forensic text imports are lower-fidelity than provider JSONL. Reports label the
+adapter as `forensic-text`, mark shell-prompt commands as `observed`, mark
+narrative command/file mentions as `inferred`, and flag weak transcripts that
+do not include observable commands.
 
 ## Dashboard Preview
 
@@ -149,6 +158,7 @@ Common commands:
 ./bin/agentops capture codex "review the current change" --output .agentops/captures/codex-session.jsonl
 ./bin/agentops capture claude "review the current change" --output .agentops/captures/claude-session.jsonl
 ./bin/agentops import ./fixtures/sample-session.jsonl
+./bin/agentops import ./fixtures/forensic-terminal-transcript.txt
 ./bin/agentops adapters
 ./bin/agentops sessions
 ./bin/agentops inspect latest
@@ -164,7 +174,7 @@ Common commands:
 
 See [CLI reference](docs/CLI.md) for command details.
 
-See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.3.0`
+See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v1.4.0`
 surfaces and experimental boundaries.
 
 ## Supported Artifacts
@@ -178,6 +188,7 @@ Code and Codex CLI event streams:
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream
 - `codex-jsonl`: sanitized Codex AgentOps JSONL export
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream
+- `forensic-text`: best-effort plain terminal transcript or copied coding-agent text
 
 First-class capture commands can create native Codex and Claude Code artifacts:
 
@@ -213,7 +224,21 @@ examples. The `codex-exec-jsonl` fixture represents the native
 `codex exec --json` stream shape with synthetic data.
 The `claude-code-stream-json` fixture represents the native
 `claude -p --output-format stream-json --verbose` stream shape with synthetic
-data. Raw Claude transcript-file parsing remains out of scope.
+data.
+
+Forensic text import is intentionally narrower than transcript-store scraping:
+
+```bash
+./bin/agentops import ./fixtures/forensic-terminal-transcript.txt
+./bin/agentops import ./fixtures/forensic-final-only.txt
+./bin/agentops import ./fixtures/forensic-codex-final-output.txt
+./bin/agentops import ./fixtures/forensic-claude-text-output.txt
+```
+
+Use it for saved terminal output or copied chat text when JSONL is unavailable.
+It can infer commands, files, and final claims, but missing evidence remains
+missing evidence. Raw Claude/Codex private transcript-file parsing remains out
+of scope.
 
 To inspect adapter detection:
 
@@ -234,6 +259,9 @@ AgentOps is local-first by design:
 - Redaction runs before storage by default.
 - Public fixtures are synthetic.
 - `agentops scan-publication` provides a baseline public-readiness check.
+- Forensic imports may contain shell prompts, local paths, environment output,
+  copied secrets, or account identifiers. Keep real transcripts under ignored
+  local paths until redaction has been reviewed.
 
 Override the database path when needed:
 

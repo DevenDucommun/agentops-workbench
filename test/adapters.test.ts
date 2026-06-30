@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
-import { loadAdapterInput, resolveAdapter } from "../src/adapters";
+import { detectAdapters, loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { defaultConfig } from "../src/config";
 
 test("detects PAI export JSONL artifacts", () => {
@@ -140,4 +140,63 @@ test("parses native Codex exec edge and partial fixtures", () => {
 
   expect(partialTranscript.session.id).toBe("codex-partial-sample");
   expect(partialTranscript.events.some((event) => event.type === "tool_call" && event.status === "in_progress")).toBe(true);
+});
+
+test("detects and parses forensic plain-text terminal transcripts", () => {
+  const input = loadAdapterInput("fixtures/forensic-terminal-transcript.txt");
+  const detection = detectAdapters(input).find((result) => result.adapter.id === "forensic-text")?.detection;
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("forensic-text");
+  expect(detection?.reason).toContain("2 observed commands");
+  expect(detection?.reason).toContain("file mention");
+  expect(transcript.session.id).toBe("forensic-terminal-transcript");
+  expect(transcript.session.source).toBe("forensic-text");
+  expect(transcript.session.sourceAdapter).toBe("forensic-text");
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === 'rg -n "health|routes" src test')).toBe(true);
+  expect(transcript.events.some((event) => event.type === "tool_call" && event.command === "bun test" && event.status === "observed")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "file_edit" && event.path === "src/server.ts")).toBe(true);
+  expect(transcript.events.at(-1)?.type).toBe("final_response");
+});
+
+test("accepts final-only forensic text as a low-confidence audit", () => {
+  const input = loadAdapterInput("fixtures/forensic-final-only.txt");
+  const detection = detectAdapters(input).find((result) => result.adapter.id === "forensic-text")?.detection;
+  const adapter = resolveAdapter(input);
+  const transcript = adapter.parse(input, defaultConfig);
+
+  expect(adapter.id).toBe("forensic-text");
+  expect(detection?.reason).toContain("provider marker");
+  expect(transcript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
+  expect(transcript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
+});
+
+test("covers Codex final-output-only and Claude text forensic fixtures", () => {
+  const codexInput = loadAdapterInput("fixtures/forensic-codex-final-output.txt");
+  const codexAdapter = resolveAdapter(codexInput);
+  const codexTranscript = codexAdapter.parse(codexInput, defaultConfig);
+
+  expect(codexAdapter.id).toBe("forensic-text");
+  expect(codexTranscript.session.agent).toBe("Codex");
+  expect(codexTranscript.events.some((event) => event.type === "audit_note" && event.status === "missing")).toBe(true);
+  expect(codexTranscript.events.some((event) => event.type === "final_response" && event.confidence === "very-low")).toBe(true);
+
+  const claudeInput = loadAdapterInput("fixtures/forensic-claude-text-output.txt");
+  const claudeAdapter = resolveAdapter(claudeInput);
+  const claudeTranscript = claudeAdapter.parse(claudeInput, defaultConfig);
+
+  expect(claudeAdapter.id).toBe("forensic-text");
+  expect(claudeTranscript.session.agent).toBe("Claude Code");
+  expect(claudeTranscript.events.some((event) => event.type === "tool_call" && event.command === "bun test" && event.status === "inferred")).toBe(true);
+  expect(claudeTranscript.events.some((event) => event.type === "file_edit" && event.path === "src/dashboard.ts")).toBe(true);
+});
+
+test("does not auto-detect unsupported non-transcript text without markers", () => {
+  const input = {
+    sourcePath: "notes.bin",
+    content: "This is just a generic note with no agent, command, or file evidence."
+  };
+
+  expect(() => resolveAdapter(input)).toThrow("Could not detect an adapter");
 });

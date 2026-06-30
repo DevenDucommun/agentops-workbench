@@ -36,6 +36,13 @@ test("dashboard API reads sessions from SQLite", async () => {
     expect(detailResponse.status).toBe(200);
     const detailPayload = (await detailResponse.json()) as {
       session: { id: string };
+      evidenceQuality: {
+        level: string;
+        label: string;
+        observedCommandCount: number;
+        inferredCommandCount: number;
+        inferredFileCount: number;
+      };
       usage: { totalTokens: number | null };
       events: unknown[];
       commands: unknown[];
@@ -48,6 +55,15 @@ test("dashboard API reads sessions from SQLite", async () => {
       };
     };
     expect(detailPayload.session.id).toBe("sample-session");
+    expect(detailPayload.evidenceQuality).toEqual(
+      expect.objectContaining({
+        level: "structured",
+        label: "Structured JSONL",
+        observedCommandCount: 2,
+        inferredCommandCount: 0,
+        inferredFileCount: 0
+      })
+    );
     expect(detailPayload.events.length).toBeGreaterThan(0);
     expect(detailPayload.commands.length).toBeGreaterThan(0);
     expect(detailPayload.files.length).toBeGreaterThan(0);
@@ -233,6 +249,7 @@ test("dashboard serves local HTML shell and 404s missing sessions", async () => 
     expect(html).toContain("Compare with");
     expect(html).toContain("Run Comparison");
     expect(html).toContain("Merge Readiness");
+    expect(html).toContain("Evidence Quality");
     expect(html).toContain("Claim vs Evidence");
     expect(html).toContain("Risk Drilldown");
 
@@ -258,6 +275,7 @@ test("dashboard serves sanitized JSON evidence bundles for sessions", async () =
       schemaVersion: string;
       kind: string;
       session: { id: string; source_path?: string; sourcePath?: string };
+      evidenceQuality: { level: string; label: string };
       decision: { mergeReadiness: { status: string }; evidence: unknown[] };
       riskDrilldown: { totals: { total: number } };
       verification: Array<{ command: string; output?: string }>;
@@ -270,6 +288,7 @@ test("dashboard serves sanitized JSON evidence bundles for sessions", async () =
     expect(payload.session.id).toBe("risky-session");
     expect(payload.session.source_path).toBeUndefined();
     expect(payload.session.sourcePath).toBeUndefined();
+    expect(payload.evidenceQuality).toEqual(expect.objectContaining({ level: "structured", label: "Structured JSONL" }));
     expect(payload.decision.mergeReadiness.status).toBe("blocked");
     expect(payload.decision.evidence.length).toBeGreaterThan(0);
     expect(payload.riskDrilldown.totals.total).toBe(5);
@@ -281,6 +300,97 @@ test("dashboard serves sanitized JSON evidence bundles for sessions", async () =
     const missingEvidence = await fetch(`${server.url}/api/sessions/missing-session/evidence`);
     expect(missingEvidence.status).toBe(404);
     expect(await missingEvidence.json()).toEqual({ error: "Session not found" });
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard labels forensic text evidence quality", async () => {
+  const ingest = await runCli(["import", "fixtures/forensic-terminal-transcript.txt"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      evidenceQuality: {
+        level: string;
+        label: string;
+        sourceAdapter: string | null;
+        observedCommandCount: number;
+        inferredCommandCount: number;
+        inferredFileCount: number;
+        notes: string[];
+      };
+      commands: Array<{ command: string; status: string | null }>;
+      files: Array<{ path: string; operation: string }>;
+      risks: Array<{ category: string }>;
+    };
+
+    expect(detailPayload.evidenceQuality).toEqual(
+      expect.objectContaining({
+        level: "forensic",
+        label: "Forensic text",
+        sourceAdapter: "forensic-text",
+        observedCommandCount: 2,
+        inferredCommandCount: 0,
+        inferredFileCount: 2
+      })
+    );
+    expect(detailPayload.evidenceQuality.notes.join(" ")).toContain("inferred");
+    expect(detailPayload.commands).toContainEqual(expect.objectContaining({ command: "bun test", status: "observed" }));
+    expect(detailPayload.files).toContainEqual(expect.objectContaining({ path: "src/server.ts", operation: "inferred edit" }));
+    expect(detailPayload.risks).toContainEqual(expect.objectContaining({ category: "forensic-import" }));
+
+    const evidenceResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript/evidence`);
+    expect(evidenceResponse.status).toBe(200);
+    const evidencePayload = (await evidenceResponse.json()) as { evidenceQuality: { level: string; label: string } };
+    expect(evidencePayload.evidenceQuality).toEqual(expect.objectContaining({ level: "forensic", label: "Forensic text" }));
+  } finally {
+    server.stop();
+  }
+});
+
+test("dashboard distinguishes inferred forensic evidence from verified evidence", async () => {
+  const ingest = await runCli(["import", "fixtures/forensic-copied-chat.txt"]);
+  expect(ingest.exitCode).toBe(0);
+
+  const server = startDashboardServer({ port: 0 });
+  try {
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat`);
+    expect(detailResponse.status).toBe(200);
+    const detailPayload = (await detailResponse.json()) as {
+      evidenceQuality: {
+        level: string;
+        inferredCommandCount: number;
+        inferredFileCount: number;
+      };
+      decision: {
+        mergeReadiness: { status: string; reasons: string[]; missingEvidenceCount: number; verificationCount: number };
+        evidence: Array<{ id: string; status: string; command: string | null; commandStatus: string | null }>;
+      };
+      commands: Array<{ command: string; status: string | null }>;
+    };
+
+    expect(detailPayload.evidenceQuality).toEqual(
+      expect.objectContaining({
+        level: "forensic",
+        inferredCommandCount: 2,
+        inferredFileCount: 1
+      })
+    );
+    expect(detailPayload.commands).toContainEqual(expect.objectContaining({ command: "bun test", status: "inferred" }));
+    expect(detailPayload.decision.mergeReadiness.status).toBe("needs-review");
+    expect(detailPayload.decision.mergeReadiness.reasons.join(" ")).toContain("inferred command evidence");
+    expect(detailPayload.decision.mergeReadiness.missingEvidenceCount).toBe(0);
+    expect(detailPayload.decision.mergeReadiness.verificationCount).toBe(1);
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({ id: "test", status: "inferred-evidence", command: "bun test", commandStatus: "inferred" })
+    );
+    expect(detailPayload.decision.evidence).toContainEqual(
+      expect.objectContaining({ id: "final-success", status: "inferred-evidence", command: "bun test", commandStatus: "inferred" })
+    );
   } finally {
     server.stop();
   }

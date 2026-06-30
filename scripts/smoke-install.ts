@@ -26,6 +26,7 @@ runAndExpect(["agentops", "adapters", "--input", "fixtures/claude-code-stream-se
 runAndExpect(["agentops", "adapters", "--input", "fixtures/codex-exec-session.jsonl"], "Codex Exec JSONL");
 runAndExpect(["agentops", "adapters", "--input", "fixtures/claude-code-stream-edge-session.jsonl"], "Claude Code Stream JSON");
 runAndExpect(["agentops", "adapters", "--input", "fixtures/codex-exec-edge-session.jsonl"], "Codex Exec JSONL");
+runAndExpect(["agentops", "adapters", "--input", "fixtures/forensic-terminal-transcript.txt"], "Forensic Plain Text");
 runAndExpect(["agentops", "import", "fixtures/sample-session.jsonl"], "Ingested session sample-session");
 runAndExpect(["agentops", "import", "fixtures/claude-code-stream-session.jsonl"], "Ingested session claude-stream-sample");
 runAndExpect(["agentops", "import", "fixtures/codex-exec-session.jsonl"], "Ingested session codex-exec-sample");
@@ -40,6 +41,7 @@ runAndExpect(["agentops", "repo-report", "latest", "--format", "github"], "Agent
 runAndExpect(["agentops", "export", "latest", "--format", "json"], "agentops.export.v1");
 runAndExpect(["agentops", "export", "latest", "--format", "json", "--scope", "repo"], "\"git\"");
 runAndExpect(["agentops", "dashboard", "--check"], "Dashboard configuration OK");
+runAndExpect(["agentops", "import", "fixtures/forensic-terminal-transcript.txt"], "Evidence quality: forensic text");
 runAndExpect(["agentops", "scan-publication"], "Public-readiness scan passed.");
 
 if (!existsSync(dbPath)) {

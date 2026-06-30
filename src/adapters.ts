@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { AgentOpsConfig } from "./config";
 import { parseClaudeCodeStreamJsonl } from "./claudeStream";
 import { parseCodexExecJsonl } from "./codexExec";
+import { detectForensicText, parseForensicTextTranscript } from "./forensicText";
 import { parseJsonlTranscript } from "./parser";
 import type { ParsedTranscript } from "./types";
 
@@ -153,13 +154,26 @@ export const paiExportJsonlAdapter: Adapter = {
   }
 };
 
+export const forensicTextAdapter: Adapter = {
+  id: "forensic-text",
+  displayName: "Forensic Plain Text",
+  artifactHint: "Best-effort terminal transcript or copied coding-agent text",
+  detect(input) {
+    return detectForensicText(input.content, input.sourcePath);
+  },
+  parse(input, config) {
+    return parseForensicTextTranscript(input.sourcePath, input.content, config);
+  }
+};
+
 export const adapters = [
   codexExecJsonlAdapter,
   claudeCodeStreamJsonlAdapter,
   claudeCodeJsonlAdapter,
   codexJsonlAdapter,
   paiExportJsonlAdapter,
-  agentOpsJsonlAdapter
+  agentOpsJsonlAdapter,
+  forensicTextAdapter
 ];
 
 export function detectAdapters(input: AdapterInput): Array<{ adapter: Adapter; detection: AdapterDetection }> {

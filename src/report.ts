@@ -35,6 +35,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
     "## Session Summary",
     table([
       ["Session", session.id],
+      ["Adapter", session.source_adapter ?? "Unknown"],
       ["Task", session.task ?? "Unknown"],
       ["Agent", session.agent ?? "Unknown"],
       ["Model", session.model ?? "Unknown"],
@@ -46,6 +47,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
       ["Files Changed", String(files.length)],
       ["Risk Flags", String(risks.length)]
     ]),
+    ...forensicEvidenceQuality(session.source_adapter),
     ...(hasUsage(usage) ? ["## Usage", usageTable(usage)] : []),
     "## Timeline",
     events.length
@@ -72,7 +74,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
       : "- No commands recorded.",
     "## Tests And Verification Evidence",
     verification.length
-      ? verification.map((command) => `- \`${command.command}\``).join("\n")
+      ? verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}${formatExit(command.exitCode)}`).join("\n")
       : "- No test, lint, typecheck, or verification command recorded.",
     "## Risk Flags",
     formatRiskFlags(risks),
@@ -81,6 +83,18 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
   ];
 
   return `${sections.join("\n\n")}\n`;
+}
+
+function forensicEvidenceQuality(sourceAdapter: string | null): string[] {
+  if (sourceAdapter !== "forensic-text") return [];
+  return [
+    "## Evidence Quality",
+    [
+      "- Source is a plain-text forensic import, not a provider JSONL capture.",
+      "- Shell-prompt commands are labeled `observed`; narrative command/file mentions are labeled `inferred`.",
+      "- Missing commands or verification should be treated as missing evidence, not proof that work was not performed."
+    ].join("\n")
+  ];
 }
 
 export function generateMarkdownRepoReport(
@@ -204,6 +218,10 @@ function formatChurn(added: number | null, removed: number | null): string {
   if (added !== null) parts.push(`+${added}`);
   if (removed !== null) parts.push(`-${removed}`);
   return parts.join(" / ");
+}
+
+function formatExit(exitCode: number | null): string {
+  return exitCode === null ? "" : `, exit ${exitCode}`;
 }
 
 function formatGitChurn(change: GitChange): string {

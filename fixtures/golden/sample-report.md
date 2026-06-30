@@ -5,6 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Session | sample-session |
+| Adapter | agentops-jsonl |
 | Task | Add a healthcheck endpoint and verify tests |
 | Agent | Claude Code |
 | Model | claude-sonnet-4 |
@@ -39,7 +40,7 @@
 
 ## Tests And Verification Evidence
 
-- `bun test`
+- `bun test` - completed, exit 0
 
 ## Risk Flags
 

@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v1.3.0`.
+Status: stable for `v1.4.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -10,11 +10,14 @@ into private transcript parsing or hosted capture. Version `v1.2.0` adds the
 local Decision Dashboard for merge-readiness review, claim/evidence checks,
 risk drilldown, evidence exports, and two-session comparison. Version `v1.3.0`
 adds simplified `run`, `review`, `import`, and `--out` CLI workflows without
-changing the underlying artifact boundary.
+changing the underlying artifact boundary. Version `v1.4.0` adds a
+lower-fidelity `forensic-text` adapter for saved terminal transcripts and
+copied coding-agent text. It is additive and does not change the native JSONL
+recommendation for full-fidelity review.
 
 ## Stable Surfaces
 
-The following surfaces are treated as public contracts in `v1.3.0`:
+The following surfaces are treated as public contracts in `v1.4.0`:
 
 - `agentops.event.v1` JSONL records documented in [Event schema](EVENT_SCHEMA.md).
 - `agentops.export.v1` JSON exports documented in [JSON export](EXPORT.md).
@@ -49,7 +52,7 @@ for `agentops import`.
 
 ## Adapter Matrix
 
-Supported in `v1.3.0`:
+Supported in `v1.4.0`:
 
 | Adapter | Input boundary | Stability |
 | --- | --- | --- |
@@ -59,6 +62,7 @@ Supported in `v1.3.0`:
 | `codex-jsonl` | Sanitized Codex AgentOps JSONL export | Stable |
 | `claude-code-stream-json` | Explicit `claude -p --output-format stream-json` JSONL capture | Supported native stream |
 | `codex-exec-jsonl` | Explicit `codex exec --json` JSONL capture | Supported native stream |
+| `forensic-text` | Saved terminal transcript or copied coding-agent text | Experimental forensic import |
 
 Native stream adapters are tested with synthetic fixtures and clear diagnostics
 for unsupported shapes. They are not private transcript parsers.
@@ -70,10 +74,9 @@ separate and is not part of the JSONL artifact.
 
 ## Unsupported Or Experimental
 
-The following are intentionally outside the `v1.3.0` stable contract:
+The following are intentionally outside the `v1.4.0` stable contract:
 
 - Raw Claude Code transcript-file parsing.
-- Best-effort plain terminal transcript import without provenance labels.
 - Private PAI memory store reads.
 - Live hook tailing or real-time agent control.
 - Hosted dashboard operation, auth, teams, or remote API compatibility.
@@ -83,7 +86,7 @@ The following are intentionally outside the `v1.3.0` stable contract:
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
 The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
-local template output shape, not a live ingestion API in `v1.3.0`.
+local template output shape, not a live ingestion API in `v1.4.0`.
 
 ## Reports
 

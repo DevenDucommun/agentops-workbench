@@ -134,7 +134,8 @@ Build in this order:
 4. `claude-code-jsonl` sanitized AgentOps JSONL export adapter.
 5. `codex-exec-jsonl` native adapter for `codex exec --json` captures.
 6. `claude-code-stream-json` native adapter for `claude -p --output-format stream-json` captures.
-7. hook-stream adapter for future live capture.
+7. `forensic-text` best-effort adapter for saved terminal transcripts and copied coding-agent text.
+8. hook-stream adapter for future live capture.
 
 ## Implemented Adapters
 
@@ -149,6 +150,7 @@ The current implementation supports normalized JSONL export artifacts:
 - `claude-code-stream-json`: native `claude -p --output-format stream-json` JSONL stream.
 - `codex-jsonl`: sanitized `agentops.event.v1` JSONL with `source: "codex"`.
 - `codex-exec-jsonl`: native `codex exec --json` JSONL stream.
+- `forensic-text`: lower-fidelity plain terminal transcript or copied coding-agent text.
 
 Use `agentops adapters` to list supported adapters and `agentops adapters --input <file>` to see detection diagnostics for a specific artifact.
 
@@ -156,6 +158,11 @@ The export adapters intentionally parse the shared AgentOps export schema so
 public fixtures can remain synthetic and privacy-safe. `codex-exec-jsonl` and
 `claude-code-stream-json` are native stream adapters for explicit CLI JSONL
 captures, not private state or transcript-file parsers.
+
+`forensic-text` is deliberately best-effort. It detects shell-prompt commands,
+narrative command mentions, file mentions, and final responses from plain text,
+then labels command status and report language so inferred evidence is not
+merged with observed JSONL/tool evidence.
 
 ## What Not To Do
 

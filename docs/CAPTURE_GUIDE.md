@@ -8,11 +8,11 @@ artifacts. Do not point it at private memory stores or raw transcript folders.
 AgentOps can be used in two ways:
 
 - Live capture: start the agent through AgentOps with `agentops run`.
-- Retrospective audit: import an existing machine-readable JSONL artifact with
-  `agentops import`.
+- Retrospective audit: import an existing JSONL artifact or lower-fidelity
+  plain-text transcript with `agentops import`.
 
 AgentOps does not run as a daemon. It either launches the provider command and
-saves its JSONL stream, or it analyzes a JSONL artifact that already exists.
+saves its JSONL stream, or it analyzes an artifact that already exists.
 
 Recommended live capture:
 
@@ -41,9 +41,36 @@ claude -p --output-format stream-json --verbose "review the current diff" > clau
 ./bin/agentops review
 ```
 
-Plain terminal output or a copied chat transcript is not yet a reliable source
-artifact for forensic analysis. Use provider JSONL/stream JSON output when you
-want a session to be auditable later.
+Plain terminal output or a copied chat transcript can be imported for
+lower-confidence forensic analysis:
+
+```bash
+./bin/agentops import transcript.txt
+./bin/agentops review
+```
+
+Use provider JSONL/stream JSON output when you want a session to be auditable
+later with full-fidelity tool and command evidence.
+
+## Forensic Plain Text
+
+The `forensic-text` adapter is a fallback for saved terminal logs and copied
+coding-agent text. It detects shell-prompt commands, narrative command
+mentions, file mentions, final claims, and obvious verification commands.
+
+Reports label this evidence quality:
+
+- Shell-prompt commands are `observed`.
+- Commands and file changes mentioned in prose are `inferred`.
+- Inferred verification commands are review evidence, not full observed
+  verification.
+- Final-answer-only transcripts are accepted as weak audits and flagged for
+  missing command evidence.
+
+Real terminal logs can include shell prompts, local paths, environment output,
+tokens, account identifiers, private project names, and copied secrets. Keep
+raw text transcripts under ignored paths such as `.agentops/captures/` until
+redaction has been reviewed.
 
 ## Local Capture Directory
 

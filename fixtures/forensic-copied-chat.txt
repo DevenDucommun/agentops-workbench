@@ -1,0 +1,11 @@
+User: Please update the dashboard empty state.
+
+Assistant: I will inspect the dashboard and tests.
+
+Assistant ran `rg -n "empty state|No sessions" src test`.
+
+Assistant: Updated src/dashboard.ts so the empty state points to agentops import.
+
+Assistant ran `bun test`.
+
+Assistant: Final summary: Updated the dashboard empty state. Tests passed.

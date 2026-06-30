@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.4.0 - 2026-06-30
+
+### Added
+
+- Initial `forensic-text` adapter for best-effort import of saved terminal
+  transcripts and copied coding-agent text through `agentops import`.
+- Synthetic forensic fixtures for command-rich terminal logs, Codex
+  final-output-only text, Claude text output, final-answer-only text, and
+  copied chat text.
+- Evidence-quality report language for forensic imports, including observed vs
+  inferred command labels and weak-transcript risk flags.
+- Dashboard evidence-quality payload and card for structured JSONL vs forensic
+  text imports.
+- Dashboard claim/evidence status now distinguishes inferred forensic evidence
+  from verified command evidence.
+- `agentops import` now prints forensic evidence-quality diagnostics for
+  plain-text transcripts, including weak-transcript warnings.
+- Analyzer/report logic now treats inferred forensic verification as review
+  evidence instead of observed proof for final success claims.
+- `agentops adapters --input` now reports forensic plain-text marker counts,
+  including observed commands, inferred commands, file mentions, and provider
+  markers.
+
+### Changed
+
+- `agentops import` help and diagnostics now describe session artifacts or
+  transcripts instead of JSONL-only inputs.
+
 ## v1.3.0 - 2026-06-29
 
 ### Added
