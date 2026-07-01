@@ -32,7 +32,7 @@ Read these before larger changes:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/archive/ROADMAP.md)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
-- [MVP spec](specs/001-agentops-workbench/spec.md)
+- [MVP spec](docs/archive/specs/001-agentops-workbench/spec.md)
 
 ## Test Expectations
 

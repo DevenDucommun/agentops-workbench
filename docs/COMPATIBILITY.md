@@ -161,7 +161,7 @@ The following are intentionally outside the `v3.0.0` stable contract:
   checklist explicitly approves publishing.
 - Windows support claims. CI covers Ubuntu, and macOS is manually exercised.
 
-The hook envelope documented in [Hook Envelope JSONL](HOOK_ENVELOPE.md) is a
+The hook envelope documented in [hook envelope shape](ADAPTER_STRATEGY.md) is a
 local template output shape, not a live ingestion API in `v3.0.0`.
 
 ## Reports

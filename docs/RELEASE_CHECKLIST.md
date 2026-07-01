@@ -1,9 +1,8 @@
 # Release Checklist
 
-This checklist must pass before every public release. See
-[Release template](RELEASE_TEMPLATE.md) for the command-oriented release flow.
+This checklist must pass before every public release.
 
-Status: reusable and exercised through `v2.0.0`; v0.1.0 public readiness
+Status: reusable and exercised through `v3.0.0`; v0.1.0 public readiness
 passed on 2026-06-28. See
 [v0.1.0 readiness result](archive/releases/v0.1.0-readiness-result.md).
 
@@ -105,3 +104,26 @@ find . -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3"
 ```
 
 The database command may show ignored local files. It must not show tracked files in git status.
+
+## Release Flow
+
+Pre-merge:
+
+```bash
+bun install --frozen-lockfile
+bun run ci
+bun run smoke:large-session
+bun run smoke:dashboard
+git status --short
+```
+
+Release PR: update `package.json` version, `CHANGELOG.md`, the README status
+line, and `docs/archive/ROADMAP.md`; link the milestone tracking issue.
+
+Post-release:
+
+```bash
+gh release create <tag> --target main --title <tag> --notes-file <notes.md>
+```
+
+Then close the GitHub milestone and confirm local `main` is clean and tagged.
