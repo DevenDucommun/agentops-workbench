@@ -44,14 +44,20 @@ Run locally:
 ```bash
 git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
-bun install --frozen-lockfile
-./bin/agentops init
-./bin/agentops demo
-./bin/agentops look
-./bin/agentops check
-./bin/agentops save
-./bin/agentops open
+bun install
+export PATH="$PWD/bin:$PATH"   # so you can type `agentops` instead of ./bin/agentops
+
+agentops init
+agentops demo
+agentops look
+agentops check
+agentops save
+agentops open
 ```
+
+The `agentops` command is the repo's `bin/agentops` (a Bun script). The `PATH`
+line above makes it available in the current shell; add it to your shell profile
+to keep it. Without it, run the binary directly as `./bin/agentops <command>`.
 
 For a no-surprises demo, inspect generated synthetic artifacts in
 [docs/demo](docs/demo/README.md), or regenerate them locally:
@@ -61,24 +67,24 @@ bun run demo:artifacts
 bun run smoke:demo-artifacts
 ```
 
-For a new audited run, put AgentOps in the command path:
+For a new audited run:
 
 ```bash
-./bin/agentops run codex "review the current diff"
-./bin/agentops look
+agentops run codex "review the current diff"
+agentops look
 ```
 
 or:
 
 ```bash
-./bin/agentops run claude "review the current diff"
-./bin/agentops look
+agentops run claude "review the current diff"
+agentops look
 ```
 
 For after-the-fact review, import an existing machine-readable JSONL artifact:
 
 ```bash
-./bin/agentops audit path/to/session.jsonl
+agentops audit path/to/session.jsonl
 ```
 
 To create an auditable artifact without the AgentOps wrapper, run the provider
@@ -93,7 +99,7 @@ Plain terminal output and copied chat text can be imported for best-effort
 forensic review:
 
 ```bash
-./bin/agentops audit path/to/transcript.txt
+agentops audit path/to/transcript.txt
 ```
 
 Forensic text imports are lower-fidelity than provider JSONL. Reports label the
@@ -122,28 +128,28 @@ demo fixtures exercise three decision states:
 Reproduce these states locally:
 
 ```bash
-./bin/agentops audit ./fixtures/sample-session.jsonl
-./bin/agentops audit ./fixtures/needs-review-session.jsonl
-./bin/agentops audit ./fixtures/risky-session.jsonl
-./bin/agentops open
+agentops audit ./fixtures/sample-session.jsonl
+agentops audit ./fixtures/needs-review-session.jsonl
+agentops audit ./fixtures/risky-session.jsonl
+agentops open
 ```
 
 Generate a repo-aware PR report:
 
 ```bash
-./bin/agentops save pr
+agentops save pr
 ```
 
 Expose local AgentOps evidence to MCP clients:
 
 ```bash
-./bin/agentops mcp
+agentops mcp
 ```
 
 Check public-readiness hygiene:
 
 ```bash
-./bin/agentops scan-publication
+agentops scan-publication
 ```
 
 Validate large synthetic-session performance:
@@ -165,8 +171,8 @@ The recommended install path today is a fresh git clone with Bun:
 ```bash
 git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
-bun install --frozen-lockfile
-./bin/agentops --help
+bun install
+./bin/agentops --help          # or add bin/ to PATH (see Quickstart) to use `agentops`
 ```
 
 See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release archive caveats, and package strategy notes.
@@ -176,16 +182,16 @@ See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release arc
 Regular workflow:
 
 ```bash
-./bin/agentops init
-./bin/agentops demo
-./bin/agentops run codex "review the current change"
-./bin/agentops run claude "review the current change"
-./bin/agentops audit ./fixtures/sample-session.jsonl
-./bin/agentops status
-./bin/agentops look
-./bin/agentops check
-./bin/agentops save
-./bin/agentops open
+agentops init
+agentops demo
+agentops run codex "review the current change"
+agentops run claude "review the current change"
+agentops audit ./fixtures/sample-session.jsonl
+agentops status
+agentops look
+agentops check
+agentops save
+agentops open
 ```
 
 `agentops save` writes a local review bundle with default filenames:
@@ -198,12 +204,12 @@ Regular workflow:
 Specific saves are available when needed:
 
 ```bash
-./bin/agentops save report
-./bin/agentops save pr
-./bin/agentops save json
-./bin/agentops save json --repo
-./bin/agentops save json --format openinference
-./bin/agentops check --save
+agentops save report
+agentops save pr
+agentops save json
+agentops save json --repo
+agentops save json --format openinference
+agentops check --save
 ```
 
 Advanced commands `adapters`, `config`, `sessions`, and `scan-publication`
@@ -243,9 +249,9 @@ Code and Codex CLI event streams:
 `--no-ingest` to write the native JSONL artifact without ingesting it:
 
 ```bash
-./bin/agentops run codex "summarize the repo risk areas"
-./bin/agentops run claude "review the current change"
-./bin/agentops run codex "summarize the repo risk areas" --no-ingest
+agentops run codex "summarize the repo risk areas"
+agentops run claude "review the current change"
+agentops run codex "summarize the repo risk areas" --no-ingest
 ```
 
 Raw captures are written under `.agentops/captures/` by default and should be
@@ -255,20 +261,20 @@ PAI-compatible post-hoc exports use the same canonical JSONL schema and are
 auto-detected as `agentops-jsonl`:
 
 ```bash
-./bin/agentops audit ./fixtures/pai-export-session.jsonl --quiet
-./bin/agentops look
-./bin/agentops save report
+agentops audit ./fixtures/pai-export-session.jsonl --quiet
+agentops look
+agentops save report
 ```
 
 Synthetic Claude Code and Codex exports are the same canonical AgentOps JSONL,
 distinguished only by their `source` field:
 
 ```bash
-./bin/agentops audit ./fixtures/claude-code-session.jsonl --quiet
-./bin/agentops audit ./fixtures/claude-code-stream-session.jsonl --quiet
-./bin/agentops audit ./fixtures/codex-session.jsonl --quiet
-./bin/agentops audit ./fixtures/codex-exec-session.jsonl --quiet
-./bin/agentops adapters --input ./fixtures/codex-session.jsonl
+agentops audit ./fixtures/claude-code-session.jsonl --quiet
+agentops audit ./fixtures/claude-code-stream-session.jsonl --quiet
+agentops audit ./fixtures/codex-session.jsonl --quiet
+agentops audit ./fixtures/codex-exec-session.jsonl --quiet
+agentops adapters --input ./fixtures/codex-session.jsonl
 ```
 
 The `claude-code-session` and `codex-session` fixtures are canonical
@@ -282,10 +288,10 @@ data.
 Forensic text import is intentionally narrower than transcript-store scraping:
 
 ```bash
-./bin/agentops audit ./fixtures/forensic-terminal-transcript.txt
-./bin/agentops audit ./fixtures/forensic-final-only.txt
-./bin/agentops audit ./fixtures/forensic-codex-final-output.txt
-./bin/agentops audit ./fixtures/forensic-claude-text-output.txt
+agentops audit ./fixtures/forensic-terminal-transcript.txt
+agentops audit ./fixtures/forensic-final-only.txt
+agentops audit ./fixtures/forensic-codex-final-output.txt
+agentops audit ./fixtures/forensic-claude-text-output.txt
 ```
 
 Use it for saved terminal output or copied chat text when JSONL is unavailable.
@@ -296,9 +302,9 @@ of scope.
 To inspect adapter detection:
 
 ```bash
-./bin/agentops adapters --input ./fixtures/codex-session.jsonl
-./bin/agentops adapters --input ./fixtures/claude-code-stream-session.jsonl
-./bin/agentops adapters --input ./fixtures/codex-exec-session.jsonl
+agentops adapters --input ./fixtures/codex-session.jsonl
+agentops adapters --input ./fixtures/claude-code-stream-session.jsonl
+agentops adapters --input ./fixtures/codex-exec-session.jsonl
 ```
 
 ## Privacy And Safety
@@ -319,21 +325,20 @@ AgentOps is local-first by design:
 Override the database path when needed:
 
 ```bash
-AGENTOPS_DB=/path/to/agentops.db ./bin/agentops sessions
+AGENTOPS_DB=/path/to/agentops.db agentops sessions
 ```
 
 ## Documentation
 
 Current user-facing docs:
 
-- [Installation](docs/INSTALLATION.md)
-- [CLI reference](docs/CLI.md)
+- [Installation](docs/INSTALLATION.md) (includes packaging strategy)
+- [CLI reference](docs/CLI.md) (includes the repo report / `save pr`)
 - [Capture guide](docs/CAPTURE_GUIDE.md)
 - [Dashboard](docs/DASHBOARD.md)
 - [MCP server](docs/MCP.md)
 - [Quality gates](docs/QUALITY_GATES.md)
 - [Exports](docs/EXPORT.md)
-- [Repo report](docs/REPO_REPORT.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Demo artifacts](docs/demo/README.md)
 
@@ -341,30 +346,19 @@ Architecture and compatibility:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Compatibility policy](docs/COMPATIBILITY.md)
-- [Event schema](docs/EVENT_SCHEMA.md)
-- [Adapter strategy](docs/ADAPTER_STRATEGY.md)
-- [Hook envelope](docs/HOOK_ENVELOPE.md)
-- [Standards mapping](docs/STANDARDS_MAPPING.md)
-- [Packaging strategy](docs/PACKAGING.md)
+- [Event schema](docs/EVENT_SCHEMA.md) (includes standards mapping)
+- [Adapter strategy](docs/ADAPTER_STRATEGY.md) (includes the hook envelope shape)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
 
 Release docs:
 
-- [Release checklist](docs/RELEASE_CHECKLIST.md)
-- [Release template](docs/RELEASE_TEMPLATE.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md) (includes the release flow)
 - [Changelog](CHANGELOG.md)
 
-Historical planning and research notes live under
+Historical planning, research, and the Spec-Kit MVP artifacts live under
 [docs/archive](docs/archive/): roadmaps, project brief, preliminary plan,
 research landscape, native adapter research, PAI integration plan, design
-decisions, and pre-1.0 release records.
-
-Spec Kit artifacts:
-
-- [Spec Kit constitution](.specify/memory/constitution.md)
-- [MVP spec](specs/001-agentops-workbench/spec.md)
-- [MVP implementation plan](specs/001-agentops-workbench/plan.md)
-- [MVP tasks](specs/001-agentops-workbench/tasks.md)
+decisions, pre-1.0 release records, and the Spec-Kit constitution/spec/plan/tasks.
 
 ## Example Report Sections
 

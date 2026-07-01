@@ -348,3 +348,20 @@ Runs the baseline public-readiness scan.
 ```bash
 agentops scan-publication
 ```
+
+## Repo report (`agentops save pr`)
+
+`agentops save pr` compares an ingested session against the current local git
+diff and writes a GitHub-format repo comment (quality-gate status included) to a
+file or stdout — it never posts to GitHub. It surfaces: current git changed
+files; files the agent touched; changes observed vs not observed in the session;
+agent-touched files no longer in the diff; verification commands; risk flags;
+and commands run.
+
+Session reports answer "what did the agent do?"; the repo report answers "does
+the current diff line up with what the agent did?" — the PR-review-oriented view.
+It reads local git state only. Untracked files show no churn (git has no tracked
+base), rename handling is basic, and path comparison is exact. The `v1.x`
+`repo-report` command was removed in `v2.0.0`; the Markdown-only variant is not
+re-exposed on the simple verbs (the `generateMarkdownRepoReport` library function
+remains).

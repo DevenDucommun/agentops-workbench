@@ -16,7 +16,7 @@ Use this path for development, repo-aware reports, and the local dashboard.
 ```bash
 git clone https://github.com/DevenDucommun/agentops-workbench.git
 cd agentops-workbench
-bun install --frozen-lockfile
+bun install
 ./bin/agentops --help
 ./bin/agentops init
 ./bin/agentops demo
@@ -72,7 +72,7 @@ GitHub release source archives are useful for trying the CLI, but they are not g
 This works from an extracted source archive:
 
 ```bash
-bun install --frozen-lockfile
+bun install
 ./bin/agentops init
 ./bin/agentops demo
 ./bin/agentops look
@@ -112,29 +112,28 @@ runs.
 
 ## Packaging Strategy
 
-The current distribution path remains source-first: clone the repository or use
-the GitHub release source archive. Npm publication remains deferred until the
-simplified command surface has settled; publishing should happen only through a
-release checklist decision.
+The current distribution path is source-first: clone the repository or use the
+GitHub release source archive. This keeps installation aligned with the tested
+Bun runtime, local SQLite behavior, and repo-aware git features. The package
+still requires Bun at runtime because `bin/agentops` uses `#!/usr/bin/env bun`.
 
-The package still requires Bun at runtime because `bin/agentops` uses:
+Npm publication remains deferred until the simplified command surface has
+settled; the repository keeps `"private": true` until a release checklist
+explicitly approves publishing. The next candidate is an **npm source package**
+(not a bundled binary): it matches the existing `agentops` bin entry, lets users
+install a normal CLI later, and supports `pack --dry-run` verification — without
+platform-specific binary builds. Bun standalone executables and dedicated
+release-asset bundles stay deferred until the CLI surface and SQLite behavior
+are stable across platforms.
 
-```bash
-#!/usr/bin/env bun
-```
+`package.json#files` limits the (future) npm package to runtime source,
+fixtures, and essential docs; it excludes CI config, Spec-Kit planning
+artifacts, tests, ad-hoc reports outside `docs/demo/`, and screenshot assets.
 
-Validate large synthetic-session ingest/report behavior with:
-
-```bash
-bun run smoke:large-session
-```
-
-See [Packaging strategy](PACKAGING.md) for the decision, deferred alternatives,
-and package content rules.
-
-Bun standalone executables and dedicated GitHub release assets remain deferred
-options. Reintroduce packaging-specific smoke verification as part of the
-release checklist when npm publication is approved.
+Packaging-specific smoke tests (`smoke:install`, `smoke:package`,
+`smoke:pack-install`, `smoke:release-archive`) were removed while publication is
+deferred — reintroduce them in the release checklist when npm publication is
+approved. Validate large synthetic-session behavior with `bun run smoke:large-session`.
 
 ## Platform Support
 
@@ -142,5 +141,5 @@ Ubuntu CI and local macOS development are exercised. Windows support is not
 claimed for the current release line; add Windows CI before documenting it as a
 supported platform.
 
-See [Compatibility policy](COMPATIBILITY.md) for the stable `v2.0.0` command,
+See [Compatibility policy](COMPATIBILITY.md) for the stable `v3.0.0` command,
 adapter, schema, and packaging boundaries.

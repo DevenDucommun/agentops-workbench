@@ -168,3 +168,25 @@ Committed fixtures are synthetic and cover:
 - missing timestamps: `fixtures/missing-timestamps-session.jsonl`
 - risky commands/files: `fixtures/risky-session.jsonl`
 - malformed JSONL: `fixtures/malformed-session.jsonl`
+
+## Standards Mapping (OpenTelemetry / GenAI)
+
+AgentOps provides deterministic local JSON exports (`agentops.export.v1` and the
+OpenInference-style `agentops.openinference.v1`). OTLP/protobuf export and
+collector upload remain deferred until a concrete integration need appears — the
+local JSON export suits the CLI-first workflow, and GenAI conventions may still
+evolve. A future exporter should transform AgentOps exports rather than read
+private transcripts directly.
+
+| AgentOps field | Trace-like concept | Notes |
+| --- | --- | --- |
+| `session.id` | trace id / attribute | External session id, not necessarily a valid OTLP trace id. |
+| `events[].id` / `events[].idx` | span id / order | IDs are local SQLite IDs; `idx` is stable session order. |
+| `events[].type` | span / event name | `tool_call`, `file_edit`, `final_response`, ... |
+| `commands[]` | tool execution span | command, status, exit code, redacted output summary. |
+| `files[]` | code/file change event | path, operation, churn. |
+| `tools[]` | tool usage aggregate | dashboard summaries. |
+| `usage.inputTokens` / `outputTokens` | GenAI token counts | availability depends on adapter. |
+| `usage.costAmount` | cost attribute | currency travels with the amount. |
+| `risks[]` | analysis finding | severity / category / message map to finding attributes. |
+| `verification[]` | evidence event / span | captures tests / lint / typecheck / build evidence. |

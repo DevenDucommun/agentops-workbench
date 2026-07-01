@@ -190,3 +190,22 @@ Research recommendation: prefer explicit machine-readable streams first
 (`codex exec --json` and `claude -p --output-format stream-json`) and keep raw
 transcript-file parsing experimental until sanitized fixture reviews prove it is
 safe.
+
+## Hook Envelope JSONL (deferred input shape)
+
+The sanitized hook-envelope format is a documented compatibility target for
+bounded local hook capture. AgentOps ships opt-in hook templates under
+`templates/hooks/` that can write hook envelopes to ignored local paths, but it
+does not yet tail hook files or ingest hook-envelope JSONL as a first-class
+adapter (live tailing remains deferred).
+
+Each line is one JSON object wrapping a valid `agentops.event.v1` event:
+
+```json
+{"schemaVersion":"agentops.hook-envelope.v1","sessionId":"synthetic-session","sequence":1,"source":"local-agent","capturedAt":"2026-06-28T00:00:00Z","event":{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"shell","input":{"cmd":"bun test"},"status":"completed","exitCode":0}}
+```
+
+Rules: `event` must be valid `agentops.event.v1`; redact before writing; write to
+ignored local paths such as `.agentops/captures/`; never include private memory,
+credentials, account data, or unreviewed transcript content; and capture
+failures must not block the agent run unless the user configures it.
