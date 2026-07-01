@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import dashboardShell from "./dashboard.html" with { type: "text" };
+import dashboardCss from "./dashboard.css" with { type: "text" };
+import dashboardClientJs from "./dashboard.client.js" with { type: "text" };
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import {
@@ -144,11 +145,14 @@ let cachedDashboardHtml: string | null = null;
 
 function dashboardHtml(): string {
   if (cachedDashboardHtml === null) {
-    const dir = import.meta.dir;
-    const shell = readFileSync(join(dir, "dashboard.html"), "utf8");
-    const css = readFileSync(join(dir, "dashboard.css"), "utf8");
-    const js = readFileSync(join(dir, "dashboard.client.js"), "utf8");
-    // Function replacers avoid `$`-pattern interpretation in CSS/JS content.
+    // Assets are imported as text so Bun embeds them at build time — this works
+    // both when run from source and inside a `bun build --compile` binary.
+    // bun-types types text imports as bundle objects; at runtime with
+    // `type: "text"` they are strings, so cast. Function replacers avoid
+    // `$`-pattern interpretation in CSS/JS content.
+    const shell = dashboardShell as unknown as string;
+    const css = dashboardCss as unknown as string;
+    const js = dashboardClientJs as unknown as string;
     cachedDashboardHtml = shell.replace("/*__DASHBOARD_CSS__*/", () => css).replace("//__DASHBOARD_JS__", () => js);
   }
   return cachedDashboardHtml;

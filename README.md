@@ -14,7 +14,7 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 - Current `main`: tracks the latest release
 - Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
-- Distribution model: source clone or GitHub source archive with Bun; npm and standalone binaries are not published yet
+- Distribution model: standalone self-contained binaries (macOS/Linux, arm64/x64) via the `curl | sh` installer or release download; source clone with Bun for development; npm publication still deferred
 - Native Codex exec JSONL ingestion: implemented
 - Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
 
@@ -32,14 +32,34 @@ Engineering leaders need a compact answer to:
 - Where did it retry, stall, or change direction?
 - Is the output good enough to trust?
 
-## Quickstart
+## Install
 
-Requirements:
+Download the standalone binary — no Bun, no clone, no PATH setup:
 
-- [Bun](https://bun.sh/)
-- Git
+```bash
+curl -fsSL https://raw.githubusercontent.com/DevenDucommun/agentops-workbench/main/install.sh | sh
+agentops --help
+```
 
-Run locally:
+The installer detects your OS/arch (macOS and Linux, arm64/x64), downloads the
+matching binary from the [latest release](https://github.com/DevenDucommun/agentops-workbench/releases/latest),
+and installs it to `/usr/local/bin` (override with `AGENTOPS_INSTALL_DIR`). You
+can also grab a binary from the release page directly. The binary is
+self-contained — the Bun runtime and SQLite are bundled in.
+
+Then try it on synthetic fixtures:
+
+```bash
+agentops init
+agentops demo
+agentops look
+agentops check
+agentops open
+```
+
+## Run From Source (development)
+
+Requirements: [Bun](https://bun.sh/) and Git.
 
 ```bash
 git clone https://github.com/DevenDucommun/agentops-workbench.git
@@ -166,16 +186,10 @@ bun run smoke:demo-artifacts
 
 ## Installation
 
-The recommended install path today is a fresh git clone with Bun:
-
-```bash
-git clone https://github.com/DevenDucommun/agentops-workbench.git
-cd agentops-workbench
-bun install
-./bin/agentops --help          # or add bin/ to PATH (see Quickstart) to use `agentops`
-```
-
-See [Installation](docs/INSTALLATION.md) for PATH usage, `bun link`, release archive caveats, and package strategy notes.
+See [Install](#install) above for the standalone binary (recommended) and
+[Run From Source](#run-from-source-development) for the Bun clone path. Full
+details — PATH usage, `bun link`, release-archive caveats, and packaging — are in
+[docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Current CLI
 

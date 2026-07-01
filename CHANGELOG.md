@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.1.0 - 2026-07-01
+
+Additive: one-command install.
+
+### Added
+
+- **Standalone binaries** for macOS and Linux (arm64/x64), built with
+  `bun build --compile` (`bun run build:binaries`). Self-contained — the Bun
+  runtime and SQLite are bundled in, so nothing else is required at runtime.
+- **`install.sh`** installer: `curl -fsSL .../install.sh | sh` detects OS/arch,
+  downloads the matching binary from the latest release, and installs it to
+  `/usr/local/bin` (overridable via `AGENTOPS_INSTALL_DIR` / `AGENTOPS_VERSION`).
+- Release workflow (`.github/workflows/release.yml`) builds the four binaries and
+  uploads them as assets when a release is published.
+
+### Changed
+
+- Dashboard assets (`dashboard.html/css/js`) are now embedded via
+  `with { type: "text" }` imports instead of runtime `readFileSync`, so the
+  dashboard works inside a compiled binary. No behavior change from source.
+- README/INSTALLATION lead with the binary install; the Bun clone is the
+  development path.
+
 ## v3.0.0 - 2026-06-30
 
 Breaking product simplification. Fewer commands and fewer concepts for the user:

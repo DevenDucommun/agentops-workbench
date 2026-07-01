@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v3.0.0`.
+Status: stable for `v3.1.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,
@@ -69,9 +69,12 @@ The `v1.5.0` `gate` command is an additive deterministic check over stored
 session analysis and current git metadata. Gate JSON uses
 `agentops.gate.v1`; compatible changes may add optional fields or checks.
 
-The `v1.6.0` distribution decision keeps fresh clones and GitHub release source
-archives as the supported install paths. Npm publication and standalone
-binaries remain outside the stable contract.
+The `v1.6.0` distribution decision kept fresh clones and GitHub release source
+archives as the supported install paths. `v3.1.0` adds **standalone binaries**
+(mac/Linux, arm64/x64) built with `bun build --compile` and installed via the
+`curl | sh` installer or release download as the recommended path; the source
+clone stays the development path. Npm publication remains outside the stable
+contract (deferred).
 
 The `v1.7.0` `doctor`, `demo`, `audit`, and `pr` commands are additive guided
 workflows over existing config, import, review, gate, dashboard, and repo-report

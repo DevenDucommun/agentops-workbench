@@ -1,6 +1,6 @@
 {
   "name": "agentops-workbench",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -30,6 +30,7 @@
   "scripts": {
     "agentops": "bun ./src/cli.ts",
     "typecheck": "tsc --noEmit",
+    "build:binaries": "bun ./scripts/build-binaries.ts",
     "scan:public": "./bin/agentops scan-publication",
     "demo:artifacts": "bun ./scripts/generate-demo-artifacts.ts",
     "smoke:demo-artifacts": "bun ./scripts/generate-demo-artifacts.ts --check",
