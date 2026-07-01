@@ -1,15 +1,35 @@
 # Installation
 
-AgentOps Workbench is currently distributed as a source-first Bun project.
-The supported paths are a fresh git clone or a GitHub source archive. Npm
-publication and standalone binaries remain deferred.
+The recommended install is a **standalone binary** (no Bun, no clone). A fresh
+git clone with Bun remains the path for development and contributions. Npm
+publication is still deferred.
 
-## Requirements
+## Recommended: Standalone Binary
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DevenDucommun/agentops-workbench/main/install.sh | sh
+agentops --help
+```
+
+The installer detects your OS/arch (macOS and Linux, arm64/x64), downloads the
+matching binary from the latest GitHub release, and installs it to
+`/usr/local/bin`. Overrides:
+
+- `AGENTOPS_INSTALL_DIR` — install directory (default `/usr/local/bin`)
+- `AGENTOPS_VERSION` — release tag to install (default: latest)
+
+You can also download a binary directly from the
+[releases page](https://github.com/DevenDucommun/agentops-workbench/releases) and
+put it on your PATH. The binary is self-contained — the Bun runtime and SQLite
+are bundled in. Binaries are built with `bun build --compile`
+(`bun run build:binaries`) and uploaded by the release workflow.
+
+## Requirements (from source)
 
 - Bun 1.3 or newer
 - Git, when using repo-aware reports
 
-## Recommended: Fresh Clone
+## From Source: Fresh Clone
 
 Use this path for development, repo-aware reports, and the local dashboard.
 
@@ -112,19 +132,17 @@ runs.
 
 ## Packaging Strategy
 
-The current distribution path is source-first: clone the repository or use the
-GitHub release source archive. This keeps installation aligned with the tested
-Bun runtime, local SQLite behavior, and repo-aware git features. The package
-still requires Bun at runtime because `bin/agentops` uses `#!/usr/bin/env bun`.
+As of `v3.1.0` the primary distribution is **standalone binaries** built with
+`bun build --compile` (mac/Linux, arm64/x64) and uploaded as GitHub release
+assets by the release workflow. They bundle the Bun runtime and SQLite, so the
+end user needs nothing installed. A fresh clone with Bun stays the development
+path (running from source still requires Bun because `bin/agentops` uses
+`#!/usr/bin/env bun`).
 
-Npm publication remains deferred until the simplified command surface has
-settled; the repository keeps `"private": true` until a release checklist
-explicitly approves publishing. The next candidate is an **npm source package**
-(not a bundled binary): it matches the existing `agentops` bin entry, lets users
-install a normal CLI later, and supports `pack --dry-run` verification — without
-platform-specific binary builds. Bun standalone executables and dedicated
-release-asset bundles stay deferred until the CLI surface and SQLite behavior
-are stable across platforms.
+Npm publication remains deferred; the repository keeps `"private": true` until a
+release checklist explicitly approves publishing. If pursued, the candidate is an
+**npm source package** (matches the existing `agentops` bin entry and supports
+`pack --dry-run`), complementary to the binaries.
 
 `package.json#files` limits the (future) npm package to runtime source,
 fixtures, and essential docs; it excludes CI config, Spec-Kit planning
