@@ -203,7 +203,9 @@ function validateConfigShape(value: unknown): string[] {
     if (!Array.isArray(value.suppressions)) {
       errors.push("suppressions must be an array.");
     } else {
-      value.suppressions.forEach((item, index) => validateSuppressionShape(item, index, errors));
+      value.suppressions.forEach((item, index) => {
+        validateSuppressionShape(item, index, errors);
+      });
     }
   }
 
