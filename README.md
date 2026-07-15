@@ -8,6 +8,8 @@ AgentOps Workbench is a local observability and audit tool for AI coding-agent r
 
 It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other coding-agent workflows through a shared JSONL event schema.
 
+![AgentOps Workbench decision dashboard](docs/assets/dashboard-v2.0.0-ready.png)
+
 ## Status
 
 - Latest published release: [`v3.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.1.0) — one-command install: standalone binaries via `curl | sh` (no Bun, no clone)
