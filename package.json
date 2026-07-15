@@ -30,16 +30,18 @@
   "scripts": {
     "agentops": "bun ./src/cli.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint src/",
     "build:binaries": "bun ./scripts/build-binaries.ts",
     "scan:public": "./bin/agentops scan-publication",
     "demo:artifacts": "bun ./scripts/generate-demo-artifacts.ts",
     "smoke:demo-artifacts": "bun ./scripts/generate-demo-artifacts.ts --check",
     "smoke:dashboard": "bun ./scripts/smoke-dashboard.ts",
     "smoke:large-session": "bun ./scripts/smoke-large-session.ts",
-    "ci": "bun run typecheck && bun test && bun run smoke:demo-artifacts && bun run scan:public",
+    "ci": "bun run typecheck && bun run lint && bun test && bun run smoke:demo-artifacts && bun run scan:public",
     "test": "bun test"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@types/bun": "latest",
     "typescript": "^5.9.0"
   }

@@ -304,7 +304,7 @@
 
     function renderRisks(drilldown, verification) {
       const container = document.getElementById("tab-risks");
-      const riskHtml = drilldown && drilldown.groups.length
+      const riskHtml = drilldown?.groups.length
         ? '<h3 style="margin:0 0 8px">Risk Drilldown</h3>' + renderRiskSummary(drilldown.totals) + '<div class="list">' + drilldown.groups.map(renderRiskGroup).join("") + '</div>'
         : '<div class="empty">No risk flags detected.</div>';
       const evidenceHtml = verification.length
