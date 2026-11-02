@@ -37,31 +37,47 @@ failed=0
 : > "$combined"
 printf '<!-- agentops-gate -->\n' >> "$combined"
 
+gate_failed() {
+  # $1 = artifact path (from the workflow input), $2 = reason (fixed text)
+  echo "::error::AgentOps gate failed: $1 ($2)"
+  status="failed"
+  failed=$((failed + 1))
+}
+
+# Artifacts are untrusted. Nothing derived from their content (such as the
+# session id) is used in a file path, a command argument, or stdout, where it
+# could traverse paths or inject workflow commands. Each artifact gets its own
+# throwaway database outside the checkout, so `check latest` is unambiguous.
+index=0
 for artifact in "${artifacts[@]}"; do
+  index=$((index + 1))
   if [ ! -f "$artifact" ]; then
-    echo "::error::AgentOps artifact not found: $artifact"
-    status="failed"
-    failed=$((failed + 1))
+    gate_failed "$artifact" "artifact not found"
     # shellcheck disable=SC2016 # backticks are literal Markdown
     printf '\n## AgentOps Quality Gate\n\n**Status:** FAILED\n\nArtifact not found: `%s`\n' "$artifact" >> "$combined"
     continue
   fi
 
-  ingest="$("$bin" audit "$artifact" --quiet --config "$config")"
-  echo "$ingest"
-  session="$(printf '%s\n' "$ingest" | sed -n 's/^Ingested session \([^ ]*\) .*/\1/p' | head -n 1)"
-  if [ -z "$session" ]; then
-    echo "::error::Could not read the session id from agentops audit output for $artifact"
-    exit 1
+  db="$report_dir/db-$index.sqlite"
+  out="$report_dir/gate-$index.md"
+  rm -f "$db" "$out"
+
+  if ! AGENTOPS_DB="$db" "$bin" audit "$artifact" --quiet --config "$config" > "$report_dir/audit-$index.log" 2>&1; then
+    gate_failed "$artifact" "could not be parsed; see audit-$index.log in the report directory"
+    # shellcheck disable=SC2016 # backticks are literal Markdown
+    printf '\n## AgentOps Quality Gate\n\n**Status:** FAILED\n\nArtifact could not be parsed: `%s`\n' "$artifact" >> "$combined"
+    continue
   fi
 
-  out="$report_dir/gate-$session.md"
-  if "$bin" check "$session" --config "$config" --format github --out "$out" > /dev/null; then
-    echo "AgentOps gate passed: $artifact ($session)"
+  if AGENTOPS_DB="$db" "$bin" check latest --config "$config" --format github --out "$out" > /dev/null 2>&1; then
+    echo "AgentOps gate passed: $artifact"
+  elif [ -s "$out" ]; then
+    gate_failed "$artifact" "quality gate failed"
   else
-    echo "::error::AgentOps gate failed: $artifact ($session)"
-    status="failed"
-    failed=$((failed + 1))
+    gate_failed "$artifact" "agentops check did not produce a report"
+    # shellcheck disable=SC2016 # backticks are literal Markdown
+    printf '\n## AgentOps Quality Gate\n\n**Status:** FAILED\n\nNo gate report for: `%s`\n' "$artifact" >> "$combined"
+    continue
   fi
   printf '\n' >> "$combined"
   cat "$out" >> "$combined"

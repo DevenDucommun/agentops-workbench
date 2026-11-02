@@ -113,6 +113,12 @@ The CLI never posts to GitHub. Only the Action posts, and only with
 `comment: true`. The sticky comment starts with `<!-- agentops-gate -->` and is
 updated in place on later runs.
 
+Artifacts are treated as untrusted input. The Action keeps its SQLite
+databases and reports under `$RUNNER_TEMP`, never in the repository checkout,
+and it never uses artifact content (such as session ids) in file paths,
+command arguments, or log output. A malformed artifact fails only its own gate;
+the remaining artifacts are still checked.
+
 ## Manual CI Workflow
 
 Without the Action, a workflow can import an artifact, run the gates, and
