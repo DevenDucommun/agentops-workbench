@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- Dev tooling: Biome 1.9.4 → 2.5.13 (config migrated to the v2 schema) and
+  TypeScript 5.9 → 7.0. No source changes were needed; lint, typecheck and
+  tests pass unchanged.
+- Dependabot now uses the `bun` ecosystem. The `npm` ecosystem cannot update
+  `bun.lock`, which left every Biome bump failing CI's `--frozen-lockfile`
+  install and made the npm update job error out on 2026-09-26.
+
 ### Fixed
 
 - **Codex exec adapter** now reads the real `codex exec --json` schema (checked
