@@ -1,6 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  # bun.lock is the lockfile, so use the bun ecosystem: the npm ecosystem
+  # cannot update bun.lock and leaves CI's --frozen-lockfile install failing.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
