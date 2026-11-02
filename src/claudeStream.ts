@@ -67,7 +67,10 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
   const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "claude-code-stream-session";
   const model = sessionModel(records);
 
-  const events = records.flatMap((record) => normalizeRecord(record));
+  // permission_denials (on the final result) name the tool_use ids that never ran.
+  const denied = deniedToolUses(records);
+  const events = records.flatMap((record) => normalizeRecord(record, denied));
+  events.push(...unmatchedDenialEvents(denied));
   const session: SessionRecord & { id: string; sourcePath: string; sourceAdapter: string } = {
     type: "session",
     schemaVersion: "agentops.event.v1",
@@ -122,12 +125,12 @@ function validateClaudeRecords(records: ClaudeStreamRecord[]): void {
   }
 }
 
-function normalizeRecord(record: ClaudeStreamRecord): RawEvent[] {
+function normalizeRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
   switch (record.type) {
     case "system":
       return normalizeSystemRecord(record);
     case "assistant":
-      return normalizeAssistantRecord(record);
+      return normalizeAssistantRecord(record, denied);
     case "user":
       return normalizeUserRecord(record);
     case "result":
@@ -185,7 +188,7 @@ function normalizeSystemRecord(record: ClaudeStreamRecord): RawEvent[] {
   ];
 }
 
-function normalizeAssistantRecord(record: ClaudeStreamRecord): RawEvent[] {
+function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
   if (record.is_api_error_message === true || typeof record.error === "string") {
     const text = textContent(record.message?.content);
     const reason = typeof record.error === "string" ? record.error : "api_error";
@@ -215,10 +218,10 @@ function normalizeAssistantRecord(record: ClaudeStreamRecord): RawEvent[] {
     ];
   }
 
-  return blocks.flatMap((block) => normalizeAssistantBlock(block));
+  return blocks.flatMap((block) => normalizeAssistantBlock(block, denied));
 }
 
-function normalizeAssistantBlock(block: ClaudeContentBlock): RawEvent[] {
+function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUses): RawEvent[] {
   if (block.type === "text") {
     return [
       {
@@ -232,7 +235,13 @@ function normalizeAssistantBlock(block: ClaudeContentBlock): RawEvent[] {
     ];
   }
 
-  if (block.type === "tool_use") return [normalizeToolUse(block)];
+  if (block.type === "tool_use") {
+    if (typeof block.id === "string" && denied.has(block.id)) {
+      denied.get(block.id)!.matched = true;
+      return [deniedToolUseEvent(block.name, block.input)];
+    }
+    return [normalizeToolUse(block)];
+  }
 
   return [
     {
@@ -295,25 +304,46 @@ function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
       : record.result ?? "Claude Code stream completed.",
     usage: normalizeUsage(record.usage, record.total_cost_usd)
   };
-  return [result, ...permissionDenialEvents(record.permission_denials)];
+  return [result];
 }
 
-function permissionDenialEvents(value: unknown): RawEvent[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((denial) => {
-    const toolName = typeof denial.tool_name === "string" ? denial.tool_name : "claude_tool";
-    const input = isRecord(denial.tool_input) ? denial.tool_input : undefined;
-    const command = typeof input?.command === "string" ? input.command : undefined;
-    return {
-      schemaVersion: "agentops.event.v1",
-      type: "tool_call",
-      source: "claude-code",
-      toolName,
-      input,
-      status: "denied",
-      summary: `Permission denied: ${toolName}${command ? ` (${command})` : ""}`
-    };
-  });
+type DeniedToolUses = Map<string, { toolName?: string; input?: Record<string, unknown>; matched: boolean }>;
+
+function deniedToolUses(records: ClaudeStreamRecord[]): DeniedToolUses {
+  const denied: DeniedToolUses = new Map();
+  for (const record of records) {
+    if (record.type !== "result" || !Array.isArray(record.permission_denials)) continue;
+    for (const [index, denial] of record.permission_denials.filter(isRecord).entries()) {
+      const id = typeof denial.tool_use_id === "string" ? denial.tool_use_id : `unmatched-denial-${index}`;
+      denied.set(id, {
+        toolName: typeof denial.tool_name === "string" ? denial.tool_name : undefined,
+        input: isRecord(denial.tool_input) ? denial.tool_input : undefined,
+        matched: false
+      });
+    }
+  }
+  return denied;
+}
+
+// A denied tool use never ran: record it once, as a denied tool call, never as an
+// executed command or a file change.
+function deniedToolUseEvent(name: string | undefined, input: Record<string, unknown> | undefined): RawEvent {
+  const toolName = name ?? "claude_tool";
+  const command = typeof input?.command === "string" ? input.command : undefined;
+  return {
+    schemaVersion: "agentops.event.v1",
+    type: "tool_call",
+    source: "claude-code",
+    toolName,
+    command,
+    input,
+    status: "denied",
+    summary: `Permission denied: ${toolName}${command ? ` (${command})` : ""}`
+  };
+}
+
+function unmatchedDenialEvents(denied: DeniedToolUses): RawEvent[] {
+  return [...denied.values()].filter((denial) => !denial.matched).map((denial) => deniedToolUseEvent(denial.toolName, denial.input));
 }
 
 function sessionModel(records: ClaudeStreamRecord[]): string | undefined {

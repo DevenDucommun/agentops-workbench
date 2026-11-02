@@ -255,10 +255,50 @@ test("parses current Claude Code stream schema (2.1): hooks, init model, permiss
   expect(events.some((event) => event.type === "tool_call" && event.command === "bun test")).toBe(true);
   expect(events.some((event) => event.type === "final_response")).toBe(true);
 
-  const denial = events.find((event) => event.status === "denied");
-  expect(denial?.toolName).toBe("Bash");
-  expect(denial?.summary).toBe("Permission denied: Bash (git push origin main)");
-  expect(denial?.command).toBeUndefined();
+  // The denied tool_use is recorded once, marked denied — not as a completed call plus a denial copy.
+  const push = events.filter((event) => event.command === "git push origin main");
+  expect(push).toHaveLength(1);
+  expect(push[0]?.status).toBe("denied");
+  expect(push[0]?.summary).toBe("Permission denied: Bash (git push origin main)");
+});
+
+test("records a denied Claude tool use once and never as an executed command or file change", () => {
+  const sid = "claude-denied-sample";
+  const lines = [
+    { type: "system", subtype: "init", session_id: sid, model: "claude-sonnet-5-5" },
+    {
+      type: "assistant",
+      session_id: sid,
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "t-rm", name: "Bash", input: { command: "rm -rf ./build" } },
+          { type: "tool_use", id: "t-test", name: "Bash", input: { command: "bun test" } },
+          { type: "tool_use", id: "t-edit", name: "Edit", input: { file_path: "src/a.ts", old_string: "a", new_string: "b" } }
+        ]
+      }
+    },
+    {
+      type: "result",
+      subtype: "success",
+      session_id: sid,
+      is_error: false,
+      result: "Done; tests pass.",
+      permission_denials: [
+        { tool_name: "Bash", tool_use_id: "t-rm", tool_input: { command: "rm -rf ./build" } },
+        { tool_name: "Bash", tool_use_id: "t-test", tool_input: { command: "bun test" } },
+        { tool_name: "Edit", tool_use_id: "t-edit", tool_input: { file_path: "src/a.ts" } },
+        { tool_name: "Bash", tool_use_id: "t-missing", tool_input: { command: "git push" } }
+      ]
+    }
+  ];
+  const input = { sourcePath: "claude-denied.jsonl", content: lines.map((line) => JSON.stringify(line)).join("\n") };
+  const events = resolveAdapter(input, "claude-code-stream-json").parse(input, defaultConfig).events;
+
+  expect(events.filter((event) => event.command === "rm -rf ./build").map((event) => event.status)).toEqual(["denied"]);
+  expect(events.filter((event) => event.command === "bun test").map((event) => event.status)).toEqual(["denied"]);
+  expect(events.some((event) => event.type === "file_edit")).toBe(false);
+  expect(events.filter((event) => event.command === "git push").map((event) => event.status)).toEqual(["denied"]);
 });
 
 test("reports Claude Code API errors and terminal_reason instead of a generic failure", () => {

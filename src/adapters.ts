@@ -155,7 +155,7 @@ function firstJsonRecord(input: string, skip?: (record: Record<string, unknown>)
   for (const [index, line] of lines.entries()) {
     const record = parseJsonObject(line);
     if (!record) return index === 0 ? null : fallback;
-    if (!skip || !skip(record) || index >= MAX_SKIPPED_LEADING_RECORDS) return record;
+    if (!skip?.(record) || index >= MAX_SKIPPED_LEADING_RECORDS) return record;
     fallback ??= record;
   }
   return fallback;

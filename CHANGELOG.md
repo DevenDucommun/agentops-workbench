@@ -26,7 +26,10 @@
   - API-error assistant messages become error events.
   - Hook runs are summarized as one event each, with outcome and exit code.
     Hook stdout and stderr are not stored.
-  - `permission_denials` entries become `denied` tool-call events.
+  - Tool uses listed in `permission_denials` are recorded once with status
+    `denied`, never as an executed command or file change.
+- Denied (Claude) and declined (Codex) commands no longer count as
+  verification evidence in the analyzer or quality gate.
   - Detection skips the leading hook records, so a real 2.x stream detects at
     full confidence.
 
