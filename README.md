@@ -13,7 +13,8 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 ## Status
 
 - Latest published release: [`v3.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.1.0) — one-command install: standalone binaries via `curl | sh` (no Bun, no clone)
-- Current `main`: tracks the latest release
+- Current `main`: v3.1.0 plus maintenance (Biome lint gate, dependency and adapter refreshes)
+- Next: v3.2.0 (proposed) ships `agentops check` as a GitHub Action for PR gating and closes the retry/stall detection gap. After that come team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
 - Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: standalone self-contained binaries (macOS/Linux, arm64/x64) via the `curl | sh` installer or release download; source clone with Bun for development; npm publication still deferred
@@ -379,6 +380,10 @@ Architecture and compatibility:
 - [Event schema](docs/EVENT_SCHEMA.md) (includes standards mapping)
 - [Adapter strategy](docs/ADAPTER_STRATEGY.md) (includes the hook envelope shape)
 - [Publication and privacy plan](docs/PUBLICATION_AND_PRIVACY.md)
+
+Planning:
+
+- [Roadmap](docs/ROADMAP.md): v3.2 and later, all proposed
 
 Release docs:
 
