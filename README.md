@@ -240,6 +240,20 @@ commands were removed in `v2.0.0`; `capture`/`import` and the
 See [Compatibility policy](docs/COMPATIBILITY.md) for the stable `v3.0.0`
 surfaces and experimental boundaries.
 
+## GitHub Action
+
+Gate pull requests on an agent run artifact:
+
+```yaml
+- uses: DevenDucommun/agentops-workbench@main  # pin a release tag once one includes the action
+  with:
+    artifact: codex-session.jsonl
+```
+
+The job fails when the AgentOps quality gate fails, and the result is written
+to the job summary. See [Quality gates](docs/QUALITY_GATES.md#github-action)
+for inputs, outputs and the opt-in sticky PR comment.
+
 ## MCP Server
 
 `agentops mcp` starts a local stdio MCP server for read-only lookup of stored
