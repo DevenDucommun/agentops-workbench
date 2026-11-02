@@ -16,6 +16,15 @@ type ClaudeStreamRecord = {
   usage?: ClaudeUsage;
   total_cost_usd?: number;
   stop_reason?: string | null;
+  terminal_reason?: string;
+  permission_denials?: unknown;
+  model?: string;
+  error?: unknown;
+  is_api_error_message?: boolean;
+  hook_name?: string;
+  hook_event?: string;
+  outcome?: string;
+  exit_code?: number;
   _lineNumber?: number;
   [key: string]: unknown;
 };
@@ -56,7 +65,7 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
 
   const sessionId = records.find((record) => typeof record.session_id === "string")?.session_id;
   const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "claude-code-stream-session";
-  const model = records.map((record) => record.message?.model).find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const model = sessionModel(records);
 
   const events = records.flatMap((record) => normalizeRecord(record));
   const session: SessionRecord & { id: string; sourcePath: string; sourceAdapter: string } = {
@@ -122,7 +131,7 @@ function normalizeRecord(record: ClaudeStreamRecord): RawEvent[] {
     case "user":
       return normalizeUserRecord(record);
     case "result":
-      return [normalizeResultRecord(record)];
+      return normalizeResultRecord(record);
     case "tool_progress":
       return [
         {
@@ -146,6 +155,24 @@ function normalizeRecord(record: ClaudeStreamRecord): RawEvent[] {
 }
 
 function normalizeSystemRecord(record: ClaudeStreamRecord): RawEvent[] {
+  // Claude Code 2.x emits a hook_started/hook_response pair for every hook run.
+  // The response carries the outcome, so the start record adds nothing.
+  if (record.subtype === "hook_started") return [];
+  if (record.subtype === "hook_response") {
+    const name = record.hook_name ?? record.hook_event ?? "hook";
+    const outcome = typeof record.outcome === "string" ? record.outcome : "completed";
+    const exit = typeof record.exit_code === "number" ? ` (exit ${record.exit_code})` : "";
+    return [
+      {
+        schemaVersion: "agentops.event.v1",
+        type: "message",
+        source: "claude-code",
+        role: "system",
+        status: outcome,
+        summary: `Claude Code hook ${name}: ${outcome}${exit}`
+      }
+    ];
+  }
   return [
     {
       schemaVersion: "agentops.event.v1",
@@ -159,6 +186,22 @@ function normalizeSystemRecord(record: ClaudeStreamRecord): RawEvent[] {
 }
 
 function normalizeAssistantRecord(record: ClaudeStreamRecord): RawEvent[] {
+  if (record.is_api_error_message === true || typeof record.error === "string") {
+    const text = textContent(record.message?.content);
+    const reason = typeof record.error === "string" ? record.error : "api_error";
+    return [
+      {
+        schemaVersion: "agentops.event.v1",
+        type: "error",
+        source: "claude-code",
+        role: "assistant",
+        status: reason,
+        content: text,
+        summary: text ? `Claude Code API error (${reason}): ${text}` : `Claude Code API error (${reason}).`
+      }
+    ];
+  }
+
   const blocks = contentBlocks(record.message?.content);
   if (blocks.length === 0) {
     return [
@@ -233,18 +276,50 @@ function normalizeUserRecord(record: ClaudeStreamRecord): RawEvent[] {
   return events;
 }
 
-function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent {
+function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
   const failed = record.subtype !== "success" || record.is_error === true;
-  return {
+  const errors = Array.isArray(record.errors) ? record.errors.filter((value): value is string => typeof value === "string") : [];
+  // Claude Code 2.x can report subtype "success" with is_error=true; terminal_reason says why the run ended.
+  const reason = typeof record.terminal_reason === "string" ? record.terminal_reason : undefined;
+  const failureText = errors.length ? errors.join("\n") : record.result;
+  const failureSummary = errors[0] ?? record.result;
+  const result: RawEvent = {
     schemaVersion: "agentops.event.v1",
     type: failed ? "error" : "final_response",
     source: "claude-code",
     role: "assistant",
-    status: record.subtype ?? (failed ? "failed" : "completed"),
-    content: failed ? record.errors?.join("\n") : record.result,
-    summary: failed ? record.errors?.[0] ?? "Claude Code execution failed." : record.result ?? "Claude Code stream completed.",
+    status: failed && record.subtype === "success" ? (reason ?? "failed") : (record.subtype ?? (failed ? "failed" : "completed")),
+    content: failed ? failureText : record.result,
+    summary: failed
+      ? `Claude Code execution failed${reason ? ` (${reason})` : ""}${failureSummary ? `: ${failureSummary}` : "."}`
+      : record.result ?? "Claude Code stream completed.",
     usage: normalizeUsage(record.usage, record.total_cost_usd)
   };
+  return [result, ...permissionDenialEvents(record.permission_denials)];
+}
+
+function permissionDenialEvents(value: unknown): RawEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((denial) => {
+    const toolName = typeof denial.tool_name === "string" ? denial.tool_name : "claude_tool";
+    const input = isRecord(denial.tool_input) ? denial.tool_input : undefined;
+    const command = typeof input?.command === "string" ? input.command : undefined;
+    return {
+      schemaVersion: "agentops.event.v1",
+      type: "tool_call",
+      source: "claude-code",
+      toolName,
+      input,
+      status: "denied",
+      summary: `Permission denied: ${toolName}${command ? ` (${command})` : ""}`
+    };
+  });
+}
+
+function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
+  const usable = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value !== "<synthetic>";
+  const initModel = records.find((record) => record.type === "system" && record.subtype === "init" && usable(record.model))?.model;
+  return initModel ?? records.map((record) => record.message?.model).find(usable);
 }
 
 function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
