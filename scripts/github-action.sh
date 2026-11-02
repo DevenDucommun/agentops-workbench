@@ -14,8 +14,11 @@ set -euo pipefail
 bin="${AGENTOPS_BIN:?AGENTOPS_BIN is required}"
 config="${AGENTOPS_CONFIG:-agentops.config.json}"
 fail_on_gate="${AGENTOPS_FAIL_ON_GATE:-true}"
-report_dir="${AGENTOPS_REPORT_DIR:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}/agentops-gate"
-mkdir -p "$report_dir"
+report_base="${AGENTOPS_REPORT_DIR:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
+mkdir -p "$report_base"
+# A fresh directory per run, so a second use of the action in the same job
+# cannot overwrite an earlier step's report output.
+report_dir="$(mktemp -d "$report_base/agentops-gate.XXXXXX")"
 combined="$report_dir/agentops-gate-comment.md"
 
 # Expand globs; keep literal paths so a missing file is reported, not skipped.
