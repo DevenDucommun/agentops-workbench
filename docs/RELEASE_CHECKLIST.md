@@ -118,7 +118,7 @@ git status --short
 ```
 
 Release PR: update `package.json` version, `CHANGELOG.md`, the README status
-line, and `docs/archive/ROADMAP.md`; link the milestone tracking issue.
+line, and `docs/ROADMAP.md` (mark the milestone shipped); link the milestone tracking issue.
 
 Post-release:
 
