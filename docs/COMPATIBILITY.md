@@ -134,6 +134,20 @@ Supported in `v3.0.0`:
 | `codex-exec-jsonl` | Explicit `codex exec --json` JSONL capture | Supported native stream |
 | `forensic-text` | Saved terminal transcript or copied coding-agent text | Experimental forensic import |
 
+Native stream schemas last checked on 2026-11-02:
+
+- `claude-code-stream-json`: envelope from Claude Code 2.1.316, including the
+  leading `hook_started`/`hook_response` system records, `terminal_reason`,
+  `permission_denials`, and API-error assistant messages. Fixture:
+  `fixtures/claude-code-stream-current-session.jsonl`.
+- `codex-exec-jsonl`: event schema of Codex CLI 0.166.0
+  (`codex-rs/exec/src/exec_events.rs`), including `item.updated`,
+  `aggregated_output`, `file_change.changes[]`, MCP `server`/`tool`,
+  `todo_list`, `collab_tool_call`, `error` items, and the `declined` command
+  status. Fixture: `fixtures/codex-exec-current-session.jsonl`. Older
+  hand-written shapes (`output`, `path`, `tool_name`, `plan_update`) are still
+  accepted.
+
 The `v2.0.0` release consolidated the previously separate `pai-export-jsonl`,
 `claude-code-jsonl`, and `codex-jsonl` adapter IDs into `agentops-jsonl`. They
 were functionally identical (same `agentops.event.v1` schema, same parser),

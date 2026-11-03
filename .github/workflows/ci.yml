@@ -53,6 +53,9 @@ jobs:
           ./bin/agentops audit ./fixtures/codex-exec-session.jsonl --quiet
           ./bin/agentops audit ./fixtures/codex-exec-edge-session.jsonl --quiet
           ./bin/agentops audit ./fixtures/claude-code-stream-edge-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/claude-code-stream-current-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/claude-code-stream-api-error-session.jsonl --quiet
+          ./bin/agentops audit ./fixtures/codex-exec-current-session.jsonl --quiet
           ./bin/agentops audit ./fixtures/usage-session.jsonl --quiet
           ./bin/agentops adapters > /tmp/agentops-adapters.md
           ./bin/agentops adapters --input ./fixtures/codex-session.jsonl > /tmp/agentops-adapter-detection.md

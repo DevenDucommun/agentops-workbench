@@ -1,0 +1,16 @@
+{"type":"thread.started","thread_id":"codex-exec-current-sample"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"todo_list","items":[{"text":"Read the adapter","completed":false},{"text":"Update the parser","completed":false},{"text":"Run tests","completed":false}]}}
+{"type":"item.updated","item":{"id":"item_0","type":"todo_list","items":[{"text":"Read the adapter","completed":true},{"text":"Update the parser","completed":false},{"text":"Run tests","completed":false}]}}
+{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"Synthetic reasoning: inspect the adapter before editing."}}
+{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"repo","tool":"read_file","arguments":{"path":"src/adapters.ts"},"result":{"content":[{"type":"text","text":"synthetic adapter source"}],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"bun run typecheck","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"bun run typecheck","aggregated_output":"typecheck passed\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_4","type":"file_change","changes":[{"path":"src/adapters.ts","kind":"update"},{"path":"src/adapterNotes.ts","kind":"add"}],"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_5","type":"command_execution","command":"rm -rf ./build","aggregated_output":"","exit_code":null,"status":"declined"}}
+{"type":"item.completed","item":{"id":"item_6","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"codex-exec-current-sample","receiver_thread_ids":["synthetic-subagent-1"],"prompt":"Review the parser change.","agents_states":{"synthetic-subagent-1":{"status":"completed","message":"No issues found."}},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_7","type":"command_execution","command":"bun test","aggregated_output":"12 pass\n0 fail\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_8","type":"error","message":"Synthetic non-fatal warning: one MCP server was unavailable."}}
+{"type":"item.completed","item":{"id":"item_0","type":"todo_list","items":[{"text":"Read the adapter","completed":true},{"text":"Update the parser","completed":true},{"text":"Run tests","completed":true}]}}
+{"type":"item.completed","item":{"id":"item_9","type":"agent_message","text":"Updated the adapter and added notes; typecheck and tests pass."}}
+{"type":"turn.completed","usage":{"input_tokens":2400,"cached_input_tokens":800,"cache_write_input_tokens":300,"output_tokens":210,"reasoning_output_tokens":40}}

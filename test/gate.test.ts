@@ -78,3 +78,19 @@ function openInlineFixture(events: unknown[]) {
   ingestTranscript(store, transcript, defaultConfig);
   return store;
 }
+
+test("denied and declined commands are not verification evidence", () => {
+  for (const status of ["denied", "declined"]) {
+    const store = openInlineFixture([
+      { schemaVersion: "agentops.event.v1", type: "session", id: `gate-${status}` },
+      { schemaVersion: "agentops.event.v1", type: "tool_call", command: "bun test", status },
+      { schemaVersion: "agentops.event.v1", type: "final_response", content: "Implemented; tests pass." }
+    ]);
+    analyzeSession(store, `gate-${status}`, defaultConfig);
+    const result = evaluateQualityGate(store, `gate-${status}`, defaultConfig);
+
+    expect(result.status).toBe("failed");
+    expect(result.checks).toContainEqual(expect.objectContaining({ id: "required-verification", status: "failed" }));
+    store.db.close();
+  }
+});

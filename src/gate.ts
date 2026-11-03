@@ -1,4 +1,4 @@
-import { isVerificationCommand } from "./analyzer";
+import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -47,7 +47,7 @@ export function evaluateQualityGate(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => command.status !== "inferred" && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
   checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));

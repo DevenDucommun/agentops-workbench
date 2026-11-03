@@ -11,6 +11,28 @@
   `bun.lock`, which left every Biome bump failing CI's `--frozen-lockfile`
   install and made the npm update job error out on 2026-09-26.
 
+### Fixed
+
+- **Codex exec adapter** now reads the real `codex exec --json` schema (checked
+  against Codex CLI 0.166.0). Previously, against real output, command output
+  (`aggregated_output`), files touched (`file_change.changes[]`) and MCP tool
+  names (`server`/`tool`) were silently dropped. It also handles `item.updated`,
+  `todo_list`, `collab_tool_call` (subagents), `error` items and the
+  `declined` command status. The older fixture shapes still parse.
+- **Claude Code stream adapter** (checked against Claude Code 2.1.316):
+  - The session model comes from the `init` record, not the `<synthetic>`
+    placeholder on error messages.
+  - Failed runs report `terminal_reason` and the result text.
+  - API-error assistant messages become error events.
+  - Hook runs are summarized as one event each, with outcome and exit code.
+    Hook stdout and stderr are not stored.
+  - Tool uses listed in `permission_denials` are recorded once with status
+    `denied`, never as an executed command or file change.
+- Denied (Claude) and declined (Codex) commands no longer count as
+  verification evidence in the analyzer or quality gate.
+  - Detection skips the leading hook records, so a real 2.x stream detects at
+    full confidence.
+
 ## v3.1.0 - 2026-07-01
 
 Additive: one-command install.

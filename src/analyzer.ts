@@ -163,7 +163,8 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  const observedCommands = commands.filter((command) => command.status !== "inferred");
+  // Inferred commands were only mentioned in text; denied/declined ones never ran.
+  const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -240,6 +241,12 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   })();
+}
+
+const NOT_EXECUTED_COMMAND_STATUSES = new Set(["inferred", "denied", "declined"]);
+
+export function isExecutedCommandStatus(status: string | null | undefined): boolean {
+  return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
 }
 
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
