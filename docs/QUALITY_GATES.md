@@ -90,10 +90,10 @@ jobs:
       - uses: actions/checkout@v4
       # Produce or restore the agent run artifact here, for example:
       # codex exec --json "review the current diff" > codex-session.jsonl
-      - uses: DevenDucommun/agentops-workbench@main  # pin a release tag once one includes the action
+      - uses: DevenDucommun/agentops-workbench@v3.2.0
         with:
           artifact: codex-session.jsonl
-          version: v3.1.0
+          version: v3.2.0
 ```
 
 | Input | Default | Meaning |

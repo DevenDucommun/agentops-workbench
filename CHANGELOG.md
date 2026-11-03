@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v3.2.0 - 2026-11-02
+
+Additive: GitHub Action for PR gating, current-CLI adapter refresh, and a
+dev-tooling catch-up. No breaking changes.
 
 ### Added
 

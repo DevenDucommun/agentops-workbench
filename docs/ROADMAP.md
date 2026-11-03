@@ -22,7 +22,7 @@ Every milestone below keeps these defaults:
   recorded evidence and cites it.
 - Synthetic or redacted fixtures only.
 
-## Maintenance in flight (v3.1.x)
+## Shipped in v3.2.0: maintenance
 
 - Dependency catch-up: Biome 2, TypeScript 7, and Dependabot moved to the `bun`
   ecosystem so lockfile updates stop failing CI.
@@ -30,7 +30,7 @@ Every milestone below keeps these defaults:
   against current CLI output (Codex 0.166, Claude Code 2.1), with
   schema-accurate fixtures.
 
-## v3.2.0: `agentops check` as a GitHub Action (proposed)
+## v3.2.0: `agentops check` as a GitHub Action (shipped 2026-11-02)
 
 **Why first:** this is the cheapest way for outside users to adopt AgentOps.
 Today `check --format github` already produces a PR-ready gate result, but
@@ -40,7 +40,7 @@ themselves.
 **Scope:**
 
 - A composite action (`action.yml` at the repo root) usable as
-  `uses: DevenDucommun/agentops-workbench@v3`.
+  `uses: DevenDucommun/agentops-workbench@v3.2.0`.
 - Inputs: `artifact` (path or glob to a Codex/Claude JSONL capture),
   `version` (AgentOps release to install; defaults to `latest`, pin it for
   reproducible gates),
@@ -59,7 +59,12 @@ themselves.
 fixture, and fails the job on a fixture that should be blocked
 (`fixtures/risky-session.jsonl`). The README shows the five-line usage.
 
-Also in v3.2, closing gaps between the docs and what ships:
+**Shipped in v3.2.0** as scoped, plus hardening from review: artifacts are
+treated as untrusted, and state stays under `$RUNNER_TEMP`, never in the
+checkout.
+
+**Still open from v3.2, carried to the next release (proposed, not yet
+scheduled):**
 
 - **Retry and stall detection.** The README lists "Stalls/retries/loops" as a
   report section, but no analyzer rule produces it today. Add deterministic
