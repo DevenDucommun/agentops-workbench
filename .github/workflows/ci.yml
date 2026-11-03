@@ -88,3 +88,90 @@ jobs:
           test -s /tmp/agentops-gate-github.md
           test -s /tmp/agentops-dashboard-check.txt
           test -s /tmp/agentops-publication-scan.txt
+
+  action-self-test:
+    name: GitHub Action (source)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Gate a passing artifact
+        id: pass
+        uses: ./
+        with:
+          agentops-path: ./bin/agentops
+          artifact: fixtures/codex-exec-session.jsonl
+
+      - name: Gate a blocked artifact without failing the job
+        id: blocked
+        uses: ./
+        with:
+          agentops-path: ./bin/agentops
+          artifact: fixtures/risky-session.jsonl
+          fail-on-gate: "false"
+
+      - name: Write a hostile artifact
+        run: |
+          echo original > canary.md
+          up=$(printf '../%.0s' $(seq 1 30))
+          printf '%s\n' \
+            "{\"schemaVersion\":\"agentops.event.v1\",\"type\":\"session\",\"id\":\"${up}${GITHUB_WORKSPACE#/}/canary\"}" \
+            '{"schemaVersion":"agentops.event.v1","type":"final_response","content":"done"}' \
+            > "$RUNNER_TEMP/hostile.jsonl"
+
+      - name: Gate the hostile artifact
+        id: hostile
+        uses: ./
+        with:
+          agentops-path: ./bin/agentops
+          artifact: ${{ runner.temp }}/hostile.jsonl
+          fail-on-gate: "false"
+
+      - name: Assert the hostile artifact wrote nothing into the checkout
+        run: |
+          test "$(cat canary.md)" = original
+          test ! -e .agentops
+          test -z "$(git status --porcelain --untracked-files=all -- . ':!canary.md')"
+
+      - name: Assert gate outputs
+        env:
+          PASS_STATUS: ${{ steps.pass.outputs.status }}
+          BLOCKED_STATUS: ${{ steps.blocked.outputs.status }}
+          BLOCKED_FAILED: ${{ steps.blocked.outputs.failed }}
+          BLOCKED_REPORT: ${{ steps.blocked.outputs.report }}
+        run: |
+          test "$PASS_STATUS" = passed
+          test "$BLOCKED_STATUS" = failed
+          test "$BLOCKED_FAILED" = 1
+          grep -q '<!-- agentops-gate -->' "$BLOCKED_REPORT"
+          grep -q 'risky-session' "$BLOCKED_REPORT"
+
+  action-install-test:
+    name: GitHub Action (release binary)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Gate with the pinned release binary
+        id: gate
+        uses: ./
+        with:
+          version: v3.1.0
+          artifact: fixtures/sample-session.jsonl
+
+      - name: Assert gate passed
+        env:
+          STATUS: ${{ steps.gate.outputs.status }}
+        run: test "$STATUS" = passed

@@ -1,0 +1,102 @@
+name: AgentOps quality gate
+description: Audit coding-agent run artifacts (Codex, Claude Code, AgentOps JSONL) and fail the job when the AgentOps quality gate fails.
+author: DevenDucommun
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  artifact:
+    description: Agent run artifact paths or globs (newline- or space-separated), e.g. a `codex exec --json` or `claude -p --output-format stream-json` capture.
+    required: true
+  version:
+    description: AgentOps release tag to install (e.g. v3.2.0). Defaults to the latest release; pin it for reproducible gates.
+    required: false
+    default: latest
+  agentops-path:
+    description: Use an existing agentops executable instead of installing a release binary.
+    required: false
+    default: ""
+  config:
+    description: Path to agentops.config.json.
+    required: false
+    default: agentops.config.json
+  fail-on-gate:
+    description: Fail the job when any gate fails.
+    required: false
+    default: "true"
+  comment:
+    description: "Post or update one sticky PR comment with the gate result. Needs `pull-requests: write`."
+    required: false
+    default: "false"
+  github-token:
+    description: Token used only when `comment` is true.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  status:
+    description: "`passed` or `failed`."
+    value: ${{ steps.gate.outputs.status }}
+  failed:
+    description: Number of artifacts whose gate failed.
+    value: ${{ steps.gate.outputs.failed }}
+  report:
+    description: Path to the combined Markdown gate report.
+    value: ${{ steps.gate.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install AgentOps
+      id: install
+      shell: bash
+      env:
+        AGENTOPS_PATH: ${{ inputs.agentops-path }}
+        AGENTOPS_VERSION_INPUT: ${{ inputs.version }}
+      run: |
+        if [ -n "$AGENTOPS_PATH" ]; then
+          echo "bin=$AGENTOPS_PATH" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        dir="$RUNNER_TEMP/agentops-bin"
+        mkdir -p "$dir"
+        version="$AGENTOPS_VERSION_INPUT"
+        [ "$version" = "latest" ] && version=""
+        AGENTOPS_INSTALL_DIR="$dir" AGENTOPS_VERSION="$version" sh "$GITHUB_ACTION_PATH/install.sh"
+        echo "bin=$dir/agentops" >> "$GITHUB_OUTPUT"
+
+    - name: Run AgentOps gate
+      id: gate
+      shell: bash
+      env:
+        AGENTOPS_BIN: ${{ steps.install.outputs.bin }}
+        AGENTOPS_ARTIFACTS: ${{ inputs.artifact }}
+        AGENTOPS_CONFIG: ${{ inputs.config }}
+        # The comment step must run even when the gate fails, so failing is deferred.
+        AGENTOPS_FAIL_ON_GATE: "false"
+      run: bash "$GITHUB_ACTION_PATH/scripts/github-action.sh"
+
+    - name: Post sticky PR comment
+      if: inputs.comment == 'true' && github.event.pull_request.number
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPORT: ${{ steps.gate.outputs.report }}
+      run: |
+        marker='<!-- agentops-gate -->'
+        existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)"
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$REPORT" > /dev/null
+        else
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@"$REPORT" > /dev/null
+        fi
+
+    - name: Enforce gate
+      if: inputs.fail-on-gate == 'true' && steps.gate.outputs.status == 'failed'
+      shell: bash
+      run: |
+        echo "::error::AgentOps quality gate failed for ${{ steps.gate.outputs.failed }} artifact(s)."
+        exit 1

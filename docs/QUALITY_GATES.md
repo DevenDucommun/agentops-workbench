@@ -30,7 +30,8 @@ GitHub-ready comment body:
 ./bin/agentops save pr
 ```
 
-The GitHub format is stdout/file only. AgentOps does not post comments.
+The GitHub format is stdout/file only. The CLI does not post comments; the
+[GitHub Action](#github-action) can, when you opt in.
 
 ## Default Gates
 
@@ -67,10 +68,61 @@ example, `"lint"` matches `bun run lint`.
 
 `generatedFilePatterns` is a simple case-insensitive path substring match.
 
-## GitHub Actions
+## GitHub Action
 
-AgentOps remains local-first in CI. A minimal workflow can capture or restore a
-session artifact, import it, run gates, and upload only generated reports:
+The repository is itself a GitHub Action. It installs a pinned AgentOps
+release binary, audits each artifact, runs `agentops check --format github`,
+writes the results to the job summary, and fails the job when any gate fails:
+
+```yaml
+name: AgentOps Gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agentops-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Produce or restore the agent run artifact here, for example:
+      # codex exec --json "review the current diff" > codex-session.jsonl
+      - uses: DevenDucommun/agentops-workbench@main  # pin a release tag once one includes the action
+        with:
+          artifact: codex-session.jsonl
+          version: v3.1.0
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `artifact` | required | Artifact paths or globs, newline- or space-separated. A path that matches nothing fails the gate. |
+| `version` | `latest` | AgentOps release tag to install. Pin it for reproducible gates. |
+| `agentops-path` | empty | Use an existing `agentops` executable instead of installing. |
+| `config` | `agentops.config.json` | Config used by both `audit` and `check`. |
+| `fail-on-gate` | `true` | Fail the job when any gate fails. |
+| `comment` | `false` | Post or update one sticky PR comment with the result. Needs `pull-requests: write`. |
+| `github-token` | `github.token` | Token used only for `comment`. |
+
+Outputs: `status` (`passed` or `failed`), `failed` (count of failing
+artifacts), and `report` (path to the combined Markdown report).
+
+The CLI never posts to GitHub. Only the Action posts, and only with
+`comment: true`. The sticky comment starts with `<!-- agentops-gate -->` and is
+updated in place on later runs.
+
+Artifacts are treated as untrusted input. The Action keeps its SQLite
+databases and reports under `$RUNNER_TEMP`, never in the repository checkout,
+and it never uses artifact content (such as session ids) in file paths,
+command arguments, or log output. A malformed artifact fails only its own gate;
+the remaining artifacts are still checked.
+
+## Manual CI Workflow
+
+Without the Action, a workflow can import an artifact, run the gates, and
+upload only the generated reports:
 
 ```yaml
 name: AgentOps Gate

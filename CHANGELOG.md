@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- **GitHub Action** (`action.yml`): `uses: DevenDucommun/agentops-workbench@<ref>`
+  installs a pinned AgentOps release, audits each artifact, runs
+  `agentops check --format github`, writes the result to the job summary, and
+  fails the job when a gate fails. It has an opt-in sticky PR comment and the
+  outputs `status`, `failed` and `report`. Artifacts are treated as untrusted:
+  state stays under `$RUNNER_TEMP`, and artifact content never reaches paths,
+  arguments or logs. See `docs/QUALITY_GATES.md#github-action`.
+
 ### Changed
 
 - Dev tooling: Biome 1.9.4 → 2.5.13 (config migrated to the v2 schema) and

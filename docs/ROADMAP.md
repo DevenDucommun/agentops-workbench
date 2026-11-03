@@ -42,7 +42,8 @@ themselves.
 - A composite action (`action.yml` at the repo root) usable as
   `uses: DevenDucommun/agentops-workbench@v3`.
 - Inputs: `artifact` (path or glob to a Codex/Claude JSONL capture),
-  `version` (pinned AgentOps release, defaulting to the action's own tag),
+  `version` (AgentOps release to install; defaults to `latest`, pin it for
+  reproducible gates),
   `config` (optional `agentops.config.json`), and `comment` (`false` by default).
 - Steps: install the pinned standalone binary, run
   `agentops audit <artifact> --quiet`, run `agentops check --format github`,
