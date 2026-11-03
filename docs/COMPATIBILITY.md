@@ -1,6 +1,6 @@
 # Compatibility Policy
 
-Status: stable for `v3.1.0`.
+Status: stable for `v3.2.0`.
 
 AgentOps Workbench is a local-first review tool. Version `v1.0.0` froze the
 practical contract for post-hoc ingestion, local storage migration, reports,

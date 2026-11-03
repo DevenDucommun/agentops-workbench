@@ -12,9 +12,9 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ## Status
 
-- Latest published release: [`v3.1.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.1.0) — one-command install: standalone binaries via `curl | sh` (no Bun, no clone)
-- Current `main`: v3.1.0 plus maintenance (Biome lint gate, dependency and adapter refreshes)
-- Next: v3.2.0 (proposed) ships `agentops check` as a GitHub Action for PR gating and closes the retry/stall detection gap. After that come team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
+- Latest published release: [`v3.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.2.0) — `agentops check` as a [GitHub Action](#github-action) for PR gating; adapters checked against Codex CLI 0.166 and Claude Code 2.1. Install is still one command: standalone binaries via the installer script (no Bun, no clone)
+- Current `main`: tracks the latest release
+- Next (proposed): retry/stall detection carried over from v3.2, then team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
 - Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
 - Distribution model: standalone self-contained binaries (macOS/Linux, arm64/x64) via the `curl | sh` installer or release download; source clone with Bun for development; npm publication still deferred
@@ -246,7 +246,7 @@ surfaces and experimental boundaries.
 Gate pull requests on an agent run artifact:
 
 ```yaml
-- uses: DevenDucommun/agentops-workbench@main  # pin a release tag once one includes the action
+- uses: DevenDucommun/agentops-workbench@v3.2.0
   with:
     artifact: codex-session.jsonl
 ```
