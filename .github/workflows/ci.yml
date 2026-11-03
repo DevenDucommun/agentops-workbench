@@ -168,7 +168,7 @@ jobs:
         id: gate
         uses: ./
         with:
-          version: v3.1.0
+          version: v3.2.0
           artifact: fixtures/sample-session.jsonl
 
       - name: Assert gate passed
