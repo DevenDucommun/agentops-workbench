@@ -74,7 +74,8 @@ export const claudeCodeStreamJsonlAdapter: Adapter = {
   displayName: "Claude Code Stream JSON",
   artifactHint: "Native claude -p --output-format stream-json JSONL stream",
   detect(input) {
-    const first = firstJsonRecord(input.content);
+    // Claude Code 2.x streams SessionStart hook_started/hook_response records before init.
+    const first = firstJsonRecord(input.content, isClaudeHookRecord);
     if (first?.type === "system" && first?.subtype === "init" && typeof first.session_id === "string") {
       return { matched: true, confidence: 1, reason: "found Claude Code stream init event" };
     }
@@ -146,13 +147,29 @@ export function resolveAdapter(input: AdapterInput, adapterId?: string): Adapter
   return detected[0].adapter;
 }
 
-function firstJsonRecord(input: string): Record<string, unknown> | null {
-  const first = input.split(/\r?\n/).find((line) => line.trim().length > 0);
-  if (!first) return null;
+const MAX_SKIPPED_LEADING_RECORDS = 200;
+
+function firstJsonRecord(input: string, skip?: (record: Record<string, unknown>) => boolean): Record<string, unknown> | null {
+  const lines = input.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  let fallback: Record<string, unknown> | null = null;
+  for (const [index, line] of lines.entries()) {
+    const record = parseJsonObject(line);
+    if (!record) return index === 0 ? null : fallback;
+    if (!skip?.(record) || index >= MAX_SKIPPED_LEADING_RECORDS) return record;
+    fallback ??= record;
+  }
+  return fallback;
+}
+
+function parseJsonObject(line: string): Record<string, unknown> | null {
   try {
-    const parsed = JSON.parse(first) as unknown;
+    const parsed = JSON.parse(line) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+function isClaudeHookRecord(record: Record<string, unknown>): boolean {
+  return record.type === "system" && typeof record.subtype === "string" && record.subtype.startsWith("hook_");
 }
