@@ -10,17 +10,6 @@ It is built for post-hoc review of Claude Code, Codex, PAI/KAI-style, and other 
 
 ![AgentOps Workbench decision dashboard](docs/assets/dashboard-v2.0.0-ready.png)
 
-## Status
-
-- Latest published release: [`v3.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.2.0) — `agentops check` as a [GitHub Action](#github-action) for PR gating; adapters checked against Codex CLI 0.166 and Claude Code 2.1. Install is still one command: standalone binaries via the installer script (no Bun, no clone)
-- Current `main`: tracks the latest release
-- Next (proposed): retry/stall detection carried over from v3.2, then team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
-- Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
-- Runtime model: local CLI, local SQLite, stdout reports
-- Distribution model: standalone self-contained binaries (macOS/Linux, arm64/x64) via the `curl | sh` installer or release download; source clone with Bun for development; npm publication still deferred
-- Native Codex exec JSONL ingestion: implemented
-- Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
-
 ## Problem
 
 AI coding agents can execute long, high-impact workflows across files, shell commands, MCP tools, tests, and external systems. The transcript usually contains the truth, but it is hard to inspect after the fact.
@@ -34,6 +23,27 @@ Engineering leaders need a compact answer to:
 - How long did it take and how much did it cost?
 - Where did it retry, stall, or change direction?
 - Is the output good enough to trust?
+
+AgentOps answers those questions from the run's own event stream and turns them into a merge-readiness decision: **ready**, **needs review**, or **blocked**.
+
+## Status
+
+- Latest release: [`v3.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.2.0) — `agentops check` ships as a [GitHub Action](#github-action) that fails a pull request when the agent run behind it lacks verification evidence
+- Install: one command, standalone binaries for macOS and Linux (no Bun, no clone)
+- Next (proposed): retry/stall detection, team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
+
+<details>
+<summary>Technical status</summary>
+
+- Current `main`: tracks the latest release
+- Adapters checked against Codex CLI 0.166 and Claude Code 2.1
+- Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
+- Runtime model: local CLI, local SQLite, stdout reports
+- Distribution model: standalone self-contained binaries (macOS/Linux, arm64/x64) via the `curl | sh` installer or release download; source clone with Bun for development; npm publication still deferred
+- Native Codex exec JSONL ingestion: implemented
+- Native Claude Code stream JSON ingestion: implemented with synthetic fixture coverage
+
+</details>
 
 ## Install
 
