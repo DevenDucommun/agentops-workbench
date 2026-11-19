@@ -52,6 +52,14 @@ adapter diagnostics, new commands, or new config keys with defaults. Breaking
 changes to stable surfaces require a new major version or an explicit migration
 path.
 
+The optional chain and provenance event fields (`eventId`, `seq`, `prevHash`,
+`hash`, `cwd`, `gitHead`, `toolUseId`, `parentToolUseId`, `agentId`,
+`contentHash`) are such an addition to `agentops.event.v1`. Inputs without them
+import unchanged, and inputs with them produce the same reports. The canonical
+JSON and hash format documented in [Event schema](EVENT_SCHEMA.md#chain-and-provenance-fields)
+is part of the stable contract once a release ships it, because stored chains
+must keep verifying.
+
 The `v1.1.0` capture commands are additive CLI workflows. They create local
 artifacts for existing native stream adapters and do not expand the supported
 input boundary to private transcript folders or hosted capture.
