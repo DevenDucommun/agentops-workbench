@@ -237,6 +237,6 @@ error prefixes. Keep the observed event order, including subagent events
 between `PreToolUse:Agent` and `PostToolUse:Agent`, and a `PostToolBatch`
 after each turn.
 
-The failing-test fixture must use `PostToolUseFailure`. The risky-session
-fixture needs a long single-token output, to cover the redaction cost
-regression.
+The failing-test fixture must use `PostToolUseFailure`. The redaction cost
+regression input (a 20 KB single token) belongs in the T1.3 redaction test,
+generated in code, rather than in a committed fixture.
