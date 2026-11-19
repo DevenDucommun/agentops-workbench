@@ -28,7 +28,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "agentops": "bun ./src/cli.ts",
+    "agentops": "bun ./src/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src/",
     "build:binaries": "bun ./scripts/build-binaries.ts",
@@ -37,7 +37,8 @@
     "smoke:demo-artifacts": "bun ./scripts/generate-demo-artifacts.ts --check",
     "smoke:dashboard": "bun ./scripts/smoke-dashboard.ts",
     "smoke:large-session": "bun ./scripts/smoke-large-session.ts",
-    "ci": "bun run typecheck && bun run lint && bun test && bun run smoke:demo-artifacts && bun run scan:public",
+    "smoke:recorder": "bun ./scripts/smoke-recorder.ts",
+    "ci": "bun run typecheck && bun run lint && bun test && bun run smoke:demo-artifacts && bun run smoke:recorder && bun run scan:public",
     "test": "bun test"
   },
   "devDependencies": {

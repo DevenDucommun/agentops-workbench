@@ -20,7 +20,7 @@ for (const { asset, target } of targets) {
     "build",
     "--compile",
     `--target=${target}`,
-    "./src/cli.ts",
+    "./src/main.ts",
     "--outfile",
     outfile
   ]);
