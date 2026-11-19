@@ -6,7 +6,7 @@ Sizes are relative effort: S, M or L.
 
 ## Phase 0: Spikes
 
-- [ ] **T0.1 (M) S1 hook capture spike.** Artifact: `spike-s1.md` (hook
+- [x] **T0.1 (M) S1 hook capture spike.** Artifact: [`spike-s1.md`](spike-s1.md) (hook
   events, payload fields per event, subagent IDs, end reasons, tested Claude
   Code version, latency of binary vs. minimal writer, recommended budget).
   Verify: the field table cites real payload captures; real values are not
