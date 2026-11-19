@@ -23,12 +23,12 @@ Sizes are relative effort: S, M or L.
 - [x] **T1.1 (M) Schema fields and hashing helper.** Optional v1 fields,
   canonical JSON hash, EVENT_SCHEMA and COMPATIBILITY docs. Verify: existing
   fixture imports produce byte-identical reports (golden test).
-- [ ] **T1.2 (S) Store migration.** Chain and provenance columns plus the
+- [x] **T1.2 (S) Store migration.** Chain and provenance columns plus the
   `session_commits` table. Verify: migration test from a v3.2 database.
-- [ ] **T1.3 (M) Spool writer library.** Verify: tests for concurrency (two
+- [x] **T1.3 (M) Spool writer library.** Verify: tests for concurrency (two
   writers, continuous `seq`, valid chain) (AC5), secret grep (AC3), and an
   unwritable directory (AC4).
-- [ ] **T1.4 (M) `agentops hook <event>` entrypoint plus enrollment check.**
+- [x] **T1.4 (M) `agentops hook <event>` entrypoint plus enrollment check.**
   Verify: malformed stdin, missing enrollment (AC2) and exit code are always
   0. `smoke:recorder` reports p95 latency under budget (AC4).
 - [ ] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
