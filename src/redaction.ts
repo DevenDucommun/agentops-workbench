@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 const redactionRules: Array<[string, RegExp]> = [
   ["local-path", /(?:\/Users\/|\/home\/|\/Volumes\/)[^\s)`'"]+/g],
-  ["email", /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g],
+  // Bounded (RFC 5321 lengths) so long runs without "@" stay linear-time.
+  ["email", /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}/g],
   ["aws-access-key", /AKIA[0-9A-Z]{16}/g],
   ["openai-style-key", /sk-[A-Za-z0-9_-]{20,}/g],
   ["github-token", /ghp_[A-Za-z0-9_]{20,}/g],
