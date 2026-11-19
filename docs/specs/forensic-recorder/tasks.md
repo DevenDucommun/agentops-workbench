@@ -11,8 +11,8 @@ Sizes are relative effort: S, M or L.
   Code version, latency of binary vs. minimal writer, recommended budget).
   Verify: the field table cites real payload captures; real values are not
   committed.
-- [ ] **T0.2 (S) Synthetic hook fixtures.** Artifact:
-  `fixtures/claude-hooks/*.jsonl` (clean session, risky session, subagent
+- [x] **T0.2 (S) Synthetic hook fixtures.** Artifact:
+  [`fixtures/claude-hooks/*.jsonl`](../../../fixtures/claude-hooks/) (clean session, risky session, subagent
   session, failing-test session, commit session). Verify: `bun run
   scan:public` clean.
 - [ ] **T0.3 (S) S2 Codex capture decision note.** Artifact: `spike-s2.md`.
@@ -20,7 +20,7 @@ Sizes are relative effort: S, M or L.
 
 ## M1: Recorder (v3.3.0)
 
-- [ ] **T1.1 (M) Schema fields and hashing helper.** Optional v1 fields,
+- [x] **T1.1 (M) Schema fields and hashing helper.** Optional v1 fields,
   canonical JSON hash, EVENT_SCHEMA and COMPATIBILITY docs. Verify: existing
   fixture imports produce byte-identical reports (golden test).
 - [ ] **T1.2 (S) Store migration.** Chain and provenance columns plus the
