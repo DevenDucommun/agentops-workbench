@@ -1,7 +1,7 @@
 # Roadmap: v3.2 and later
 
 Status: **proposed**. Nothing below is committed until it has a tracking issue
-and a milestone. Last reviewed: 2026-11-02.
+and a milestone. Last reviewed: 2026-11-19.
 
 The v1.x–v3.1 roadmaps are complete and archived in
 [docs/archive/ROADMAP.md](archive/ROADMAP.md) and
@@ -21,6 +21,26 @@ Every milestone below keeps these defaults:
 - Deterministic evidence first. Any model-based judgement sits on top of
   recorded evidence and cites it.
 - Synthetic or redacted fixtures only.
+
+## Re-sequenced 2026-11-19: forensic recorder first (proposed)
+
+Capture is the bottleneck. AgentOps only sees a run when someone remembered to
+capture it, and every later feature needs recorder data. The next releases
+make recording automatic and use the record for forensics. Full spec, plan and
+ordered tasks:
+[docs/specs/forensic-recorder/](specs/forensic-recorder/spec.md).
+
+| Release | Milestone | Answers |
+|---------|-----------|---------|
+| v3.3.0 | Recorder: Claude Code plugin using documented hooks, with redaction at write time and hash-chained per-session spools | What did this session do? (no manual capture) |
+| v3.4.0 | Evidence ledger: claims cite events as supported/unsupported/contradicted; retry/stall rules; blocked-attempt policy (the v3.2 carry-over) | Did its claims have evidence? |
+| v3.5.0 | Provenance: `agentops blame`, commit to session mapping | Which session wrote this line? |
+| v3.6.0 | Integrity: `agentops verify`, offline evidence bundles | Has the record been altered? |
+| v3.7.0 | Telemetry: `agentops trends`, dashboard trends, OTLP export | Where do agents retry, stall or skip verification? |
+
+The sections below on policy packs, evidence-backed review and OTLP move after
+v3.7.0. OTLP export folds into the v3.7.0 telemetry milestone. The original
+text is kept for scope reference.
 
 ## Shipped in v3.2.0: maintenance
 
@@ -63,8 +83,8 @@ fixture, and fails the job on a fixture that should be blocked
 treated as untrusted, and state stays under `$RUNNER_TEMP`, never in the
 checkout.
 
-**Still open from v3.2, carried to the next release (proposed, not yet
-scheduled):**
+**Still open from v3.2, now scheduled in the v3.4.0 evidence ledger
+(proposed):**
 
 - **Retry and stall detection.** The README lists "Stalls/retries/loops" as a
   report section, but no analyzer rule produces it today. Add deterministic
@@ -74,7 +94,7 @@ scheduled):**
   blocked as `declined`. Decide whether a declined destructive command should
   stay a high-severity gate failure or drop to an informational flag.
 
-## v3.3.0: Team policy packs (proposed)
+## After v3.7.0: Team policy packs (proposed; was v3.3.0)
 
 **Why:** sensitive paths, required verification commands, and suppressions
 live in one local config file, and the risk patterns are hardcoded in
@@ -98,7 +118,7 @@ documented, and existing configs work unchanged.
 
 **Not in scope:** fetching packs over the network or from a registry.
 
-## v3.4.0: Evidence-backed review (proposed)
+## After v3.7.0: Evidence-backed review (proposed; was v3.4.0, builds on the v3.4.0 ledger)
 
 **Why:** deterministic gates catch missing evidence. They can't judge whether
 the evidence actually supports the agent's claims. This was "LLM-as-judge
@@ -121,14 +141,15 @@ evaluation backed by deterministic evidence" in the archived later list.
 fixtures, the discard rule for citation-free verdicts is tested, and a run
 with judge disabled is byte-for-byte unchanged.
 
-## v3.5.0: OTLP export (proposed, gated on demand)
+## OTLP export (folded into v3.7.0 telemetry; was v3.5.0)
 
 **Why:** `save json --format openinference` already writes an
 OpenInference-style JSON span bundle. OTLP would let AgentOps evidence flow
 into existing trace backends.
 
-**Gate:** start this only when at least one user asks for collector
-ingestion. The archived roadmap set the same condition, and it still holds.
+**Gate:** the file-only `save otlp` writer ships with v3.7.0 telemetry,
+because the recorder corpus makes it useful locally. The `--endpoint` upload
+still waits until at least one user asks for collector ingestion.
 
 **Scope:**
 
