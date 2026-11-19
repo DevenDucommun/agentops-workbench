@@ -26,6 +26,12 @@ export type SpoolOptions = {
   staleLockMs?: number;
   /** Clock override for tests. */
   now?: () => Date;
+  /**
+   * Repository roots (real path first, then any logical alias the agent used).
+   * Paths inside them are stored repo-relative, before redaction would replace
+   * an absolute home path with [REDACTED:local-path].
+   */
+  repoRoots?: string[];
 };
 
 export type AppendResult =
@@ -65,9 +71,11 @@ export function spoolPath(dir: string, sessionId: string): string | null {
  * lifts the identifiers the adapter needs, computes content hashes, then
  * redacts and privacy-transforms the payload.
  */
-export function buildSpoolRecord(payload: Record<string, unknown>, options: SpoolOptions = {}): RawEvent {
+export function buildSpoolRecord(original: Record<string, unknown>, options: SpoolOptions = {}): RawEvent {
   const now = (options.now ?? (() => new Date()))();
   const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const roots = (options.repoRoots ?? []).filter((r) => r.startsWith("/") && r.length > 1);
+  const payload = roots.length > 0 ? (relativizePaths(original, roots) as Record<string, unknown>) : original;
   const toolInput = isRecord(payload.tool_input) ? payload.tool_input : undefined;
   const toolResponse = isRecord(payload.tool_response) ? payload.tool_response : undefined;
 
@@ -92,6 +100,11 @@ export function buildSpoolRecord(payload: Record<string, unknown>, options: Spoo
   if (written !== undefined) record.contentHash = sha256(written.content);
   const addedLines = written?.addedLines ?? [];
   if (addedLines.length > 0) record.addedLineHashes = addedLines.slice(0, MAX_LINE_HASHES).map((line) => sha256(line.replace(/\r$/, "")));
+  // Churn and the touched path are kept as plain fields: the patch lines and contents are hashed below.
+  const churn = lineChurn(toolInput, toolResponse);
+  if (churn) Object.assign(record, churn);
+  const path = str(toolInput?.file_path) ?? str(toolInput?.notebook_path) ?? str(toolInput?.path);
+  if (path) record.path = path;
 
   record.payload = transformPayload(payload, options.storeRawPayload === true, "");
   for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key];
@@ -209,6 +222,37 @@ function transformPayload(value: unknown, keepRaw: boolean, key: string): unknow
   }
   if (!keepRaw && typeof value === "string" && CONTENT_KEYS.has(key)) return digest(value);
   return value;
+}
+
+const PATH_KEYS = new Set(["cwd", "file_path", "filePath", "notebook_path", "path"]);
+
+/** Rewrites path-valued fields inside any of `roots` as repo-relative ("." for the root itself). */
+function relativizePaths(value: unknown, roots: string[], key = ""): unknown {
+  if (Array.isArray(value)) return value.map((item) => relativizePaths(item, roots));
+  if (isRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = relativizePaths(v, roots, k);
+    return out;
+  }
+  if (typeof value === "string" && PATH_KEYS.has(key)) {
+    for (const root of roots) {
+      if (value === root) return ".";
+      if (value.startsWith(`${root}/`)) return value.slice(root.length + 1);
+    }
+  }
+  return value;
+}
+
+/** Lines added and removed by a Write or Edit, from its structured patch (or the written content for a new file). */
+function lineChurn(input: Record<string, unknown> | undefined, response: Record<string, unknown> | undefined): { linesAdded: number; linesRemoved: number } | undefined {
+  const patch = Array.isArray(response?.structuredPatch) ? response.structuredPatch : undefined;
+  if (patch === undefined) return undefined;
+  const lines = patch.flatMap((hunk) => (isRecord(hunk) && Array.isArray(hunk.lines) ? hunk.lines : [])).filter((l): l is string => typeof l === "string");
+  if (lines.length === 0 && response?.type === "create" && typeof input?.content === "string") {
+    const text = input.content;
+    return { linesAdded: text === "" ? 0 : text.replace(/\n$/, "").split("\n").length, linesRemoved: 0 };
+  }
+  return { linesAdded: lines.filter((l) => l.startsWith("+")).length, linesRemoved: lines.filter((l) => l.startsWith("-")).length };
 }
 
 function digest(text: string) {

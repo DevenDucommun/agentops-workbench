@@ -31,7 +31,7 @@ Sizes are relative effort: S, M or L.
 - [x] **T1.4 (M) `agentops hook <event>` entrypoint plus enrollment check.**
   Verify: malformed stdin, missing enrollment (AC2) and exit code are always
   0. `smoke:recorder` reports p95 latency under budget (AC4).
-- [ ] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
+- [x] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
   T0.2 fixtures ingest. `look` shows tool calls, files and commands. The
   commit fixture links its SHA (AC6).
 - [ ] **T1.6 (S) Optional end-of-session verdict line.** Verify: off by
