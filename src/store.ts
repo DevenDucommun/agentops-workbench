@@ -111,7 +111,39 @@ export function migrate(db: Database): void {
   addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
   addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
+
+  // Forensic recorder (spec R1.5, R1.8, R4.3): chain and provenance fields,
+  // the session chain head, and commit links. All nullable, so legacy rows and
+  // older binaries keep working.
+  for (const [column, definition] of eventChainColumns) addColumnIfMissing(db, "events", column, definition);
+  addColumnIfMissing(db, "sessions", "chain_head_hash", "TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_commits (
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      sha TEXT NOT NULL,
+      branch TEXT,
+      kind TEXT,
+      source TEXT NOT NULL,
+      event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+      PRIMARY KEY (session_id, sha)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_commits_sha ON session_commits(sha);
+    CREATE INDEX IF NOT EXISTS idx_events_content_hash ON events(content_hash);
+  `);
 }
+
+const eventChainColumns: Array<[string, string]> = [
+  ["event_uid", "TEXT"],
+  ["seq", "INTEGER"],
+  ["prev_hash", "TEXT"],
+  ["event_hash", "TEXT"],
+  ["cwd", "TEXT"],
+  ["git_head", "TEXT"],
+  ["tool_use_id", "TEXT"],
+  ["parent_tool_use_id", "TEXT"],
+  ["agent_id", "TEXT"],
+  ["content_hash", "TEXT"]
+];
 
 export function ingestTranscript(
   store: Store,
@@ -133,8 +165,14 @@ export function ingestTranscript(
     )
   `);
   const insertEvent = db.query(`
-    INSERT INTO events (session_id, idx, type, role, summary, raw_payload_hash, raw_json)
-    VALUES ($sessionId, $idx, $type, $role, $summary, $rawPayloadHash, $rawJson)
+    INSERT INTO events (
+      session_id, idx, type, role, summary, raw_payload_hash, raw_json,
+      event_uid, seq, prev_hash, event_hash, cwd, git_head, tool_use_id, parent_tool_use_id, agent_id, content_hash
+    )
+    VALUES (
+      $sessionId, $idx, $type, $role, $summary, $rawPayloadHash, $rawJson,
+      $eventUid, $seq, $prevHash, $eventHash, $cwd, $gitHead, $toolUseId, $parentToolUseId, $agentId, $contentHash
+    )
     RETURNING id
   `);
   const insertCommand = db.query(`
@@ -181,7 +219,8 @@ export function ingestTranscript(
         $role: typeof event.role === "string" ? event.role : null,
         $summary: summarizeEvent(event),
         $rawPayloadHash: config.privacy.hashRawPayload ? sha256(rawJson) : null,
-        $rawJson: config.privacy.storeRawPayload ? rawJson : ""
+        $rawJson: config.privacy.storeRawPayload ? rawJson : "",
+        ...eventChainParams(event)
       }) as { id: number };
 
       const command = extractCommand(event);
@@ -390,6 +429,104 @@ function categorizeTool(toolName: string, eventType: string): ToolCallRecord["ca
   if (toolName.startsWith("mcp__")) return "mcp";
   if (["Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "apply_patch"].includes(toolName) || eventType.startsWith("file_")) return "file";
   return "other";
+}
+
+// Only well-typed values are stored; anything else becomes NULL.
+function eventChainParams(event: RawEvent) {
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  return {
+    $eventUid: text(event.eventId),
+    $seq: Number.isSafeInteger(event.seq) ? (event.seq as number) : null,
+    $prevHash: text(event.prevHash),
+    $eventHash: text(event.hash),
+    $cwd: text(event.cwd),
+    $gitHead: text(event.gitHead),
+    $toolUseId: text(event.toolUseId),
+    $parentToolUseId: text(event.parentToolUseId),
+    $agentId: text(event.agentId),
+    $contentHash: text(event.contentHash)
+  };
+}
+
+export type EventChainRow = {
+  id: number;
+  idx: number;
+  eventUid: string | null;
+  seq: number | null;
+  prevHash: string | null;
+  eventHash: string | null;
+  cwd: string | null;
+  gitHead: string | null;
+  toolUseId: string | null;
+  parentToolUseId: string | null;
+  agentId: string | null;
+  contentHash: string | null;
+};
+
+export function getEventChain(store: Store, sessionId: string): EventChainRow[] {
+  return store.db
+    .query(
+      `SELECT id, idx, event_uid AS eventUid, seq, prev_hash AS prevHash, event_hash AS eventHash, cwd,
+        git_head AS gitHead, tool_use_id AS toolUseId, parent_tool_use_id AS parentToolUseId,
+        agent_id AS agentId, content_hash AS contentHash
+      FROM events WHERE session_id = $sessionId ORDER BY idx`
+    )
+    .all({ $sessionId: sessionId }) as EventChainRow[];
+}
+
+export type SessionCommit = {
+  sessionId: string;
+  sha: string;
+  branch: string | null;
+  kind: string | null;
+  source: "tool" | "trailer";
+  eventId: number | null;
+};
+
+/** Links a commit to a session (R1.8). Re-linking the same SHA updates the row. */
+export function linkSessionCommit(store: Store, commit: SessionCommit): void {
+  if (!/^[0-9a-f]{7,64}$/i.test(commit.sha)) throw new Error(`linkSessionCommit: not a commit SHA: ${commit.sha}`);
+  store.db
+    .query(
+      `INSERT INTO session_commits (session_id, sha, branch, kind, source, event_id)
+      VALUES ($sessionId, $sha, $branch, $kind, $source, $eventId)
+      ON CONFLICT (session_id, sha) DO UPDATE SET
+        branch = excluded.branch, kind = excluded.kind, source = excluded.source, event_id = excluded.event_id`
+    )
+    .run({
+      $sessionId: commit.sessionId,
+      $sha: commit.sha.toLowerCase(),
+      $branch: commit.branch,
+      $kind: commit.kind,
+      $source: commit.source,
+      $eventId: commit.eventId
+    });
+}
+
+export function getSessionCommits(store: Store, sessionId: string): SessionCommit[] {
+  return store.db
+    .query(
+      `SELECT session_id AS sessionId, sha, branch, kind, source, event_id AS eventId
+      FROM session_commits WHERE session_id = $sessionId ORDER BY rowid`
+    )
+    .all({ $sessionId: sessionId }) as SessionCommit[];
+}
+
+/**
+ * Sessions linked to a commit. SHAs of 7+ hex characters match by prefix in
+ * either direction, because Claude Code reports short SHAs (spike S1).
+ */
+export function findSessionsForCommit(store: Store, sha: string): SessionCommit[] {
+  if (!/^[0-9a-f]{7,64}$/i.test(sha)) return [];
+  const needle = sha.toLowerCase();
+  return store.db
+    .query(
+      `SELECT session_id AS sessionId, sha, branch, kind, source, event_id AS eventId
+      FROM session_commits
+      WHERE sha LIKE $prefix OR (length(sha) < length($sha) AND substr($sha, 1, length(sha)) = sha)
+      ORDER BY rowid`
+    )
+    .all({ $sha: needle, $prefix: `${needle}%` }) as SessionCommit[];
 }
 
 function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
