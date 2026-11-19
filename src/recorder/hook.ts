@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { basename, join, relative, sep } from "node:path";
 import { defaultStateDir, enrolledRepository } from "./enrollment";
 import { appendHookPayload, writeRecorderError } from "./spool";
 
@@ -10,7 +10,7 @@ import { appendHookPayload, writeRecorderError } from "./spool";
 // without loading the rest of the CLI (spike S1 latency budget).
 
 export type HookOutcome =
-  | { recorded: true; seq: number }
+  | { recorded: true; seq: number; repository: string; spoolFile: string; hookEventName: string }
   | { recorded: false; reason: "malformed-input" | "not-enrolled" | "append-failed"; detail?: string };
 
 export type HookOptions = { stateDir?: string; env?: NodeJS.ProcessEnv };
@@ -33,9 +33,36 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
   if (!repository) return { recorded: false, reason: "not-enrolled" };
 
   if (typeof payload.hook_event_name !== "string" && eventArg) payload.hook_event_name = eventArg;
-  const result = appendHookPayload(join(stateDir, "spool"), payload, { storeRawPayload: storeRawPayload(repository) });
-  if (result.ok) return { recorded: true, seq: result.seq };
+  const result = appendHookPayload(join(stateDir, "spool"), payload, {
+    storeRawPayload: storeRawPayload(repository),
+    repoRoots: repositoryRoots(repository, cwd)
+  });
+  if (result.ok) return { recorded: true, seq: result.seq, repository, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
   return { recorded: false, reason: "append-failed", detail: result.detail };
+}
+
+/** The enrolled root plus the same root as the agent spelled it (it may differ by symlinks, e.g. /tmp vs /private/tmp). */
+function repositoryRoots(repository: string, cwd: string): string[] {
+  try {
+    const rel = relative(repository, realpathSync(cwd));
+    if (rel === "") return cwd === repository ? [repository] : [repository, cwd];
+    if (!rel.startsWith("..") && cwd.endsWith(`${sep}${rel}`)) return [repository, cwd.slice(0, -(rel.length + 1))];
+  } catch {
+    // Fall back to the real root only.
+  }
+  return [repository];
+}
+
+/** Session-end ingest (R1.6): spool -> store -> analyzer, in the enrolled repository's store. Never throws. */
+export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: string): Promise<void> {
+  if (!outcome.recorded || outcome.hookEventName !== "SessionEnd") return;
+  try {
+    const { ingestSpoolFile } = await import("./ingest");
+    ingestSpoolFile(outcome.spoolFile, { repoRoot: outcome.repository });
+  } catch (error) {
+    const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
+    writeRecorderError(join(stateDir, "spool"), sid, "ingest-failed", error instanceof Error ? error.message : String(error));
+  }
 }
 
 /** `privacy.storeRawPayload` from the repository's agentops.config.json; false when absent or unreadable. */
@@ -58,6 +85,7 @@ export async function runHookCommand(args: string[]): Promise<number> {
   }
   try {
     const outcome = handleHook(args[0], stdinText);
+    await ingestAfterSessionEnd(outcome, defaultStateDir());
     if (!outcome.recorded && outcome.reason === "malformed-input") {
       const sid = /"session_id"\s*:\s*"([^"]{1,128})"/.exec(stdinText)?.[1];
       if (sid) writeRecorderError(join(defaultStateDir(), "spool"), sid, "malformed-input", outcome.detail ?? "");
