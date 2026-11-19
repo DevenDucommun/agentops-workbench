@@ -43,6 +43,18 @@ export type RawEvent = {
   startedAt?: string;
   endedAt?: string;
   usage?: UsageInput;
+  // Optional chain and provenance fields (forensic recorder, spec R1.5).
+  // `eventId` is a stable string ID, unrelated to SQLite row ids.
+  eventId?: string;
+  seq?: number;
+  prevHash?: string | null;
+  hash?: string;
+  cwd?: string;
+  gitHead?: string;
+  toolUseId?: string;
+  parentToolUseId?: string;
+  agentId?: string;
+  contentHash?: string;
   [key: string]: unknown;
 };
 

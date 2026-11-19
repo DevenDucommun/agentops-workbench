@@ -102,6 +102,48 @@ Supported MVP event types:
 }
 ```
 
+## Chain And Provenance Fields
+
+These optional event fields support the forensic recorder (see
+[forensic recorder spec](specs/forensic-recorder/spec.md), R1.5). Every
+existing input stays valid without them, and current reports ignore them.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `eventId` | string | Stable ID, unique within the session. The recorder writes `<sessionId>:<seq>`. Not the SQLite row id that reports and exports call `id` or `eventId` |
+| `seq` | integer | Position in the session's chain, starting at 1 |
+| `prevHash` | string or `null` | `hash` of the previous record; `null` on the first record (`seq` 1) |
+| `hash` | string | sha256 hex of the record's canonical JSON with `hash` itself removed |
+| `cwd` | string | Working directory when the event happened (redacted like other local paths) |
+| `gitHead` | string | Commit SHA at HEAD, when known |
+| `toolUseId` | string | Provider tool-call ID that pairs a call with its result |
+| `parentToolUseId` | string | Tool-call ID of the enclosing subagent call, for events inside a subagent |
+| `agentId` | string | Subagent ID, for events inside a subagent |
+| `contentHash` | string | sha256 hex of the file content written by a write or edit |
+
+```json
+{
+  "schemaVersion": "agentops.event.v1",
+  "type": "command",
+  "input": { "cmd": "bun test" },
+  "exitCode": 0,
+  "eventId": "s:1",
+  "seq": 1,
+  "prevHash": null,
+  "hash": "339d99d67e42f51bf0e7e38d10170359e226f9232e975fbfaa6c78d5f1f6644b"
+}
+```
+
+**Canonical JSON** (`src/eventChain.ts`): object keys sorted by UTF-16 code
+unit at every level, no whitespace, and strings and numbers serialized as
+`JSON.stringify` does. For plain JSON values this matches RFC 8785 (JCS).
+Undefined members are dropped. Non-finite numbers are rejected.
+
+**Chain rules.** `prevHash` and `seq` are part of the hashed content, so
+editing, removing or reordering a record breaks every later link. A session
+whose events carry no chain fields is `unchained` (legacy), not broken.
+Verification (`agentops verify`) is planned for M4.
+
 ## Usage Metadata
 
 Usage metadata is optional. Sources that provide token or cost data can attach a `usage` object to the session record. If no session-level usage is present, AgentOps can derive totals from event-level `usage` objects.
