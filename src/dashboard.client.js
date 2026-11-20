@@ -388,7 +388,7 @@
     function evidencePillClass(status) {
       if (status === "verified") return "ok";
       if (status === "inferred-evidence") return "neutral";
-      if (status === "missing-evidence") return "missing";
+      if (status === "missing-evidence" || status === "contradicted") return "missing";
       return "neutral";
     }
 
@@ -396,6 +396,7 @@
       if (status === "verified") return "Evidence found";
       if (status === "inferred-evidence") return "Inferred evidence";
       if (status === "missing-evidence") return "Missing evidence";
+      if (status === "contradicted") return "Contradicted";
       return "Not claimed";
     }
 
