@@ -178,7 +178,9 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
-    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalEvent.summary, observedCommands.map((command) => command.command));
+    // Claims are checked against the full final response, not the display summary.
+    const finalText = finalEvent.text ?? finalEvent.summary;
+    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalText, observedCommands.map((command) => command.command));
     for (const claim of unsupportedEvidenceClaims) {
       flags.push({
         eventId: finalEvent.id,
@@ -187,7 +189,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
         message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
       });
     }
-    if (claimsSuccess(finalEvent.summary) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
+    if (claimsSuccess(finalText) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
       flags.push({
         eventId: finalEvent.id,
         severity: "medium",

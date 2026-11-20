@@ -10,19 +10,21 @@ export type GitChange = {
 /**
  * Changes in the working tree. With `base`, changes since the merge base of
  * `base` and HEAD, committed or not, so a clean PR checkout still reports the
- * branch's edits; without it, only uncommitted work relative to HEAD.
+ * branch's edits; without it, only uncommitted work relative to HEAD. All Git
+ * output is read NUL-delimited, so every path stays literal: no quoting, and no
+ * ambiguity with names that contain " -> ", " => ", tabs or control characters.
  */
 export function getGitChanges(cwd = process.cwd(), options: { base?: string } = {}): GitChange[] {
-  const statusOutput = git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
+  const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
   if (!options.base) {
-    const numstatOutput = git(["diff", "--numstat", "HEAD", "--"], cwd);
-    return mergeGitChanges(parseGitStatus(statusOutput), parseGitNumstat(numstatOutput));
+    const numstatOutput = git(["diff", "--numstat", "-z", "HEAD", "--"], cwd);
+    return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
   }
   const mergeBase = git(["merge-base", options.base, "HEAD"], cwd).trim();
-  const committed = parseGitNameStatus(git(["diff", "--name-status", "-M", mergeBase, "--"], cwd));
-  const untracked = parseGitStatus(statusOutput).filter((change) => change.status === "??");
-  const numstatOutput = git(["diff", "--numstat", "-M", mergeBase, "--"], cwd);
-  return mergeGitChanges([...committed, ...untracked], parseGitNumstat(numstatOutput));
+  const committed = parseGitNameStatusZ(git(["diff", "--name-status", "-z", "-M", mergeBase, "--"], cwd));
+  const untracked = parseGitStatusZ(statusOutput).filter((change) => change.status === "??");
+  const numstatOutput = git(["diff", "--numstat", "-z", "-M", mergeBase, "--"], cwd);
+  return mergeGitChanges([...committed, ...untracked], parseGitNumstatZ(numstatOutput));
 }
 
 /** `git diff --name-status` output; a rename or copy reports its new path. */
@@ -35,6 +37,51 @@ export function parseGitNameStatus(input: string): GitChange[] {
       return { path: unquoteGitPath(paths.at(-1) ?? ""), status: status.charAt(0) || "M", additions: null, deletions: null };
     })
     .filter((change) => change.path.length > 0);
+}
+
+/** Parses `git diff --name-status -z`: `S\0path\0`, or `R087\0orig\0new\0` for a rename or copy. */
+export function parseGitNameStatusZ(input: string): GitChange[] {
+  const fields = input.split("\0");
+  const changes: GitChange[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const status = fields[i] as string;
+    if (!/^[A-Z][0-9]*$/.test(status)) continue;
+    if (status[0] === "R" || status[0] === "C") i++; // skip the original path
+    const path = fields[++i] ?? "";
+    if (path) changes.push({ path, status: status.charAt(0), additions: null, deletions: null });
+  }
+  return changes;
+}
+
+/** Parses `git status --porcelain=v1 -z`: `XY path\0`, with `orig\0` after a rename or copy. */
+export function parseGitStatusZ(input: string): GitChange[] {
+  const fields = input.split("\0");
+  const changes: GitChange[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i] as string;
+    if (field.length < 4) continue;
+    const status = field.slice(0, 2);
+    changes.push({ path: field.slice(3), status: status.trim() || "modified", additions: null, deletions: null });
+    if (status[0] === "R" || status[0] === "C") i++; // skip the original path
+  }
+  return changes;
+}
+
+/** Parses `git diff --numstat -z`: `add\tdel\tpath\0`, or `add\tdel\t\0orig\0new\0` for a rename. */
+export function parseGitNumstatZ(input: string): Array<Pick<GitChange, "path" | "additions" | "deletions">> {
+  const fields = input.split("\0");
+  const stats: Array<Pick<GitChange, "path" | "additions" | "deletions">> = [];
+  for (let i = 0; i < fields.length; i++) {
+    const match = /^([^\t]*)\t([^\t]*)\t([\s\S]*)$/.exec(fields[i] as string);
+    if (!match) continue;
+    let path = match[3] as string;
+    if (path === "") {
+      i += 2; // rename: original, then new path
+      path = fields[i] ?? "";
+    }
+    if (path) stats.push({ path, additions: parseNumstatCount(match[1]), deletions: parseNumstatCount(match[2]) });
+  }
+  return stats;
 }
 
 export function parseGitStatus(input: string): GitChange[] {

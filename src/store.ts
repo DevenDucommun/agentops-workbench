@@ -13,7 +13,7 @@ import type {
   UsageInput,
   UsageSummary
 } from "./types";
-import { extractCommand, extractPath, summarizeEvent } from "./parser";
+import { extractCommand, extractPath, finalResponseText, summarizeEvent } from "./parser";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { sha256 } from "./redaction";
@@ -111,6 +111,7 @@ export function migrate(db: Database): void {
   addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
   addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
+  addColumnIfMissing(db, "events", "text", "TEXT");
 
   // Forensic recorder (spec R1.5, R1.8, R4.3): chain and provenance fields,
   // the session chain head, and commit links. All nullable, so legacy rows and
@@ -166,11 +167,11 @@ export function ingestTranscript(
   `);
   const insertEvent = db.query(`
     INSERT INTO events (
-      session_id, idx, type, role, summary, raw_payload_hash, raw_json,
+      session_id, idx, type, role, summary, text, raw_payload_hash, raw_json,
       event_uid, seq, prev_hash, event_hash, cwd, git_head, tool_use_id, parent_tool_use_id, agent_id, content_hash
     )
     VALUES (
-      $sessionId, $idx, $type, $role, $summary, $rawPayloadHash, $rawJson,
+      $sessionId, $idx, $type, $role, $summary, $text, $rawPayloadHash, $rawJson,
       $eventUid, $seq, $prevHash, $eventHash, $cwd, $gitHead, $toolUseId, $parentToolUseId, $agentId, $contentHash
     )
     RETURNING id
@@ -218,6 +219,7 @@ export function ingestTranscript(
         $type: type,
         $role: typeof event.role === "string" ? event.role : null,
         $summary: summarizeEvent(event),
+        $text: finalResponseText(event),
         $rawPayloadHash: config.privacy.hashRawPayload ? sha256(rawJson) : null,
         $rawJson: config.privacy.storeRawPayload ? rawJson : "",
         ...eventChainParams(event)
@@ -358,7 +360,7 @@ export function getUsageSummary(store: Store, sessionId: string): UsageSummary {
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
   return store.db
     .query(
-      "SELECT id, idx, type, role, summary, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
+      "SELECT id, idx, type, role, summary, text, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
     )
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
