@@ -57,7 +57,7 @@ test("buildEvidenceQuality distinguishes structured JSONL from forensic text", a
   await ingest("fixtures/sample-session.jsonl", "fixtures/forensic-terminal-transcript.txt");
   const store = openStore();
   const structured = getDashboardSession(store, "sample-session", defaultConfig);
-  const forensic = getDashboardSession(store, "forensic-terminal-transcript-7c188a0d", defaultConfig);
+  const forensic = getDashboardSession(store, "forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164", defaultConfig);
   store.db.close();
 
   expect(structured!.evidenceQuality.level).toBe("structured");

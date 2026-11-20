@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { getGitChanges, mergeGitChanges, parseGitNameStatus, parseGitNumstat, parseGitStatus } from "../src/git";
+import { getGitChanges, mergeGitChanges, parseGitNameStatus, parseGitNameStatusZ, parseGitNumstat, parseGitStatus } from "../src/git";
 
 test("parses porcelain status output", () => {
   const changes = parseGitStatus([" M src/cli.ts", "A  docs/example.md", "?? fixtures/new.jsonl"].join("\n"));
@@ -73,6 +73,11 @@ test("parses name-status output, keeping the new path of a rename", () => {
     { path: "src/a.ts", status: "M", additions: null, deletions: null },
     { path: "src/new.ts", status: "R", additions: null, deletions: null },
     { path: "odd name.ts", status: "A", additions: null, deletions: null }
+  ]);
+  expect(parseGitNameStatusZ(["M", "src/a.ts", "R087", "src/old.ts", "src/from -> to.ts", "A", "tab\there.ts", ""].join("\0"))).toEqual([
+    { path: "src/a.ts", status: "M", additions: null, deletions: null },
+    { path: "src/from -> to.ts", status: "R", additions: null, deletions: null },
+    { path: "tab\there.ts", status: "A", additions: null, deletions: null }
   ]);
 });
 

@@ -311,7 +311,7 @@ test("dashboard labels forensic text evidence quality", async () => {
 
   const server = startDashboardServer({ port: 0 });
   try {
-    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d`);
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164`);
     expect(detailResponse.status).toBe(200);
     const detailPayload = (await detailResponse.json()) as {
       evidenceQuality: {
@@ -343,7 +343,7 @@ test("dashboard labels forensic text evidence quality", async () => {
     expect(detailPayload.files).toContainEqual(expect.objectContaining({ path: "src/server.ts", operation: "inferred edit" }));
     expect(detailPayload.risks).toContainEqual(expect.objectContaining({ category: "forensic-import" }));
 
-    const evidenceResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d/evidence`);
+    const evidenceResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164/evidence`);
     expect(evidenceResponse.status).toBe(200);
     const evidencePayload = (await evidenceResponse.json()) as { evidenceQuality: { level: string; label: string } };
     expect(evidencePayload.evidenceQuality).toEqual(expect.objectContaining({ level: "forensic", label: "Forensic text" }));
@@ -358,7 +358,7 @@ test("dashboard distinguishes inferred forensic evidence from verified evidence"
 
   const server = startDashboardServer({ port: 0 });
   try {
-    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat-031eb0e6`);
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat-031eb0e65c6914af5535e4a15e2fd566`);
     expect(detailResponse.status).toBe(200);
     const detailPayload = (await detailResponse.json()) as {
       evidenceQuality: {

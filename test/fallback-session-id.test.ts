@@ -27,7 +27,7 @@ test("two different artifacts with the same file name keep separate sessions", (
 test("the fallback id depends on content, not on where the file sits", () => {
   expect(fallbackSessionId("a/terminal.txt", runA, "x")).toBe(fallbackSessionId("b/terminal.txt", runA, "x"));
   expect(fallbackSessionId("a/terminal.txt", runA, "x")).not.toBe(fallbackSessionId("a/terminal.txt", runB, "x"));
-  expect(fallbackSessionId(".txt", runA, "x")).toMatch(/^x-[0-9a-f]{8}$/);
+  expect(fallbackSessionId(".txt", runA, "x")).toMatch(/^x-[0-9a-f]{32}$/);
 });
 
 test("an id carried in the artifact still wins", () => {
