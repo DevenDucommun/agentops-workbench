@@ -7,10 +7,10 @@ import { parseClaudeHooksJsonl } from "../src/claudeHooks";
 import { runCli } from "../src/cli";
 import { defaultConfig } from "../src/config";
 import { enrollRepository } from "../src/recorder/enrollment";
-import { handleHook, ingestAfterSessionEnd } from "../src/recorder/hook";
-import { ingestSpoolFile, resolveCommit } from "../src/recorder/ingest";
+import { handleHook, ingestAfterSessionEnd, pushSource } from "../src/recorder/hook";
+import { ingestSpoolFile, resolveCommit, storeHookTranscript } from "../src/recorder/ingest";
 import { buildSpoolRecord, readSpool, spoolPath } from "../src/recorder/spool";
-import { findSessionsForCommit, getEventChain, getEvents, getSessionCommits, getToolCalls, ingestTranscript, openStore } from "../src/store";
+import { defaultStorePath, findSessionsForCommit, getEventChain, getEvents, getSessionCommits, getToolCalls, ingestTranscript, openStore } from "../src/store";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "claude-hooks");
 const NAMES = ["clean-session", "risky-session", "subagent-session", "failing-test-session", "commit-session"];
@@ -282,5 +282,81 @@ describe("recorder review regressions", () => {
       if (previous === undefined) delete process.env.AGENTOPS_DB;
       else process.env.AGENTOPS_DB = previous;
     }
+  });
+});
+
+describe("recorder review regressions, round 3", () => {
+  test("push capture resolves the refspec source and skips pushes with no single commit", () => {
+    const cases: Array<[string, string | undefined]> = [
+      ["git push", undefined],
+      ["git push origin", undefined],
+      ["git push -u origin HEAD", "HEAD"],
+      ["git push origin HEAD:refs/heads/current", "HEAD"],
+      ["git push origin other", "other"],
+      ["git push origin +other:refs/heads/published", "other"],
+      ["git push -o ci.skip origin other", "other"],
+      ["git status --short && git push origin HEAD:refs/heads/current", "HEAD"],
+      ["git push -nv origin HEAD:refs/heads/current", undefined],
+      ["git push --dry-run origin", undefined],
+      ["git push origin :refs/heads/gone", undefined],
+      ["git push -d origin topic", undefined],
+      ["git push --tags", undefined],
+      ["git push origin a b", undefined],
+      ["cd elsewhere && git push", undefined],
+      ["git push; git push other", undefined],
+      ["git push origin \"$(git branch --show-current)\"", undefined],
+      ["git commit -m x", undefined]
+    ];
+    for (const [command, expected] of cases) expect([command, pushSource(command)]).toEqual([command, expected]);
+  });
+
+  test("re-importing a commit followed by its push keeps one canonical SHA from any directory", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-dup-sha-")));
+    const repo = join(root, "repo");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "work");
+    const full = git(repo, "rev-parse", "HEAD");
+    const bash = (command: string, response: Record<string, unknown>) =>
+      buildSpoolRecord({ hook_event_name: "PostToolUse", session_id: "dup", cwd: repo, tool_name: "Bash", tool_input: { command }, tool_response: response });
+    const push = bash("git push origin HEAD", { stdout: "", stderr: "" });
+    push.gitCommit = { sha: full, kind: "pushed" };
+    const lines = [bash("git commit -m work", { stdout: "", gitOperation: { commit: { sha: full.slice(0, 7), kind: "committed" } } }), push];
+    const transcript = parseClaudeHooksJsonl("dup.jsonl", lines.map((r) => JSON.stringify(r)).join("\n"), defaultConfig);
+    const store = openStore(join(root, "store.db"));
+    try {
+      storeHookTranscript(store, transcript, defaultConfig, repo);
+      storeHookTranscript(store, transcript, defaultConfig, root);
+      expect(getSessionCommits(store, "dup").map((c) => c.sha)).toEqual([full]);
+    } finally { store.db.close(); }
+  });
+
+  test("the default store from a linked worktree is the main checkout's, where sessions are imported", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-default-db-")));
+    const repo = join(root, "repo"), linked = join(root, "linked");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "base");
+    git(repo, "worktree", "add", "-qb", "topic", linked);
+    const previous = process.env.AGENTOPS_DB;
+    delete process.env.AGENTOPS_DB;
+    try {
+      expect(defaultStorePath(linked)).toBe(join(".agentops", "agentops.db"));
+      openStore(join(repo, ".agentops", "agentops.db")).db.close();
+      expect(defaultStorePath(linked)).toBe(join(repo, ".agentops", "agentops.db"));
+      mkdirSync(join(repo, "sub"));
+      expect(defaultStorePath(join(repo, "sub"))).toBe(join(repo, ".agentops", "agentops.db"));
+    } finally {
+      if (previous !== undefined) process.env.AGENTOPS_DB = previous;
+    }
+  });
+
+  test("raw hook payloads keep paths relative to the checkout, not the event cwd", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-raw-cwd-")));
+    const repo = join(root, "repo");
+    git(root, "init", "-q", repo);
+    for (const dir of ["src", "test"]) mkdirSync(join(repo, dir));
+    const lines = ["src", "test"].map((dir) => JSON.stringify({ hook_event_name: "PostToolUse", session_id: "raw", cwd: join(repo, dir),
+      tool_name: "Write", tool_input: { file_path: join(repo, dir, "a.ts"), content: "x" }, tool_response: { type: "create", filePath: join(repo, dir, "a.ts") } }));
+    const transcript = parseClaudeHooksJsonl("raw.jsonl", lines.join("\n"), defaultConfig);
+    expect(transcript.events.map((e) => e.path)).toEqual(["src/a.ts", "test/a.ts"]);
   });
 });

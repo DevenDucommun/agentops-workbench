@@ -34,15 +34,18 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
 
 export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
   return store.db.transaction(() => {
-    const previousRows = new Map(getEventChain(store, transcript.session.id).map((row) => [row.id, row.eventUid]));
-    const previousCommits = getSessionCommits(store, transcript.session.id);
-    const prior = new Map(previousCommits.map((commit) => [previousRows.get(commit.eventId ?? -1), commit.sha]));
-    // session_commits has one row per SHA, so a push can replace its earlier commit event ID.
-    const fullShas = new Set(previousCommits.map((commit) => commit.sha).filter((sha) => sha.length === 40 || sha.length === 64));
+    // Full SHAs already known for this session (an earlier import, or a push record in this
+    // transcript) resolve a short SHA the same way wherever the re-import runs.
+    const isFull = (sha: string) => sha.length === 40 || sha.length === 64;
+    const knownFull = new Set(getSessionCommits(store, transcript.session.id).map((commit) => commit.sha).filter(isFull));
     for (const event of transcript.events) {
       const sha = (event.gitCommit as { sha?: unknown } | undefined)?.sha;
-      if (typeof sha === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)) fullShas.add(sha.toLowerCase());
+      if (typeof sha === "string" && /^[0-9a-f]+$/i.test(sha) && isFull(sha)) knownFull.add(sha.toLowerCase());
     }
+    const fromKnown = (sha: string) => {
+      const matches = [...knownFull].filter((full) => full.startsWith(sha));
+      return matches.length === 1 ? matches[0] : undefined;
+    };
     const { sessionId, eventCount } = ingestTranscript(store, transcript, config);
     analyzeSession(store, sessionId, config);
 
@@ -50,13 +53,10 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
     for (const event of transcript.events) {
       const commit = event.gitCommit as { sha?: unknown; kind?: unknown; branch?: unknown } | undefined;
       if (typeof commit?.sha !== "string" || !/^[0-9a-f]{7,64}$/i.test(commit.sha)) continue;
-      const known = typeof event.eventId === "string" ? prior.get(event.eventId) : undefined;
       const sha = commit.sha.toLowerCase();
-      const matches = !fullShas.has(sha) ? [...fullShas].filter((full) => full.startsWith(sha)) : [];
-      const retained = known && [40, 64].includes(known.length) && known.startsWith(sha) ? known : undefined;
       const link: SessionCommit = {
         sessionId,
-        sha: retained ?? (matches.length === 1 ? matches[0] : undefined) ?? resolveCommit(repoRoot, sha) ?? sha,
+        sha: fromKnown(sha) ?? resolveCommit(repoRoot, sha) ?? sha,
         branch: typeof commit.branch === "string" ? commit.branch : null,
         kind: typeof commit.kind === "string" ? commit.kind : null,
         source: "tool",
