@@ -1,6 +1,7 @@
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { finalClaimTexts } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
@@ -198,4 +199,35 @@ test("a read-only store from before events.text stays readable without being mod
   } finally {
     chmodSync(path, 0o644);
   }
+});
+
+test("a writable store from before events.text is read under another writer's lock, and migrated on the next write", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-lock-")));
+  const path = join(dir, "agentops.db");
+  const store = openStore(path);
+  const session = (id: string, content: string) =>
+    parseJsonlTranscript(`${id}.jsonl`, [
+      JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id }),
+      JSON.stringify({ schemaVersion: "agentops.event.v1", type: "final_response", content })
+    ].join("\n"));
+  ingestTranscript(store, session("legacy", "Done."), defaultConfig);
+  store.db.exec("ALTER TABLE events DROP COLUMN text");
+  store.db.close();
+
+  const writer = new Database(path);
+  writer.exec("BEGIN IMMEDIATE");
+  try {
+    const reader = openStore(path);
+    expect(listSessions(reader).map((s) => s.id)).toEqual(["legacy"]);
+    expect(getEvents(reader, "legacy").every((event) => event.text === null)).toBe(true);
+    reader.db.close();
+  } finally {
+    writer.exec("ROLLBACK");
+    writer.close();
+  }
+
+  const next = openStore(path);
+  ingestTranscript(next, session("fresh", "Tests passed."), defaultConfig);
+  expect(getEvents(next, "fresh").find((event) => event.type === "final_response")?.text).toBe("Tests passed.");
+  next.db.close();
 });

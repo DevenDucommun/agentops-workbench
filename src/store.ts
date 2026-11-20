@@ -111,7 +111,6 @@ export function migrate(db: Database): void {
   addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
   addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
-  addColumnIfMissing(db, "events", "text", "TEXT");
 
   // Forensic recorder (spec R1.5, R1.8, R4.3): chain and provenance fields,
   // the session chain head, and commit links. All nullable, so legacy rows and
@@ -152,6 +151,9 @@ export function ingestTranscript(
   config: AgentOpsConfig = defaultConfig
 ): { sessionId: string; eventCount: number } {
   const { db } = store;
+  // events.text is added when a store is first written, never when it is opened, so a
+  // read of a store from an earlier version never writes (read-only or locked stores).
+  addColumnIfMissing(db, "events", "text", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -539,14 +541,7 @@ function hasColumn(db: Database, table: string, column: string): boolean {
 }
 
 function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
-  if (hasColumn(db, table, column)) return;
-  try {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  } catch (error) {
-    // A read-only store from an earlier version stays readable: readers that need the
-    // new column check for it, and writes still fail as before.
-    if (!/readonly/i.test(String((error as Error)?.message ?? error))) throw error;
-  }
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function deriveUsageSummary(sessionUsage: UsageInput | undefined, events: RawEvent[]): UsageSummary {
