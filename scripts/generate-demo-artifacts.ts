@@ -22,6 +22,7 @@ try {
   const sampleSessionId = ingestFixture(store, "fixtures/sample-session.jsonl");
   const riskySessionId = ingestFixture(store, "fixtures/risky-session.jsonl");
   const forensicSessionId = ingestFixture(store, "fixtures/forensic-terminal-transcript.txt");
+  const contradictedSessionId = ingestFixture(store, "fixtures/ledger/fail-then-claim.jsonl");
 
   const artifacts: Artifact[] = [
     {
@@ -43,6 +44,10 @@ try {
     {
       path: "forensic-transcript-report.md",
       content: generateMarkdownReport(store, forensicSessionId, defaultConfig)
+    },
+    {
+      path: "contradicted-claim-report.md",
+      content: generateMarkdownReport(store, contradictedSessionId, defaultConfig)
     }
   ];
 
@@ -110,6 +115,7 @@ Artifacts:
 - \`sample-quality-gate.json\`: Machine-readable passing quality gate result.
 - \`risky-quality-gate-comment.md\`: GitHub-ready failing quality gate body for a risky session.
 - \`forensic-transcript-report.md\`: Lower-fidelity forensic transcript report with evidence-quality labels.
+- \`contradicted-claim-report.md\`: Report whose claims ledger marks "all tests pass" as contradicted by the failing test run before it.
 `;
 }
 
