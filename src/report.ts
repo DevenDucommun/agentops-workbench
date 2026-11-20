@@ -2,6 +2,7 @@ import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
 import { evaluateQualityGate, formatGateGithub } from "./gate";
+import { type ClaimsLedger, getClaimsLedger, type LedgerEvidence } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
 import type { GitChange } from "./git";
 import type { UsageSummary } from "./types";
@@ -30,6 +31,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
   const usage = getUsageSummary(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
+  const ledger = getClaimsLedger(store, sessionId, config);
 
   const sections = [
     "# AgentOps Session Report",
@@ -77,6 +79,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
     verification.length
       ? verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}${formatExit(command.exitCode)}`).join("\n")
       : "- No test, lint, typecheck, or verification command recorded.",
+    ...(ledger.claims.length ? ["## Claims Ledger", formatLedger(ledger, events)] : []),
     "## Risk Flags",
     formatRiskFlags(risks),
     "## Final Outcome",
@@ -149,6 +152,7 @@ export function generateGithubRepoComment(
   config: AgentOpsConfig = defaultConfig
 ): string {
   const data = buildRepoReportData(store, sessionId, gitChanges, config);
+  const ledger = getClaimsLedger(store, sessionId, config);
   const status = data.risks.some((risk) => risk.severity === "high")
     ? "High-risk findings present"
     : data.risks.length > 0
@@ -173,6 +177,7 @@ export function generateGithubRepoComment(
     data.verification.length
       ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No verification command recorded.",
+    ...(ledger.claims.length ? ["### Claims", formatLedger(ledger, getEvents(store, sessionId))] : []),
     "### Risk Flags",
     formatRiskFlags(data.risks, 4),
     "### Git Changes Not Observed In Session",
@@ -186,6 +191,27 @@ export function generateGithubRepoComment(
   ];
 
   return `${sections.join("\n\n")}\n`;
+}
+
+const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported" } as const;
+
+/** One row per claim in the final response: its verdict and the run it rests on (spec R2.5). */
+function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: number }>): string {
+  const steps = new Map(events.map((event) => [event.id, event.idx]));
+  const rows = ledger.claims.map((claim) => {
+    const evidence = claim.cited
+      ? `\`${claim.cited.command}\`${claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`}, ${stepRef(claim.cited, steps)}`
+      : claim.reason;
+    return `| ${escapeTable(claim.claimText)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(evidence)} |`;
+  });
+  return ["| Claim | Verdict | Evidence |", "| --- | --- | --- |", ...rows].join("\n");
+}
+
+/** The timeline step that recorded a run, plus its source eventId when there is one. */
+function stepRef(evidence: LedgerEvidence, steps: Map<number, number>): string {
+  const step = evidence.eventRowId === null ? undefined : steps.get(evidence.eventRowId);
+  const label = step === undefined ? "unlinked event" : `step ${step}`;
+  return evidence.eventId ? `${label} (${evidence.eventId})` : label;
 }
 
 function table(rows: Array<[string, string]>): string {
