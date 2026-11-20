@@ -54,7 +54,7 @@ Sizes are relative effort: S, M or L.
 - [x] **T2.2 (M) New claim categories** (callers/usages, on-device or
   in-browser verification, "fixed"). Verify: one positive and one negative
   fixture per category.
-- [ ] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing
+- [x] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing
   fixtures' gate results are unchanged.
 - [ ] **T2.4 (S) Blocked-attempt policy plus gate threshold.** Verify: the
   declined destructive command fixture raises an info flag; CHANGELOG lists
