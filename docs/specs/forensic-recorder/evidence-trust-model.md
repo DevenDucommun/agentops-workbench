@@ -1,8 +1,7 @@
 # Evidence Trust Model
 
-Status: **proposed decision note**. Amends M2 ([spec.md](spec.md), R2.1–R2.2)
-and sets the acceptance criteria for the open ledger and import PRs. Needs
-owner approval before implementation.
+Status: **approved decision note**. Amends M2 ([spec.md](spec.md), R2.1–R2.2)
+and sets the acceptance criteria for the open ledger and import PRs.
 
 ## Problem
 
@@ -53,7 +52,7 @@ column, never the raw payload.
 | `supported` | Latest matching **observed** run passed | passes |
 | `contradicted` | Latest matching **observed** run failed, no later observed pass | fails |
 | `unsupported` | No matching run of any tier | fails |
-| `unverified` *(new)* | Only **inferred** matching evidence | fails as `unverified-claims` by default; `gates.allowUnverifiedClaims` downgrades it to a review note |
+| `unverified` *(new)* | Only **inferred** matching evidence | fails as `unverified-claims` by default. A repository can opt in with `gates.allowUnverifiedClaims`; the gate then passes on it, but the CLI, dashboard and Action still show the claim as `unverified` |
 
 **Unknown is never a pass.** A missing result, an ambiguous boundary or a
 command whose outcome cannot be attributed is at most `unverified`.
@@ -62,8 +61,12 @@ command whose outcome cannot be attributed is at most `unverified`.
 
 - A run matches a claim kind when the command is a **simple command** (no
   `;`, `&&`, `||`, `|`, `&`, `$(`, backticks or newlines after stripping
-  leading `VAR=value` assignments) and its leading words match one of the
-  kind's configured patterns (`bun test`, `npm run lint`, `tsc`, …).
+  leading `VAR=value` assignments) and it **is** one of the kind's configured
+  commands (`bun test`, `npm run lint`, `tsc --noEmit`, …), word for word.
+- Extra arguments make the run inferred: `bun test a.test.ts` or `bun test -t
+  parser` ran a subset, so it cannot support "All tests passed". A repository
+  that wants a narrower or longer form to count adds that exact form to the
+  configured commands.
 - A matching command that carries a non-executing flag (`--help`, `-h`,
   `--version`, `-V`, `--dry-run`, `--list`, `--collect-only`, or a flag listed
   in the kind's configured exclusions) is not a run of that kind: `bun test
@@ -75,9 +78,10 @@ command whose outcome cannot be attributed is at most `unverified`.
 
 ### 4. Claim detection over-detects
 
-- A sentence that contains a claim kind's success vocabulary is a claim, even
-  when it is negated or hedged. Missing a claim can produce a false pass;
-  flagging one twice cannot.
+- A kind is claimed when its subject words and any of its success words both
+  occur anywhere in the final response, even across sentences and even when
+  negated or hedged ("Tests failed. Lint passed." claims both). Missing a claim
+  can produce a false pass; flagging one too many cannot.
 - The final response is checked in full (`events.text`, falling back to the
   summary), and a producer's explicit summary is checked as well.
 - Plain-text imports: claims are detected across all non-`User:` text, not a
@@ -87,9 +91,11 @@ command whose outcome cannot be attributed is at most `unverified`.
 
 ### 5. The recorder is the primary source
 
-M1 sessions carry observed evidence for every tool call that completed, so
-they get real pass/fail verdicts and reach `unverified` only for calls without
-an outcome. Text import stays supported
+M1 sessions carry observed evidence for every simple command that completed
+with an outcome, so they get real pass/fail verdicts and reach `unverified`
+only for calls without an outcome and for compound, wrapped or narrowed
+commands (`bun test || true` completes even when tests fail). Text import stays
+supported
 for history and forensics, documented as the weaker path. Product docs and
 `agentops audit` output say which tier a session's evidence came from.
 
@@ -109,7 +115,8 @@ test-only manifest is still a claim that needs evidence.
 Reviews of M2 and import changes use these acceptance criteria:
 
 - **Blocking:** a regression against the PR's base; a false pass (any path by
-  which inferred or unknown evidence yields `supported` or a passing gate);
+  which inferred or unknown evidence yields `supported`, or a passing gate
+  without the repository's explicit `gates.allowUnverifiedClaims` opt-in);
   data loss (sessions, events, files or links dropped); behavior that
   contradicts the documentation.
 - **Non-blocking, filed as follow-ups:** new edge cases in inferred-tier
@@ -120,8 +127,9 @@ Reviews of M2 and import changes use these acceptance criteria:
 
 | PR | Keeps | Drops or changes |
 |---|---|---|
-| #140 ledger (T2.1) | Verdict ledger; Claude `tool_result` correlation; results after the final response not counting; `COALESCE(text, summary)` | Removes shell unwrapping (`env -S`, `npx -c`), wrapper option tables, compound-command attribution and negation handling. The `unverified` verdict, the `evidence_tier` column and rule 3 land in T2.7 |
+| #140 ledger (T2.1) | Verdict ledger; Claude `tool_result` correlation; results after the final response not counting; claims read from both the full text and the summary | Removes shell unwrapping (`env -S`, `npx -c`), wrapper option tables, compound-command attribution and negation handling. The `unverified` verdict, the `evidence_tier` column and rule 3 land in T2.7 |
 | #141–#144 (T2.2–T2.5) | Claim kinds, retry/stall rules, rendering | Re-synced onto the simplified #140; device and browser claims follow rule 3 with configured patterns |
+| #150 (verdict consistency) | Same verdict across CLI, dashboard and Action | Re-synced after #144; its command-outcome rules are checked against tiers and rule 3 |
 | #148 import fixes | Empty Action input, collision-free fallback ids, NUL-delimited git parsing with byte-safe decoding, `events.text`, git error surfacing (with `LC_ALL=C`) | Plain-text boundary heuristics revert to the reviewed state; rule 4's plain-text detection lands with the trust-model task |
 | #149 | `--base`, command pairing, embedded demo fixtures | Retargeted to `main` after #148 merges instead of carrying #148's changes |
 | #147 provenance helpers (T3.1) | Blame, commit info, trailers, missing-git handling | Path history (`commitsTouching`) moves to a follow-up task |
@@ -140,9 +148,10 @@ will always be pasted text or post-hoc Codex logs, `unverified` becomes
 common, and T2.8 moves up. The T1.x dogfood week measures the share of
 recorded sessions and the `unverified` rate.
 
-## Open questions
+## Owner decisions
 
-1. Should `unverified` fail the gate by default (proposed), or warn by default
-   with an opt-in to fail?
-2. Should generic JSONL events without `exitCode` or a terminal `status` be
-   observed (the producer chose the format) or inferred (proposed)?
+1. `unverified` fails the gate by default. A repository can opt in to allow it
+   (`gates.allowUnverifiedClaims`); the CLI, dashboard and Action must still
+   show the claim as `unverified`.
+2. A generic JSONL command without its own recorded outcome is inferred. A
+   structured format alone cannot establish that the command completed.
