@@ -86,8 +86,8 @@ describe("handleHook", () => {
   test("an enrolled repository records a chained spool, from a subdirectory too", () => {
     const { repo, stateDir } = setup();
     enrollRepository(repo, stateDir);
-    expect(handleHook("PostToolUse", payload(repo), { stateDir })).toEqual({ recorded: true, seq: 1 });
-    expect(handleHook("PostToolUse", payload(join(repo, "src")), { stateDir })).toEqual({ recorded: true, seq: 2 });
+    expect(handleHook("PostToolUse", payload(repo), { stateDir })).toMatchObject({ recorded: true, seq: 1, repository: repo, hookEventName: "PostToolUse" });
+    expect(handleHook("PostToolUse", payload(join(repo, "src")), { stateDir })).toMatchObject({ recorded: true, seq: 2 });
     const { records } = readSpool(spoolPath(join(stateDir, "spool"), "0a1b2c3d-0014-4000-8000-000000000014") as string);
     expect(checkChain(records)).toMatchObject({ status: "valid", count: 2 });
     expect((records[0].payload as { tool_response: { stdout: unknown } }).tool_response.stdout).toMatchObject({ omitted: "content" });
@@ -135,8 +135,10 @@ describe("process entry", () => {
     return { code: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
   };
 
-  // Hooks call the release binary (built from src/main.ts) or `bun run agentops`, which also uses src/main.ts.
-  for (const entry of ["./src/main.ts"]) {
+  // Hooks call the release binary (built from src/main.ts), `bun run agentops`, or
+  // bin/agentops (the package.json bin, used by source and PATH installs). All of
+  // them go through src/main.ts.
+  for (const entry of ["./src/main.ts", "./bin/agentops"]) {
     test(`${entry} hook always exits 0 and prints nothing`, () => {
       const { repo, stateDir } = setup();
       enrollRepository(repo, stateDir);

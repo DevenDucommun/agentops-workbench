@@ -1,5 +1,6 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { defaultStateDir, enrolledRepository, findRepositoryRoots } from "./recorder/enrollment";
 import { Database } from "bun:sqlite";
 import type {
   CommandRecord,
@@ -23,7 +24,17 @@ export type Store = {
   path: string;
 };
 
-export function openStore(path = process.env.AGENTOPS_DB ?? ".agentops/agentops.db"): Store {
+export function defaultStorePath(cwd = process.cwd()): string {
+  if (process.env.AGENTOPS_DB !== undefined) return process.env.AGENTOPS_DB;
+  const local = join(".agentops", "agentops.db");
+  const enrolled = enrolledRepository(cwd, defaultStateDir());
+  if (enrolled) return join(enrolled, local);
+  if (existsSync(resolve(cwd, local))) return local;
+  const main = findRepositoryRoots(cwd)?.main;
+  return main && existsSync(join(main, local)) ? join(main, local) : local;
+}
+
+export function openStore(path = defaultStorePath()): Store {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
@@ -209,6 +220,14 @@ export function ingestTranscript(
       $ingestedAt: new Date().toISOString()
     });
 
+    // A start event whose invocation also has a finish event stays in the timeline
+    // but is not a second tool call. Unmatched starts (denied, interrupted) still count.
+    const finishedToolUseIds = new Set(
+      transcript.events
+        .filter((e) => e.type !== "tool_started" && typeof e.toolUseId === "string")
+        .map((e) => e.toolUseId as string)
+    );
+
     transcript.events.forEach((event, idx) => {
       const type = event.type ?? inferEventType(event);
       const rawJson = JSON.stringify(event);
@@ -225,7 +244,8 @@ export function ingestTranscript(
 
       const command = extractCommand(event);
       const toolName = extractToolName(event, command);
-      if (toolName) {
+      const startOfFinished = type === "tool_started" && typeof event.toolUseId === "string" && finishedToolUseIds.has(event.toolUseId);
+      if (toolName && !startOfFinished) {
         insertToolCall.run({
           $sessionId: session.id,
           $eventId: row.id,
