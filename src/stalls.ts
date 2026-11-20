@@ -12,12 +12,14 @@ export type StallFlag = {
   message: string;
 };
 
-const NOT_EXECUTED = new Set(["inferred", "denied", "declined", "started", "in_progress", "running", "pending"]);
+const NOT_EXECUTED = new Set(["inferred", "denied", "declined", "started", "in_progress", "running", "pending", "queued"]);
 
 /**
  * `retry-without-change`: the same command re-run after it failed, with no file
  * change in between. One flag per command; medium once it was retried twice.
  * `repeated-edits`: one file changed at least `repeatedEditThreshold` times.
+ * File changes are applied changes only: ingest skips the start half of a
+ * start/completion pair and failed or denied attempts.
  */
 export function detectStalls(commands: CommandRecord[], fileChanges: FileChangeRecord[], options: { repeatedEditThreshold: number }): StallFlag[] {
   const flags: StallFlag[] = [];
@@ -27,7 +29,7 @@ export function detectStalls(commands: CommandRecord[], fileChanges: FileChangeR
   const retries = new Map<string, { command: string; count: number; firstEventId: number | null }>();
   const lastRun = new Map<string, CommandRecord>();
   for (const run of runs) {
-    const key = run.command.trim().replace(/\s+/g, " ");
+    const key = normalizeCommand(run.command);
     const previous = lastRun.get(key);
     if (previous && failed(previous) && !editedBetween(editRows, previous.eventId, run.eventId)) {
       const entry = retries.get(key) ?? { command: key, count: 0, firstEventId: run.eventId };
@@ -62,6 +64,25 @@ export function detectStalls(commands: CommandRecord[], fileChanges: FileChangeR
     });
   }
   return flags;
+}
+
+/** Collapses whitespace between arguments, never inside quotes: `"a  b"` and `"a b"` are different paths. */
+export function normalizeCommand(command: string): string {
+  let out = "";
+  let quote: string | null = null;
+  let pendingSpace = false;
+  for (const char of command.trim()) {
+    if (quote === null && /\s/.test(char)) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace) out += " ";
+    pendingSpace = false;
+    if (quote === null && (char === '"' || char === "'")) quote = char;
+    else if (char === quote) quote = null;
+    out += char;
+  }
+  return out;
 }
 
 function failed(run: CommandRecord): boolean {
