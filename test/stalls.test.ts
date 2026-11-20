@@ -6,7 +6,8 @@ import { analyzeSession } from "../src/analyzer";
 import { defaultConfig, validateConfigFile } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseJsonlTranscript } from "../src/parser";
-import { detectStalls } from "../src/stalls";
+import { parseCodexExecJsonl } from "../src/codexExec";
+import { detectStalls, normalizeCommand } from "../src/stalls";
 import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
 const ROOT = join(import.meta.dir, "..");
@@ -77,10 +78,43 @@ describe("detectStalls", () => {
     expect(detectStalls([cmd(1, null, "bun test", 1), cmd(2, null, "bun test", 1)], [], opts)).toEqual([]);
   });
 
+  test("whitespace inside quotes is part of the argument", () => {
+    expect(normalizeCommand(`bun   test  "test/a  b.test.ts"`)).toBe(`bun test "test/a  b.test.ts"`);
+    expect(normalizeCommand(`bun test 'x  y'   z`)).toBe(`bun test 'x  y' z`);
+    expect(detectStalls([cmd(1, 1, `bun test "test/a  b.ts"`, 1), cmd(2, 2, `bun test "test/a b.ts"`, 1)], [], opts)).toEqual([]);
+  });
+
   test("repeated edits are counted per file", () => {
     const flags = detectStalls([], [edit(1, 1, "a.ts"), edit(2, 2, "b.ts"), edit(3, 3, "a.ts"), edit(4, 4, "a.ts"), edit(5, 5, "b.ts")], opts);
     expect(flags.map((f) => f.message)).toEqual(["a.ts was changed 3 times in one session (threshold 3)."]);
     expect(flags[0].eventId).toBe(1);
+  });
+});
+
+describe("Codex file changes", () => {
+  const change = (type: "item.started" | "item.completed", id: string, status?: string) =>
+    JSON.stringify({ type, item: { id, type: "file_change", ...(status ? { status } : {}), changes: [{ path: "src/a.ts", kind: "update" }] } });
+  const repeated = (lines: string[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const stream = [JSON.stringify({ type: "thread.started", thread_id: "codex-stalls" }), ...lines].join("\n");
+    const { sessionId } = ingestTranscript(store, parseCodexExecJsonl("codex.jsonl", stream), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const categories = getRiskFlags(store, sessionId).map((f) => f.category);
+    store.db.close();
+    return categories.includes("repeated-edits");
+  };
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `f${i}`);
+
+  test("six failed file changes are not repeated edits", () => {
+    expect(repeated(ids(6).map((id) => change("item.completed", id, "failed")))).toBe(false);
+  });
+
+  test("three edits reported as start and completion count three times, not six", () => {
+    expect(repeated(ids(3).flatMap((id) => [change("item.started", id), change("item.completed", id, "completed")]))).toBe(false);
+  });
+
+  test("six completed edits are repeated edits", () => {
+    expect(repeated(ids(6).map((id) => change("item.completed", id, "completed")))).toBe(true);
   });
 });
 
