@@ -13,6 +13,14 @@
       "threshold": "<= 0"
     },
     {
+      "id": "max-blocked-attempts",
+      "label": "Blocked risky attempts",
+      "status": "passed",
+      "message": "0 observed; maximum allowed is 2.",
+      "observed": 0,
+      "threshold": "<= 2"
+    },
+    {
       "id": "required-verification",
       "label": "Verification evidence",
       "status": "passed",
