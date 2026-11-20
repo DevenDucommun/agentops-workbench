@@ -130,8 +130,9 @@ spool for it.
 If you remove the whole store instead and re-import the spools you want to
 keep with `agentops audit`, the re-import is partial. It restores each
 session's events, tool calls, commands, file changes and risk flags, but not
-the session's links to the commits it made. Only the recorder's own
-session-end import creates commit links.
+the session's links to the commits it made. A lookup by commit will therefore
+miss the re-imported session. Only the recorder's session-end import creates
+commit links.
 
 ## Public Release Checklist
 
