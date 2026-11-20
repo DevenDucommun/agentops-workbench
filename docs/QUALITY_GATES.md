@@ -118,6 +118,20 @@ To keep that behavior, suppress the new flag:
 { "suppressions": [{ "category": "contradicted-claim", "reason": "Accept claims after failing runs." }] }
 ```
 
+## Retry And Stall Signals
+
+Two review signals flag a session that went in circles. They never fail a gate
+on their own (neither is high severity or a claim category), but they show up
+with the other risks:
+
+| Flag | When | Severity |
+| --- | --- | --- |
+| `retry-without-change` | The same command ran again after failing, with no file change in between | low for one retry, medium for two or more |
+| `repeated-edits` | One file changed at least `risk.repeatedEditThreshold` times (default 6) | medium |
+
+A failing test that is never re-run before a success claim is the ledger's
+`contradicted` verdict above.
+
 ## Configuration
 
 Configure gates in `agentops.config.json`:

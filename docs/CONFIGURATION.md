@@ -31,6 +31,7 @@ and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
   },
   "risk": {
     "largeChurnLines": 500,
+    "repeatedEditThreshold": 6,
     "sensitivePaths": [".env", ".npmrc", "secrets.json"],
     "productionPathPatterns": ["prod", "production", "deploy", "terraform", "k8s"]
   },
