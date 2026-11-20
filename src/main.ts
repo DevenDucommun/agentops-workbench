@@ -12,6 +12,15 @@ if (argv[0] === "hook") {
   process.exit(await runHookCommand(argv.slice(1)));
 }
 
+// `agentops recorder enable|disable|status` (forensic recorder, spec R1.7).
+if (argv[0] === "recorder") {
+  const { runRecorderCommand } = await import("./recorder/command");
+  const out = await runRecorderCommand(argv.slice(1));
+  if (out.stdout) process.stdout.write(out.stdout);
+  if (out.stderr) process.stderr.write(out.stderr);
+  process.exit(out.exitCode);
+}
+
 const { runCli } = await import("./cli");
 const result = await runCli(argv);
 if (result.stdout) process.stdout.write(result.stdout);
