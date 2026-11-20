@@ -108,6 +108,26 @@ describe("git wrappers", () => {
     expect(getCommitInfo(dir, first)).toMatchObject({ parents: [], files: ["math.js"], trailers: [] });
   });
 
+  test("getCommitInfo lists a merge commit's files relative to its first parent", () => {
+    const { dir, second, git: g } = repo();
+    g(dir, "checkout", "-q", "-b", "side");
+    writeFileSync(join(dir, "a.js"), "a\n");
+    writeFileSync(join(dir, "b.js"), "b\n");
+    g(dir, "add", "-A");
+    g(dir, "commit", "-q", "-m", "feat: side files");
+    g(dir, "checkout", "-q", "-");
+    writeFileSync(join(dir, "c.js"), "c\n");
+    g(dir, "add", "-A");
+    g(dir, "commit", "-q", "-m", "feat: main file");
+    const mainTip = g(dir, "rev-parse", "HEAD");
+    g(dir, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+    const merge = getCommitInfo(dir, "HEAD");
+    expect(merge?.parents).toHaveLength(2);
+    expect(merge?.parents[0]).toBe(mainTip);
+    expect(merge?.files.sort()).toEqual(["a.js", "b.js"]);
+    expect(getCommitInfo(dir, second)?.files).toEqual(["math.js"]);
+  });
+
   test("commitsTouching follows renames, newest first", () => {
     const { dir, first, second, git: g } = repo();
     g(dir, "mv", "math.js", "sum.js");

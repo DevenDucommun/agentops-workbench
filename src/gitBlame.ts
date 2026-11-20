@@ -107,10 +107,14 @@ export function getCommitInfo(repo: string, rev: string): CommitInfo | null {
   if (header === null) return null;
   const [sha, parents, authorTime, subject, ...body] = header.split(SEP);
   if (!sha || !/^[0-9a-f]{40,64}$/.test(sha)) return null;
-  const files = git(repo, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha]);
+  const parentShas = (parents ?? "").split(" ").filter(Boolean);
+  // Without an explicit base, diff-tree prints nothing for a merge commit, so
+  // compare against the first parent; a root commit lists everything it adds.
+  const first = parentShas[0];
+  const files = git(repo, first ? ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", first, sha] : ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha]);
   return {
     sha,
-    parents: (parents ?? "").split(" ").filter(Boolean),
+    parents: parentShas,
     authorTime: Number(authorTime),
     subject: subject ?? "",
     trailers: parseTrailers(body.join(SEP)),
