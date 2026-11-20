@@ -473,4 +473,124 @@ console.log(JSON.stringify([blameFile(${JSON.stringify(dir)}, "math.js"), commit
       expect(blameFile(dir, "source")[0]?.sha).toBe(recreated);
     });
   });
+
+  describe("review round 5 regressions", () => {
+    const gAt = (cwd: string, seconds: number, ...args: string[]) => {
+      const r = Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, GIT_AUTHOR_DATE: `@${seconds} +0000`, GIT_COMMITTER_DATE: `@${seconds} +0000` }
+      });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+      return r.stdout.toString().trim();
+    };
+    const emptyRepo = () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-")));
+      git(dir, "init", "-q");
+      return dir;
+    };
+    const commitAt = (dir: string, seconds: number, message: string) => {
+      gAt(dir, seconds, "add", "-A");
+      gAt(dir, seconds, "commit", "-q", "-m", message);
+      return gAt(dir, seconds, "rev-parse", "HEAD");
+    };
+    /** A merge expected to conflict, made with the synthetic identity; asserts the conflict. */
+    const conflictAt = (dir: string, seconds: number, branch: string) => {
+      const r = Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", "merge", "-q", branch], {
+        cwd: dir,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, GIT_AUTHOR_DATE: `@${seconds} +0000`, GIT_COMMITTER_DATE: `@${seconds} +0000` }
+      });
+      expect(r.exitCode).toBe(1);
+      gAt(dir, seconds, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+    };
+
+    test("a recreated file does not inherit its previous incarnation's rename source", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "original"), "first file\n");
+      commitAt(dir, 1, "A");
+      gAt(dir, 2, "mv", "original", "target");
+      commitAt(dir, 2, "R");
+      gAt(dir, 3, "rm", "-q", "target");
+      commitAt(dir, 3, "D");
+      writeFileSync(join(dir, "target"), "an unrelated second file\n");
+      const recreated = commitAt(dir, 4, "N");
+      expect(commitsTouching(dir, "target")).toEqual([recreated]);
+      expect(commitsTouching(dir, "target", { limit: 2 })).toEqual([recreated]);
+    });
+
+    test("a creation on one merge parent does not cut ancestors reached through the other", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "f"), "base\nkeep\n");
+      const base = commitAt(dir, 1, "B");
+      gAt(dir, 1, "checkout", "-q", "-b", "side");
+      writeFileSync(join(dir, "f"), "side\nkeep\n");
+      const side = commitAt(dir, 2, "S");
+      gAt(dir, 2, "checkout", "-q", "-");
+      gAt(dir, 3, "rm", "-q", "f");
+      commitAt(dir, 3, "D");
+      writeFileSync(join(dir, "f"), "unrelated\n");
+      const recreated = commitAt(dir, 4, "N");
+      conflictAt(dir, 5, "side");
+      writeFileSync(join(dir, "f"), "unrelated\nside\nkeep\n");
+      const merge = commitAt(dir, 5, "M");
+      expect(getCommitInfo(dir, merge)?.parents).toHaveLength(2);
+      expect(commitsTouching(dir, "f")).toEqual([merge, recreated, side, base]);
+      expect(blameFile(dir, "f").map((line) => line.sha)).toEqual([recreated, side, base]);
+    });
+
+    test("a path deleted at HEAD has no history", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "src"), "gone soon\n");
+      writeFileSync(join(dir, "keep"), "k\n");
+      commitAt(dir, 1, "A");
+      gAt(dir, 2, "rm", "-q", "src");
+      commitAt(dir, 2, "D");
+      expect(commitsTouching(dir, "src")).toEqual([]);
+    });
+
+    test("./ and redundant separators in the path do not lose pre-rename history", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "old"), "content\n");
+      const added = commitAt(dir, 1, "A");
+      gAt(dir, 2, "mv", "old", "new");
+      const renamed = commitAt(dir, 2, "R");
+      expect(commitsTouching(dir, "new")).toEqual([renamed, added]);
+      expect(commitsTouching(dir, "./new")).toEqual([renamed, added]);
+      expect(commitsTouching(dir, ".//new")).toEqual([renamed, added]);
+    });
+
+    test("a skipped shallow boundary does not use up a result slot", () => {
+      const dir = emptyRepo();
+      for (const name of ["f", "u", "y", "z"]) writeFileSync(join(dir, name), "base\n");
+      commitAt(dir, 1, "B");
+      gAt(dir, 1, "branch", "side");
+      const edit = (seconds: number, name: string, message: string) => {
+        writeFileSync(join(dir, name), `${message}\n`);
+        return commitAt(dir, seconds, message);
+      };
+      edit(2, "u", "U");
+      edit(3, "f", "E");
+      const v = edit(4, "f", "V");
+      gAt(dir, 4, "checkout", "-q", "side");
+      edit(5, "f", "X");
+      edit(6, "y", "Y");
+      edit(7, "z", "Z");
+      gAt(dir, 7, "checkout", "-q", "-");
+      conflictAt(dir, 8, "side");
+      writeFileSync(join(dir, "f"), "resolved\n");
+      const merge = commitAt(dir, 8, "M");
+      const clone = realpathSync(mkdtempSync(join(tmpdir(), "agentops-shallow-")));
+      git(clone, "clone", "-q", "--depth=3", `file://${dir}`, "c");
+      const shallow = join(clone, "c");
+      expect(commitsTouching(shallow, "f")).toEqual([merge, v]);
+      expect(commitsTouching(shallow, "f", { limit: 2 })).toEqual([merge, v]);
+    });
+
+    test("parseTrailers keeps a value containing U+2028", () => {
+      expect(parseTrailers("subject\n\nAgentOps-Session: a b")).toEqual([{ key: "AgentOps-Session", value: "a b" }]);
+    });
+  });
 });
