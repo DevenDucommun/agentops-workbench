@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
 import { resolveAdapter } from "../src/adapters";
@@ -12,7 +12,7 @@ const ROOT = join(import.meta.dir, "..");
 
 function audit(fixture: string, config: AgentOpsConfig = defaultConfig) {
   const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
-  const path = join(ROOT, fixture);
+  const path = isAbsolute(fixture) ? fixture : join(ROOT, fixture);
   const content = readFileSync(path, "utf8");
   const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, config);
   const { sessionId } = ingestTranscript(store, transcript, config);
@@ -42,6 +42,22 @@ describe("blocked-attempt policy (spec R2.4)", () => {
   test("repeated blocked attempts fail the gate above gates.maxBlockedAttempts", () => {
     expect(audit("fixtures/blocked/repeated-attempts.jsonl").check("max-blocked-attempts")).toMatchObject({ status: "failed", observed: 3 });
     expect(audit("fixtures/blocked/repeated-attempts.jsonl", withConfig({ gates: { maxBlockedAttempts: 3 } })).check("max-blocked-attempts")?.status).toBe("passed");
+  });
+
+  test("a denied command matching both rules is one blocked attempt", () => {
+    const stream = [
+      JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "blocked-double", agent: "synthetic-agent" }),
+      ...[1, 2].map((n) => JSON.stringify({ schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Bash", input: { cmd: `chmod -R 777 ./out${n}` }, status: "denied" })),
+      JSON.stringify({ schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: "Left the permissions alone." })
+    ].join("\n");
+    const path = join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "double.jsonl");
+    writeFileSync(path, stream);
+    const { flags, check } = audit(path);
+    expect(flags.map((f) => [f.category, f.message])).toEqual([
+      ["blocked-attempt", "Destructive, permission-changing command was denied and did not run: chmod -R 777 ./out1"],
+      ["blocked-attempt", "Destructive, permission-changing command was denied and did not run: chmod -R 777 ./out2"]
+    ]);
+    expect(check("max-blocked-attempts")).toMatchObject({ status: "passed", observed: 2 });
   });
 
   test("risk.treatBlockedAsExecuted restores the v3.2 behavior", () => {
