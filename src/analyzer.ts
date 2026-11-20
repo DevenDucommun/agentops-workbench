@@ -59,20 +59,17 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   for (const command of commands) {
     // A risky command that was denied or declined never ran (spec R2.4): it is
     // an informational blocked attempt unless risk.treatBlockedAsExecuted is set.
+    // One blocked attempt per command, even when it matches both rules, so
+    // gates.maxBlockedAttempts counts denied commands rather than flags.
     const blocked = isBlockedCommandStatus(command.status) && !config.risk.treatBlockedAsExecuted;
-    if (destructiveCommandPattern.test(command.command)) {
-      flags.push(
-        blocked
-          ? { eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `Destructive command was ${command.status} and did not run: ${command.command}` }
-          : { eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` }
-      );
-    }
-    if (permissionCommandPattern.test(command.command)) {
-      flags.push(
-        blocked
-          ? { eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `Permission-changing command was ${command.status} and did not run: ${command.command}` }
-          : { eventId: command.eventId, severity: "medium", category: "permission-change", message: `Permission-changing command detected: ${command.command}` }
-      );
+    const destructive = destructiveCommandPattern.test(command.command);
+    const permission = permissionCommandPattern.test(command.command);
+    if (blocked && (destructive || permission)) {
+      const kind = destructive && permission ? "Destructive, permission-changing" : destructive ? "Destructive" : "Permission-changing";
+      flags.push({ eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `${kind} command was ${command.status} and did not run: ${command.command}` });
+    } else {
+      if (destructive) flags.push({ eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` });
+      if (permission) flags.push({ eventId: command.eventId, severity: "medium", category: "permission-change", message: `Permission-changing command detected: ${command.command}` });
     }
     if (command.output && secretPattern.test(command.output)) {
       flags.push({
