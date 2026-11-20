@@ -98,10 +98,19 @@ describe("agentops recorder", () => {
     expect(await runRecorderCommand(["enable"], { cwd: notRepo, env })).toMatchObject({ exitCode: 1, stderr: expect.stringContaining("Not inside a git repository") });
   });
 
-  test("the binary entry dispatches recorder", () => {
-    const { dir, env } = repo();
-    const r = Bun.spawnSync([process.execPath, join(ROOT, "src", "main.ts"), "recorder", "status"], { cwd: dir, env: { ...env, HOME: process.env.HOME ?? "" }, stdout: "pipe", stderr: "pipe" });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout.toString()).toContain("Recorder: disabled");
-  });
+  // src/main.ts is the compiled binary's entry; bin/agentops is the package.json
+  // bin used by source and PATH installs. Both must dispatch recorder and hook.
+  for (const entry of [join("src", "main.ts"), join("bin", "agentops")]) {
+    test(`${entry} dispatches recorder and hook`, () => {
+      const { dir, env } = repo();
+      const run = (args: string[], stdin = "") =>
+        Bun.spawnSync([process.execPath, join(ROOT, entry), ...args], { cwd: dir, env: { ...env, HOME: process.env.HOME ?? "" }, stdin: new TextEncoder().encode(stdin), stdout: "pipe", stderr: "pipe" });
+      const status = run(["recorder", "status"]);
+      expect(status.exitCode).toBe(0);
+      expect(status.stdout.toString()).toContain("Recorder: disabled");
+      const hook = run(["hook", "Stop"], "{}");
+      expect(hook.exitCode).toBe(0);
+      expect(hook.stderr.toString()).toBe("");
+    });
+  }
 });

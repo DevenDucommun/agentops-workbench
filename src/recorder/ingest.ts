@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
-import { type AgentOpsConfig, defaultConfig, loadConfig } from "../config";
+import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
 import { getEventChain, ingestTranscript, linkSessionCommit, openStore, type SessionCommit } from "../store";
 
@@ -60,7 +60,17 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
  * SessionEnd hook output.
  */
 export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): string {
-  const config = options.config ?? repoConfig(options.repoRoot);
+  // An invalid config must not be replaced by defaults here: that would report a
+  // pass that `agentops check` rejects. Say the config is invalid instead.
+  let config = options.config;
+  if (!config) {
+    const validation = validateConfigFile(join(options.repoRoot, "agentops.config.json"));
+    if (validation.errors.length) {
+      const line = `agentops: needs review: invalid agentops.config.json: ${validation.errors.join("; ")} (run agentops check)`;
+      return line.replace(/\s+/g, " ").slice(0, 300);
+    }
+    config = validation.config;
+  }
   const { sessionId } = ingestSpoolFile(spoolFile, { ...options, config });
   const store = openStore(options.dbPath ?? join(options.repoRoot, ".agentops", "agentops.db"));
   try {
