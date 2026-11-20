@@ -124,3 +124,16 @@ function openInlineFixture(events: unknown[]) {
   ingestTranscript(store, transcript, defaultConfig);
   return store;
 }
+
+test("checks claims against the whole final response, not the clipped summary", () => {
+  const preamble = "I looked at the parser. I read the config. I traced the store. I compared both adapters. I wrote a fixture. I reran the suite.";
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "long-final" },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun test" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "final_response", content: `${preamble} Tests passed and lint is clean.` }
+  ]);
+  analyzeSession(store, "long-final", defaultConfig);
+
+  expect(getRiskFlags(store, "long-final").map((flag) => flag.category)).toContain("missing-lint-evidence");
+  store.db.close();
+});
