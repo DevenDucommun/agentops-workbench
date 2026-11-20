@@ -11,6 +11,9 @@ import { fallbackSessionId, parseJsonlTranscript } from "../src/parser";
 import { redactString } from "../src/redaction";
 import { getEvents, ingestTranscript, listSessions, openStore } from "../src/store";
 
+// U+FEFF, built at runtime so no invisible character or escape appears in the source.
+const BOM = String.fromCharCode(0xfeff);
+
 test("fallback ids never look like credentials, so redaction cannot merge sessions", () => {
   // "task-<hex>" contains "sk-<hex>", which matched the OpenAI-style key rule.
   for (const stem of ["task", "disk", "desk", "ghp", "xoxb"]) {
@@ -117,7 +120,7 @@ test("git path decoding: raw bytes never collide with a name spelled with backsl
   const raw = decodeGitOutput(Buffer.from([0x78, 0x2d, 0x80, 0x81]));
   const literal = decodeGitOutput(Buffer.from("x-\\200\\201", "utf8"));
   expect(raw).not.toBe(literal);
-  expect(decodeGitOutput(Buffer.from("﻿note.md", "utf8"))).toBe("﻿note.md");
+  expect(decodeGitOutput(Buffer.from(`${BOM}note.md`, "utf8"))).toBe(`${BOM}note.md`);
   expect(decodeGitOutput(Buffer.from("café.ts", "utf8"))).toBe("café.ts");
 });
 
@@ -170,9 +173,9 @@ test("the repo JSON export keeps non-UTF-8 git paths distinct after a JSON round
 test("the repo JSON export keeps valid paths exactly as they are, backslashes included", () => {
   const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-json-exact-")), "agentops.db"));
   ingestTranscript(store, parseJsonlTranscript("s.jsonl", JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "exact" })), defaultConfig);
-  const changes = ["part\\name.txt", "case-💡.ts", "\\uFEFFnote.md"].map((path) => ({ path, status: "??", additions: null, deletions: null }));
+  const changes = ["part\\name.txt", "case-💡.ts", `${BOM}note.md`].map((path) => ({ path, status: "??", additions: null, deletions: null }));
   const exported = JSON.parse(generateRepoJsonExport(store, "exact", changes, defaultConfig)).git.changes as Array<{ path: string; pathBytesHex?: string }>;
-  expect(exported.map((change) => change.path)).toEqual(["part\\name.txt", "case-💡.ts", "\\uFEFFnote.md"]);
+  expect(exported.map((change) => change.path)).toEqual(["part\\name.txt", "case-💡.ts", `${BOM}note.md`]);
   expect(exported.every((change) => change.pathBytesHex === undefined)).toBe(true);
   store.db.close();
 });
