@@ -21,10 +21,16 @@ mkdir -p "$report_base"
 report_dir="$(mktemp -d "$report_base/agentops-gate.XXXXXX")"
 combined="$report_dir/agentops-gate-comment.md"
 
-# Expand globs; keep literal paths so a missing file is reported, not skipped.
+# Expand globs; keep unmatched patterns so a missing file is reported, not
+# skipped. Split the input with globbing off: expanding it here, with nullglob
+# on, would drop an unmatched pattern before the loop could keep it.
+set -f
+# shellcheck disable=SC2206 # intentional word splitting; globbing is off
+patterns=(${AGENTOPS_ARTIFACTS:?AGENTOPS_ARTIFACTS is required})
+set +f
 shopt -s nullglob
 artifacts=()
-for pattern in ${AGENTOPS_ARTIFACTS:?AGENTOPS_ARTIFACTS is required}; do
+for pattern in "${patterns[@]}"; do
   # shellcheck disable=SC2206 # intentional glob expansion of the pattern
   matches=($pattern)
   if [ ${#matches[@]} -eq 0 ]; then
@@ -34,6 +40,10 @@ for pattern in ${AGENTOPS_ARTIFACTS:?AGENTOPS_ARTIFACTS is required}; do
   fi
 done
 shopt -u nullglob
+if [ ${#artifacts[@]} -eq 0 ]; then
+  echo "::error::AgentOps gate failed: the artifacts input resolved to no paths"
+  exit 1
+fi
 
 status="passed"
 failed=0

@@ -8,7 +8,7 @@ export type GitChange = {
 };
 
 export function getGitChanges(cwd = process.cwd()): GitChange[] {
-  const statusOutput = git(["status", "--porcelain=v1"], cwd);
+  const statusOutput = git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
   const numstatOutput = git(["diff", "--numstat", "HEAD", "--"], cwd);
   return mergeGitChanges(parseGitStatus(statusOutput), parseGitNumstat(numstatOutput));
 }

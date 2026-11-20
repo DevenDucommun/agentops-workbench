@@ -1,7 +1,7 @@
 import { basename, resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
-import { redactValue } from "./redaction";
+import { redactValue, sha256 } from "./redaction";
 import type { ParsedTranscript, RawEvent, SessionRecord } from "./types";
 
 export type ParseOptions = {
@@ -19,7 +19,7 @@ export function parseJsonlTranscript(sourcePath: string, input: string, options:
   const normalizedEvents = config.privacy.redactBeforeStore ? events.map((event) => redactValue(event)) : events;
 
   const resolvedPath = resolve(sourcePath);
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "session");
 
   return {
     session: {
@@ -56,6 +56,8 @@ function parseLine(line: string, lineNumber: number): RawEvent | SessionRecord {
 
 export function summarizeEvent(event: RawEvent): string {
   if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
+  // Claim checks read the final response from this summary, so it is never clipped.
+  if (event.type === "final_response" && typeof event.content === "string" && event.content.trim()) return event.content.replace(/\s+/g, " ").trim();
   if (typeof event.content === "string" && event.content.trim()) return compact(event.content);
   if (typeof event.toolName === "string") return event.toolName;
   const command = extractCommand(event);
@@ -63,6 +65,16 @@ export function summarizeEvent(event: RawEvent): string {
   const path = extractPath(event);
   if (path) return path;
   return event.type ?? "event";
+}
+
+/**
+ * Session id for an artifact that does not carry one: the file name plus a
+ * short content hash, so two different `terminal.txt` files get different ids
+ * while re-importing the same artifact replaces its earlier import.
+ */
+export function fallbackSessionId(sourcePath: string, input: string, defaultStem: string): string {
+  const stem = basename(sourcePath).replace(/\.[^.]+$/, "") || defaultStem;
+  return `${stem}-${sha256(input.replace(/\r\n/g, "\n")).slice(0, 8)}`;
 }
 
 export function extractCommand(event: RawEvent): string | null {
