@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
+import { parseCodexExecJsonl } from "../src/codexExec";
 import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger } from "../src/ledger";
 import { parseJsonlTranscript } from "../src/parser";
 import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
@@ -90,6 +91,31 @@ describe("analyzer and gate", () => {
   });
 });
 
+describe("Codex: an unfinished retry", () => {
+  const stream = (retry: string) =>
+    [
+      `{"type":"thread.started","thread_id":"codex-ledger-retry"}`,
+      `{"type":"item.completed","item":{"id":"c1","type":"command_execution","command":"bun test","status":"failed","exit_code":1,"output":"1 fail"}}`,
+      retry,
+      `{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"All tests pass."}}`
+    ].join("\n");
+  const verdict = (retry: string) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseCodexExecJsonl("codex.jsonl", stream(retry)), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    return claim?.verdict;
+  };
+
+  test("item.started without a result leaves the failed run as the verdict", () => {
+    expect(verdict(`{"type":"item.started","item":{"id":"c2","type":"command_execution","command":"bun test"}}`)).toBe("contradicted");
+  });
+
+  test("a completed passing retry supports the claim", () => {
+    expect(verdict(`{"type":"item.completed","item":{"id":"c2","type":"command_execution","command":"bun test","status":"completed","exit_code":0,"output":"ok"}}`)).toBe("supported");
+  });
+});
+
 describe("buildClaimsLedger", () => {
   const run = (id: number, eventId: number | null, command: string, status: string | null, exitCode: number | null) => ({ id, eventId, command, status, exitCode, output: null });
   const final = (rowId: number, text: string) => ({ rowId, eventId: null, text });
@@ -102,6 +128,18 @@ describe("buildClaimsLedger", () => {
       eventIds: new Map()
     });
     expect(ledger.claims.map((c) => [c.verdict, c.evidence.length])).toEqual([["contradicted", 1]]);
+  });
+
+  test("a started run with no result is not evidence; the last completed run decides", () => {
+    const ledger = buildClaimsLedger({
+      sessionId: "s",
+      finalEvent: final(9, "All tests pass."),
+      commands: [run(1, 2, "bun test", "failed", 1), run(2, 3, "bun test", "in_progress", null)],
+      eventIds: new Map()
+    });
+    expect(ledger.claims.map((c) => [c.verdict, c.evidence.length, c.cited?.status])).toEqual([["contradicted", 1, "failed"]]);
+    const none = buildClaimsLedger({ sessionId: "s", finalEvent: final(9, "All tests pass."), commands: [run(1, 2, "bun test", "running", null)], eventIds: new Map() });
+    expect(none.claims.map((c) => c.verdict)).toEqual(["unsupported"]);
   });
 
   test("several claims in one response get separate verdicts", () => {

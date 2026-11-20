@@ -83,6 +83,8 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
 ];
 
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
+/** A run that started but has not reported a result (e.g. Codex `item.started`) proves nothing yet. */
+const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
 
 /** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
@@ -105,11 +107,13 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   const ledger: ClaimsLedger = { sessionId: input.sessionId, finalEventRowId: finalEvent?.rowId ?? null, finalEventId: finalEvent?.eventId ?? null, claims: [] };
   if (!finalEvent) return ledger;
 
-  // Only runs that executed before the final response can back it. Commands
-  // without an event row keep their place in insertion order.
-  const runs = input.commands.filter(
-    (command) => !NOT_EXECUTED_STATUSES.has(command.status ?? "") && (command.eventId === null || command.eventId < finalEvent.rowId)
-  );
+  // Only runs that finished before the final response can back it: never-run
+  // and still-running commands are skipped. Commands without an event row keep
+  // their place in insertion order.
+  const runs = input.commands.filter((command) => {
+    const status = (command.status ?? "").toLowerCase();
+    return !NOT_EXECUTED_STATUSES.has(status) && !NONTERMINAL_STATUSES.has(status) && (command.eventId === null || command.eventId < finalEvent.rowId);
+  });
 
   for (const rule of evidenceClaimRules) {
     if (!rule.claimPattern.test(finalEvent.text)) continue;
