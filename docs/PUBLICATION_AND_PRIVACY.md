@@ -114,13 +114,14 @@ Sessions stay in the store until you remove it.
 | --- | --- |
 | Stop recording a repository | `agentops recorder disable` |
 | Stop recording everywhere | `claude plugin uninstall agentops-recorder` |
-| Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
+| Delete one session everywhere | `agentops recorder forget <session-id>`, from inside the repository |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove `<repository>/.agentops/agentops.db` |
 | Remove all recorder state | remove `<state>/` |
 
-No command deletes a single session from the store yet. Remove the store, then
-re-import the spools you want to keep with `agentops audit`.
+`agentops recorder forget` deletes the session from the repository's store
+(its events, commands, file changes, risk flags and commit links go with it)
+and removes its spool, error and lock files. Other sessions are untouched.
 
 ## Public Release Checklist
 
