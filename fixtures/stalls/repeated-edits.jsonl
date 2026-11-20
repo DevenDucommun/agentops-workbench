@@ -1,0 +1,15 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"stall-repeated-edits","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic stall case: one file edited six times"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Make the parser tests pass."}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 1."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 2."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 3."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 4."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 5."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/parser.ts","operation":"edit","linesAdded":2,"linesRemoved":1,"summary":"Synthetic edit 6."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test test/parser.test.ts"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"I kept adjusting the parser but the tests still fail."}
