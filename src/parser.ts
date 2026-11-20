@@ -55,9 +55,10 @@ function parseLine(line: string, lineNumber: number): RawEvent | SessionRecord {
 }
 
 export function summarizeEvent(event: RawEvent): string {
-  if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
-  // Claim checks read the final response from this summary, so it is never clipped.
+  // Claim checks read the final response from this summary, so the full content wins
+  // over a producer's display summary and is never clipped.
   if (event.type === "final_response" && typeof event.content === "string" && event.content.trim()) return event.content.replace(/\s+/g, " ").trim();
+  if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
   if (typeof event.content === "string" && event.content.trim()) return compact(event.content);
   if (typeof event.toolName === "string") return event.toolName;
   const command = extractCommand(event);

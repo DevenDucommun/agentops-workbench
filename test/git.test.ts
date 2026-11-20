@@ -75,3 +75,18 @@ test("parses name-status output, keeping the new path of a rename", () => {
     { path: "odd name.ts", status: "A", additions: null, deletions: null }
   ]);
 });
+
+test("keeps non-ASCII paths literal whatever the user's quotePath setting", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-git-")));
+  const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], { cwd: dir });
+  git("init", "-q");
+  git("config", "core.quotePath", "true");
+  writeFileSync(join(dir, "README.md"), "x\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  mkdirSync(join(dir, "new", "deep"), { recursive: true });
+  writeFileSync(join(dir, "new", "deep", "example.ts"), "export {};\n");
+  writeFileSync(join(dir, "new", "deep", "café.ts"), "export {};\n");
+
+  expect(getGitChanges(dir).map((change) => change.path).sort()).toEqual(["new/deep/café.ts", "new/deep/example.ts"]);
+});

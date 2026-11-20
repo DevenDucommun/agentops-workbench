@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
@@ -36,4 +36,24 @@ test("an unmatched glob next to a real file is still reported", () => {
   const result = run(`${join(dir, "*.txt")} ${join(dir, "missing", "*.jsonl")}`);
   expect(result.exitCode).toBe(1);
   expect(result.out).toContain("(artifact not found)");
+});
+
+test("a whitespace-only input still writes the failed status and report when enforcement is deferred", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-action-deferred-"));
+  const output = join(dir, "github-output");
+  const summary = join(dir, "step-summary");
+  writeFileSync(output, "");
+  writeFileSync(summary, "");
+  const proc = Bun.spawnSync(["bash", script], {
+    cwd: dir,
+    env: { PATH: process.env.PATH ?? "", AGENTOPS_BIN: "false", AGENTOPS_ARTIFACTS: "  \n  ", AGENTOPS_REPORT_DIR: dir,
+      AGENTOPS_FAIL_ON_GATE: "false", GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary },
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  expect(proc.exitCode).toBe(0);
+  const outputs = readFileSync(output, "utf8");
+  expect(outputs).toContain("status=failed");
+  expect(outputs).toContain("failed=1");
+  expect(readFileSync(summary, "utf8")).toContain("resolved to no paths");
 });

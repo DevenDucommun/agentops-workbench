@@ -40,10 +40,6 @@ for pattern in "${patterns[@]}"; do
   fi
 done
 shopt -u nullglob
-if [ ${#artifacts[@]} -eq 0 ]; then
-  echo "::error::AgentOps gate failed: the artifacts input resolved to no paths"
-  exit 1
-fi
 
 status="passed"
 failed=0
@@ -56,6 +52,13 @@ gate_failed() {
   status="failed"
   failed=$((failed + 1))
 }
+
+# An input that resolves to no paths is a failure, reported like any other so
+# that the status output and report exist when enforcement is deferred.
+if [ ${#artifacts[@]} -eq 0 ]; then
+  gate_failed "(empty artifacts input)" "the artifacts input resolved to no paths"
+  printf '\n## AgentOps Quality Gate\n\n**Status:** FAILED\n\nThe artifacts input resolved to no paths.\n' >> "$combined"
+fi
 
 # Artifacts are untrusted. Nothing derived from their content (such as the
 # session id) is used in a file path, a command argument, or stdout, where it
