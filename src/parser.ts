@@ -92,10 +92,14 @@ export function fallbackSessionId(sourcePath: string, input: string, defaultStem
   // id. Try other separators first so the file stem, and with it the distinction
   // between same-text captures from different files, survives; a neutral stem is the
   // last resort.
-  for (const candidate of [`${stem}-${hash}`, `${stem}_${hash}`, `${stem}~${hash}`, `${defaultStem}-${hash}`, `session-${hash}`]) {
+  for (const candidate of [`${stem}-${hash}`, `${stem}_${hash}`, `${stem}~${hash}`]) {
     if (redactString(candidate) === candidate) return candidate;
   }
-  return `session-${hash}`;
+  // The stem itself is redacted (an email address in the file name, say): keep the
+  // name in the identity by hashing it with the content under a neutral stem.
+  const named = sha256(`${stem}\0${input.replace(/\r\n/g, "\n")}`).slice(0, 32);
+  const neutral = `${defaultStem}-${named}`;
+  return redactString(neutral) === neutral ? neutral : `session-${named}`;
 }
 
 export function extractCommand(event: RawEvent): string | null {

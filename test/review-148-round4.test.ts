@@ -67,3 +67,22 @@ test("an unreadable git config fails instead of reporting no changes", () => {
   const outside = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r5-norepo-")));
   expect(getGitChangesOrEmpty(outside)).toEqual([]);
 });
+
+test("a summary that only shares the body's opening letters is still checked", () => {
+  expect(finalClaimTexts({ summary: "Build complete", text: "Build completeness is still unknown." }))
+    .toEqual(["Build completeness is still unknown.", "Build complete"]);
+  expect(finalClaimTexts({ summary: "Build complete.", text: "Build complete." })).toEqual(["Build complete."]);
+});
+
+test("captures whose file names redact keep separate sessions", () => {
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-r6-")), "agentops.db"));
+  const text = "$ bun test\nexit code 0\nFinal: same text.\n";
+  // Email-shaped names, assembled at runtime so the publication scan does not flag the source.
+  const named = (user: string) => `${[user, "example.invalid"].join("@")}.txt`;
+  ingestTranscript(store, parseForensicTextTranscript(named("alice"), text, defaultConfig), defaultConfig);
+  ingestTranscript(store, parseForensicTextTranscript(named("bob"), text, defaultConfig), defaultConfig);
+  const ids = listSessions(store).map((session) => session.id);
+  expect(ids).toHaveLength(2);
+  expect(ids.every((id) => redactString(id) === id)).toBe(true);
+  store.db.close();
+});
