@@ -358,9 +358,11 @@ export function getUsageSummary(store: Store, sessionId: string): UsageSummary {
 }
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
+  // A read-only store written by an earlier version has no text column; read it as NULL.
+  const text = hasColumn(store.db, "events", "text") ? "text" : "NULL AS text";
   return store.db
     .query(
-      "SELECT id, idx, type, role, summary, text, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
+      `SELECT id, idx, type, role, summary, ${text}, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx`
     )
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
@@ -531,10 +533,19 @@ export function findSessionsForCommit(store: Store, sha: string): SessionCommit[
     .all({ $sha: needle, $prefix: `${needle}%` }) as SessionCommit[];
 }
 
-function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+function hasColumn(db: Database, table: string, column: string): boolean {
   const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  if (!columns.some((row) => row.name === column)) {
+  return columns.some((row) => row.name === column);
+}
+
+function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+  if (hasColumn(db, table, column)) return;
+  try {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (error) {
+    // A read-only store from an earlier version stays readable: readers that need the
+    // new column check for it, and writes still fail as before.
+    if (!/readonly/i.test(String((error as Error)?.message ?? error))) throw error;
   }
 }
 

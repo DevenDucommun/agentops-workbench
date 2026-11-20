@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
@@ -178,4 +178,24 @@ test("the repo JSON export keeps valid paths exactly as they are, backslashes in
   expect(exported.map((change) => change.path)).toEqual(["part\\name.txt", "case-💡.ts", `${BOM}note.md`]);
   expect(exported.every((change) => change.pathBytesHex === undefined)).toBe(true);
   store.db.close();
+});
+
+test("a read-only store from before events.text stays readable without being modified", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-ro-")));
+  const path = join(dir, "agentops.db");
+  const store = openStore(path);
+  ingestTranscript(store, parseJsonlTranscript("s.jsonl", JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "legacy" })), defaultConfig);
+  store.db.exec("ALTER TABLE events DROP COLUMN text");
+  store.db.close();
+  chmodSync(path, 0o444);
+  try {
+    const before = Bun.hash(readFileSync(path));
+    const readOnly = openStore(path);
+    expect(listSessions(readOnly).map((session) => session.id)).toEqual(["legacy"]);
+    expect(getEvents(readOnly, "legacy").every((event) => event.text === null)).toBe(true);
+    readOnly.db.close();
+    expect(Bun.hash(readFileSync(path))).toBe(before);
+  } finally {
+    chmodSync(path, 0o644);
+  }
 });
