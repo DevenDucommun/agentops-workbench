@@ -48,18 +48,53 @@ Forensic inferred commands are review evidence, not observed proof.
 ## Claims Ledger
 
 Each test, lint, typecheck or build claim in the final response gets a verdict
-from the matching commands that ran before it:
+from the runs recorded before it:
 
 | Verdict | When | Risk flag |
 | --- | --- | --- |
-| `supported` | The latest matching run passed | none |
-| `contradicted` | The latest matching run failed, and no later run passed | `contradicted-claim` |
-| `unsupported` | No matching run was observed | `missing-<kind>-evidence` |
+| `supported` | The latest relevant run is a passing run that can support the claim | none |
+| `contradicted` | The latest relevant run failed | `contradicted-claim` |
+| `unsupported` | No relevant run was observed | `missing-<kind>-evidence` |
 
 A run fails when it reports a non-zero exit code or a failed status. Denied,
 declined and inferred commands never count as runs. The verdict cites the run
 it rests on by `eventId`, or by stored event row for sessions recorded without
 event IDs. A claim that fails, then passes on a re-run, is supported.
+
+Evidence is asymmetric, so no rule can hide a failure:
+
+- **Against a claim:** any failed run whose command mentions the kind anywhere
+  (`bun test`, `go test -run X`, `cd app && bun test`, `bun test > log`, a
+  search for the words) counts as a failing run, whatever its shape.
+- **For a claim:** only a passing run with a strict shape counts. It must come
+  from a shell execution (Claude Code `Bash`, Codex `command_execution`, or a
+  generic event with no tool name or a shell tool name: `Bash`, `shell`,
+  `exec_command`, `local_shell`). The command must be plain printable ASCII
+  with none of `; & | < > $` backtick, quotes, `\`, `#`, tabs or newlines. The
+  kind's command (`bun test`, `npm run lint`, `tsc`, ...) must be at the
+  program position, after optional leading `VAR=value` assignments, followed
+  by a space or the end (`npm run test:label` does not count). No single-dash
+  argument may contain `h`, `V` or `n` (`-h`, `-V`, `-kn`, `-run` all
+  disqualify), and none of `--help`, `--version`, `--dry-run`, `--list`,
+  `--collect-only` may appear. Wrapped commands (`sh -c '...'`, `env -u X ...`,
+  `npx tsc`, `timeout 20 ...`) never support a claim. A passing run that does
+  not have this shape is ignored.
+
+A run counts only once its result is recorded before the final response: a
+still-running command, a Claude Code tool call without a `tool_result`, or a
+result recorded after the final response is not evidence. For Claude Code, a
+`tool_result` belongs to the most recent call with that id before it, and a
+call's outcome is its first result, so reused ids never share outcomes. Only
+the Bash tool produces commands; a `command` argument passed to another tool
+is not a run.
+
+Claim detection is response-level and errs toward finding claims. A kind is
+claimed when its subject (for example "test" or "lint") and any of its success
+words ("passed", "clean", "green", ...) both appear anywhere in the final
+response or its summary, even when negated, hedged or in different sentences.
+"Tests failed. Lint passed." therefore claims both tests and lint. The ledger
+reads the full final response when the store has it, together with the stored
+summary.
 
 Before the ledger, any matching run supported a claim, including a failed one.
 To keep that behavior, suppress the new flag:

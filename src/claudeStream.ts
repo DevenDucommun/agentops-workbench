@@ -277,6 +277,7 @@ function normalizeUserRecord(record: ClaudeStreamRecord): RawEvent[] {
       schemaVersion: "agentops.event.v1",
       type: "tool_result",
       source: "claude-code",
+      toolUseId: typeof result.tool_use_id === "string" ? result.tool_use_id : undefined,
       status: result.is_error ? "failed" : "completed",
       output: stringifyOutput(result.content),
       summary: result.is_error ? "Claude Code tool result failed." : "Claude Code tool result completed."
@@ -286,12 +287,8 @@ function normalizeUserRecord(record: ClaudeStreamRecord): RawEvent[] {
   return events;
 }
 
-function isFailedResult(record: ClaudeStreamRecord): boolean {
-  return record.subtype !== "success" || record.is_error === true;
-}
-
 function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
-  const failed = isFailedResult(record);
+  const failed = record.subtype !== "success" || record.is_error === true;
   const errors = Array.isArray(record.errors) ? record.errors.filter((value): value is string => typeof value === "string") : [];
   // Claude Code 2.x can report subtype "success" with is_error=true; terminal_reason says why the run ended.
   const reason = typeof record.terminal_reason === "string" ? record.terminal_reason : undefined;
@@ -357,21 +354,25 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
   return initModel ?? records.map((record) => record.message?.model).find(usable);
 }
 
-/** tool_use id -> whether its tool_result reported an error. */
-type ToolResults = Map<string, boolean>;
+/** tool_use block -> whether its tool_result reported an error. */
+type ToolResults = Map<ClaudeContentBlock, boolean>;
 
 // A tool_use and its outcome arrive on separate records: the tool_result in a
-// later user record carries the tool_use_id and is_error. Only results recorded
-// before the last final response count: the claims ledger judges that response,
-// and a result that arrived after it was not known when the claim was made.
+// later user record carries the tool_use_id and is_error. A result belongs to
+// the most recent tool_use with that id before it, and a call's outcome is the
+// first result that belongs to it; results with no earlier call are ignored, so
+// a reused id never shares an outcome. Both events keep the tool_use_id, and
+// the claims ledger applies the same rule to decide whether the result was
+// recorded before the final response.
 function toolResults(records: ClaudeStreamRecord[]): ToolResults {
+  const latestCall = new Map<string, ClaudeContentBlock>();
   const results: ToolResults = new Map();
-  let lastFinal = -1;
-  for (const [index, record] of records.entries()) if (record.type === "result" && !isFailedResult(record)) lastFinal = index;
-  for (const [index, record] of records.entries()) {
-    if (record.type !== "user" || (lastFinal !== -1 && index > lastFinal)) continue;
+  for (const record of records) {
     for (const block of contentBlocks(record.message?.content)) {
-      if (block.type === "tool_result" && typeof block.tool_use_id === "string") results.set(block.tool_use_id, block.is_error === true);
+      if (record.type === "assistant" && block.type === "tool_use" && typeof block.id === "string") latestCall.set(block.id, block);
+      if (record.type !== "user" || block.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
+      const call = latestCall.get(block.tool_use_id);
+      if (call && !results.has(call)) results.set(call, block.is_error === true);
     }
   }
   return results;
@@ -380,7 +381,7 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
 // A Bash command's status comes from its tool_result: an error result is a
 // failed run, and a tool_use with no recorded result (`no_result`) proves nothing.
 function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
-  const failed = typeof block.id === "string" ? results.get(block.id) : undefined;
+  const failed = results.get(block);
   if (failed === undefined) return "no_result";
   return failed ? "failed" : "completed";
 }
@@ -397,6 +398,7 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
       type: "tool_call",
       source: "claude-code",
       toolName: name,
+      toolUseId: typeof block.id === "string" ? block.id : undefined,
       command,
       input,
       status: bashStatus(block, results),
@@ -412,7 +414,7 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
       toolName: name,
       path,
       operation: name.toLowerCase(),
-      input,
+      toolInput: input,
       status: "completed",
       summary: path ?? `Claude Code ${name} tool use.`
     };
@@ -425,7 +427,7 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
       source: "claude-code",
       toolName: name,
       path,
-      input,
+      toolInput: input,
       status: "completed",
       summary: path ?? `Claude Code ${name} tool use.`
     };
@@ -436,7 +438,9 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
     type: "tool_call",
     source: "claude-code",
     toolName: name,
-    input,
+    // Only Bash runs shell commands; other tools keep their input under a key
+    // that command extraction never reads, so a `command` argument is data.
+    toolInput: input,
     status: "completed",
     summary: name
   };

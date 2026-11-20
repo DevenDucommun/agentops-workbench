@@ -9,7 +9,7 @@ import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
 import { parseCodexExecJsonl } from "../src/codexExec";
 import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger } from "../src/ledger";
 import { parseJsonlTranscript } from "../src/parser";
-import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
+import { getCommands, getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -202,31 +202,33 @@ describe("Claude Code: a Bash result decides the run's outcome", () => {
   });
 });
 
-describe("claims are detected per sentence and clause", () => {
+describe("D: claims are detected at response level", () => {
   const run = (id: number, command: string, exitCode: number) => ({ id, eventId: id, command, status: exitCode === 0 ? "completed" : "failed", exitCode, output: null });
-  const claimsFor = (text: string) =>
-    buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 9, eventId: null, text }, commands: [run(1, "bun test", 1), run(2, "bun run lint", 0)], eventIds: new Map() }).claims.map(
-      (c) => [c.id, c.verdict]
-    );
+  const claimsFor = (text: string, commands = [run(1, "bun test", 1), run(2, "bun run lint", 0)]) =>
+    buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 9, eventId: null, text }, commands, eventIds: new Map() }).claims.map((c) => [c.id, c.verdict]);
 
-  test("a test failure and a lint success in separate sentences raise only the lint claim", () => {
-    expect(claimsFor("The tests failed. Lint passed.")).toEqual([["lint", "supported"]]);
-    expect(claimsFor("tests failed\nlint passed")).toEqual([["lint", "supported"]]);
+  test("a subject and a success word anywhere in the response make a claim", () => {
+    const lintOnly = [run(2, "bun run lint", 0)];
+    for (const text of ["Tests failed initially; passed on retry.", "Tests failed initially, but passed on retry.", "Tests\n\npassed.", "Tests ran. Everything passed."]) {
+      expect(claimsFor(text, lintOnly)).toEqual([["test", "unsupported"]]);
+    }
   });
 
-  test("a contrastive clause does not lend its success word to the previous clause", () => {
-    expect(claimsFor("The tests failed, but lint passed.")).toEqual([["lint", "supported"]]);
-    expect(claimsFor("Two tests still fail; lint is clean.")).toEqual([["lint", "supported"]]);
+  test("mixed reports claim every kind they mention with success vocabulary (stricter, never a missed claim)", () => {
+    for (const text of ["The tests failed. Lint passed.", "Tests failed and lint passed.", "The tests failed, but lint passed.", "tests failed\nlint passed"]) {
+      expect(claimsFor(text)).toEqual([
+        ["test", "contradicted"],
+        ["lint", "supported"]
+      ]);
+    }
   });
 
-  test("a claim inside one sentence is still found", () => {
-    expect(claimsFor("Tests pass and lint is clean.")).toEqual([
-      ["test", "contradicted"],
-      ["lint", "supported"]
-    ]);
+  test("a response without success vocabulary for a kind makes no claim for it", () => {
+    expect(claimsFor("Two tests still fail.")).toEqual([]);
+    expect(claimsFor("Updated the parser.")).toEqual([]);
   });
 
-  test("the accurate mixed report passes the gate end to end", () => {
+  test("the mixed report fails the gate end to end because tests are claimed", () => {
     const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
     const transcript = parseJsonlTranscript(
       "mixed.jsonl",
@@ -244,12 +246,12 @@ describe("claims are detected per sentence and clause", () => {
     const categories = getRiskFlags(store, sessionId).map((f) => f.category);
     const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
     store.db.close();
-    expect(categories).not.toContain("contradicted-claim");
-    expect(gate.checks.find((c) => c.id === "unsupported-final-claims")?.status).toBe("passed");
+    expect(categories).toContain("contradicted-claim");
+    expect(gate.checks.find((c) => c.id === "unsupported-final-claims")?.status).toBe("failed");
   });
 });
 
-describe("only executed verification commands are evidence", () => {
+describe("A and B: asymmetric evidence", () => {
   const run = (id: number, command: string, exitCode: number) => ({ id, eventId: id, command, status: exitCode === 0 ? "completed" : "failed", exitCode, output: null });
   const cite = (text: string, ...commands: Array<[string, number]>) => {
     const [claim] = buildClaimsLedger({
@@ -261,86 +263,104 @@ describe("only executed verification commands are evidence", () => {
     return [claim?.verdict, claim?.cited?.command ?? null];
   };
 
-  test("a text search that mentions a test command does not override the passing test run", () => {
-    expect(cite("All tests pass.", ["bun test", 0], ["rg 'bun test' README.md", 1])).toEqual(["supported", "bun test"]);
-    expect(cite("All tests pass.", ["bun test", 0], ["rg 'test instructions' README.md", 1])).toEqual(["supported", "bun test"]);
-  });
-
-  test("commands that only mention a verification command are not evidence", () => {
-    for (const command of ["rg 'bun test' README.md", 'grep -rn "npm test" docs', "echo bun test", "git commit -m 'make test pass'"]) {
-      expect(cite("All tests pass.", [command, 0])).toEqual(["unsupported", null]);
+  test("B: only a plain simple command at the program position supports", () => {
+    for (const command of ["bun test", "CI=1 bun test", "bun test --coverage", "bun run test", "pytest -q", "make test -k", "npm run test -- --watch=false"]) {
+      expect(cite("Tests passed.", [command, 0])).toEqual(["supported", command]);
     }
   });
 
-  test("wrapped, chained and prefixed invocations still count", () => {
+  test("B: passing runs that are not the strict shape never support", () => {
     for (const command of [
+      "rg 'bun test' README.md",
+      "echo bun test",
+      "bun test && false",
+      "bun test ; true",
+      "true || bun test",
+      "bun test | tail -5",
+      "cd app && bun test",
+      "bun test &",
+      "echo $(bun test)",
+      "echo `bun test`",
+      "true # note; bun test",
+      "bun test\nbun test",
       "/bin/zsh -lc 'bun test'",
-      'bash -c "cd app && bun test"',
-      "cd app && bun test --coverage",
-      "CI=1 bun test",
-      "bun install && bun run test",
-      "timeout 120 cargo test",
-      "env NODE_ENV=test npm test",
-      "/usr/local/bin/pytest -q"
-    ]) {
-      expect(cite("All tests pass.", [command, 0])).toEqual(["supported", command]);
-    }
-    expect(cite("Typecheck passed.", ["npx tsc --noEmit", 0])).toEqual(["supported", "npx tsc --noEmit"]);
-  });
-
-  test("a compound command's exit code is only attributed to a test when it is the test's own", () => {
-    // The shell's single exit code belongs to the test: a lone test, a test after `;`,
-    // a test after setup-only steps, or an all-`&&` chain that exited 0.
-    expect(cite("All tests pass.", ["bun test 2>&1", 1])).toEqual(["contradicted", "bun test 2>&1"]);
-    expect(cite("All tests pass.", ["false; bun test", 0])).toEqual(["supported", "false; bun test"]);
-    expect(cite("All tests pass.", ["cd app && bun test", 1])).toEqual(["contradicted", "cd app && bun test"]);
-    expect(cite("All tests pass.", ["bun install && bun test", 0])).toEqual(["supported", "bun install && bun test"]);
-    expect(cite("All tests pass.", ["bun test && bun run lint", 0])).toEqual(["supported", "bun test && bun run lint"]);
-    // Otherwise the test's own outcome is unknown, so the run is not evidence either way.
-    for (const [command, exitCode] of [
-      ["bun test && false", 1],
-      ["bun test ; true", 0],
-      ["true || bun test", 0],
-      ["bun test || true", 0],
-      ["bun test | tail -5", 0],
-      ["bun install && bun test", 1],
-      ["bun test &", 0]
-    ] as Array<[string, number]>) {
-      expect(cite("All tests pass.", [command, exitCode])).toEqual(["unsupported", null]);
-    }
-  });
-
-  test("a compound command with an unknown test outcome leaves an earlier completed failure cited", () => {
-    expect(cite("All tests pass.", ["bun test", 1], ["bun test ; true", 0])).toEqual(["contradicted", "bun test"]);
-  });
-
-  test("a Claude-style failed status without an exit code follows the same attribution", () => {
-    const [claim] = buildClaimsLedger({
-      sessionId: "s",
-      finalEvent: { rowId: 99, eventId: null, text: "All tests pass." },
-      commands: [{ id: 1, eventId: 1, command: "bun test && false", status: "failed", exitCode: null, output: null }],
-      eventIds: new Map()
-    }).claims;
-    expect(claim.verdict).toBe("unsupported");
-  });
-
-  test("wrapper options are consumed with their operands, and lookups are not runs", () => {
-    for (const command of [
       "env -u CI bun test",
-      "env --unset=CI bun test",
-      "env -C app bun test",
-      "timeout -s KILL 20 bun test",
-      "timeout --signal=KILL -k 5 20 bun test",
-      "nice -n 5 bun test",
-      "sudo -u ci bun test",
-      "command bun test"
+      "timeout 20 bun test",
+      "bun test --help",
+      "bun test -h",
+      "bun test -V",
+      "bun test --version",
+      "pytest --collect-only",
+      "npm test --dry-run",
+      "cargo test --list",
+      'bun test "--help"',
+      "bun test --he\\lp",
+      "bun test --help>/dev/null",
+      "make test -kh",
+      "make test -kn",
+      "make test -knj2",
+      "go test -run TestRegression",
+      "npm run test:label",
+      "npm run test label",
+      "bun test\tbad.test.ts",
+      "make test-docs"
     ]) {
-      expect(cite("All tests pass.", [command, 0])).toEqual(["supported", command]);
+      expect(cite("Tests passed.", [command, 0])).toEqual(["unsupported", null]);
     }
-    expect(cite("Typecheck passed.", ["npx -p typescript tsc --noEmit", 0])).toEqual(["supported", "npx -p typescript tsc --noEmit"]);
-    for (const command of ["command -v bun test", "command -V bun test", "env -u bun test"]) {
-      expect(cite("All tests pass.", [command, 0])).toEqual(["unsupported", null]);
+    expect(cite("Typecheck passed.", ["npx tsc --noEmit", 0])).toEqual(["unsupported", null]);
+  });
+
+  test("A: a failed run that mentions the kind contradicts, whatever its shape", () => {
+    for (const command of [
+      "go test -run TestRegression",
+      'bun test "bad.test.ts"',
+      "bun test bad.test.ts > test.log",
+      "cd missing && bun test",
+      "bun test && false",
+      "sh -c 'bun test'",
+      "rg 'bun test' README.md"
+    ]) {
+      expect(cite("Tests passed.", ["bun test ok.test.ts", 0], [command, 1])).toEqual(["contradicted", command]);
     }
+  });
+
+  test("A: a later strict passing run supports again; a later non-strict pass does not", () => {
+    expect(cite("Tests passed.", ["go test -run TestRegression", 1], ["bun test", 0])).toEqual(["supported", "bun test"]);
+    expect(cite("Tests passed.", ["bun test", 1], ["bun test --help", 0])).toEqual(["contradicted", "bun test"]);
+    expect(cite("Tests passed.", ["bun test", 1], ["bun test; true", 0])).toEqual(["contradicted", "bun test"]);
+  });
+
+  test("B: a non-shell tool's command never supports, in any adapter", () => {
+    const ledger = buildClaimsLedger({
+      sessionId: "s",
+      finalEvent: { rowId: 99, eventId: null, text: "Tests passed." },
+      commands: [run(1, "bun test", 0)],
+      eventIds: new Map(),
+      toolNames: new Map([[1, "mcp__demo__describe_command"]])
+    });
+    expect(ledger.claims.map((c) => c.verdict)).toEqual(["unsupported"]);
+    for (const tool of ["Bash", "shell", "exec_command", "local_shell", "functions.exec_command"]) {
+      const shell = buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 99, eventId: null, text: "Tests passed." }, commands: [run(1, "bun test", 0)], eventIds: new Map(), toolNames: new Map([[1, tool]]) });
+      expect(shell.claims.map((c) => c.verdict)).toEqual(["supported"]);
+    }
+  });
+
+  test("B: a generic JSONL non-shell tool call with input.command does not support", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript(
+      "generic.jsonl",
+      [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "ledger-generic-tool" },
+        { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "mcp__demo__describe_command", input: { command: "bun test" }, status: "completed" },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: "Tests passed." }
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n")
+    );
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => c.verdict);
+    store.db.close();
+    expect(claims).toEqual(["unsupported"]);
   });
 });
 
@@ -351,9 +371,26 @@ describe("claims: coordination, negation and labels", () => {
       (c) => [c.id, c.verdict]
     );
 
-  test("independent clauses joined by 'and' keep their own verdict words", () => {
-    expect(claimsFor("Tests failed and lint passed.")).toEqual([["lint", "supported"]]);
-    expect(claimsFor("Tests failed, lint passed.")).toEqual([["lint", "supported"]]);
+  test("clauses joined by 'and' in one sentence are checked together (stricter, never a missed claim)", () => {
+    for (const text of ["Tests failed and lint passed.", "Tests failed, lint passed."]) {
+      expect(claimsFor(text)).toEqual([
+        ["test", "contradicted"],
+        ["lint", "supported"]
+      ]);
+    }
+  });
+
+  test("an explicit summary's claims are checked alongside the full response", () => {
+    const ledger = buildClaimsLedger({
+      sessionId: "s",
+      finalEvent: { rowId: 9, eventId: null, text: "Lint passed.", summary: "Tests passed." },
+      commands: [run(2, "bun run lint", 0)],
+      eventIds: new Map()
+    });
+    expect(ledger.claims.map((c) => [c.id, c.verdict])).toEqual([
+      ["test", "unsupported"],
+      ["lint", "supported"]
+    ]);
   });
 
   test("a shared verdict across 'and' still claims both", () => {
@@ -363,9 +400,9 @@ describe("claims: coordination, negation and labels", () => {
     ]);
   });
 
-  test("a negated success word is not a claim", () => {
-    for (const text of ["Tests did not pass.", "Tests didn't pass.", "The tests are not passing.", "Tests never passed.", "Tests still don’t pass."]) {
-      expect(claimsFor(text)).toEqual([]);
+  test("a negated or hedged success sentence is still a claim (over-detection)", () => {
+    for (const text of ["Tests did not pass.", "No tests passed.", "Tests not only passed but finished early.", "Tests should pass now."]) {
+      expect(claimsFor(text)).toEqual([["test", "contradicted"]]);
     }
   });
 
@@ -406,6 +443,64 @@ describe("Claude Code: a result after the final response is not evidence", () =>
   test("a result before the latest final response still counts", () => {
     expect(verdict(records(final("Working on it."), ok, final("All tests pass.")))).toEqual({ claims: ["supported"], gate: "passed" });
   });
+
+  test("the first result after the call decides; a later duplicate cannot overturn it", () => {
+    const failed = { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_t1", is_error: true, content: "1 fail" }] } };
+    expect(verdict(records(failed, final("All tests pass."), ok))).toEqual({ claims: ["contradicted"], gate: "failed" });
+  });
+
+  test("a result recorded before its call is ignored", () => {
+    const stream = [
+      { type: "system", subtype: "init", session_id: "claude-early" },
+      ok,
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_t1", name: "Bash", input: { command: "bun test" } }] } },
+      final("All tests pass.")
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    expect(verdict(stream)).toEqual({ claims: ["unsupported"], gate: "failed" });
+  });
+
+  test("C: a reused tool_use id never shares an outcome between calls", () => {
+    const call = (command: string) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_r", name: "Bash", input: { command } }] } });
+    const res = (isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_r", is_error: isError, content: "out" }] } });
+    const stream = (...rows: unknown[]) => [{ type: "system", subtype: "init", session_id: "claude-reuse" }, ...rows].map((record) => JSON.stringify(record)).join("\n");
+    expect(verdict(stream(call("echo hello"), res(false), call("bun test"), res(true), final("All tests pass.")))).toEqual({ claims: ["contradicted"], gate: "failed" });
+    expect(verdict(stream(call("echo hello"), res(false), call("bun test"), final("All tests pass.")))).toEqual({ claims: ["unsupported"], gate: "failed" });
+    expect(verdict(stream(call("bun test"), res(true), call("bun test"), res(false), final("All tests pass.")))).toEqual({ claims: ["supported"], gate: "passed" });
+  });
+
+  test("a non-Bash tool whose input has a command field is not a shell command", () => {
+    const stream = [
+      { type: "system", subtype: "init", session_id: "claude-mcp" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_m1", name: "mcp__demo__describe_command", input: { command: "bun test" } }] } },
+      final("All tests pass.")
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const commands = getCommands(store, sessionId);
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => c.verdict);
+    store.db.close();
+    expect(commands).toEqual([]);
+    expect(claims).toEqual(["unsupported"]);
+  });
+
+  test("a later command keeps its recorded outcome in the session history", () => {
+    const lintCall = { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_l1", name: "Bash", input: { command: "bun run lint" } }] } };
+    const lintError = { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_l1", is_error: true, content: "1 error" }] } };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", records(ok, final("All tests pass."), lintCall, lintError)), defaultConfig);
+    const statuses = getCommands(store, sessionId).map((c) => [c.command, c.status]);
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => [c.id, c.verdict]);
+    store.db.close();
+    expect(statuses).toEqual([
+      ["bun test", "completed"],
+      ["bun run lint", "failed"]
+    ]);
+    expect(claims).toEqual([["test", "supported"]]);
+  });
 });
 
 describe("the ledger reads the full final response when the store has it", () => {
@@ -443,5 +538,31 @@ describe("the ledger reads the full final response when the store has it", () =>
 
   test("legacy rows without full text fall back to the summary", () => {
     expect(audit("All tests pass.", () => null)).toEqual([["test", "contradicted"]]);
+  });
+
+  test("full text with a line break inside a claim is still a claim", () => {
+    expect(audit("All tests\npass.", (full) => full)).toEqual([["test", "contradicted"]]);
+  });
+
+  test("a distinct claim in the stored summary is checked as well as the full text", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript(
+      "summary.jsonl",
+      [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "ledger-summary" },
+        { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Bash", input: { cmd: "bun run lint" }, status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: "Lint passed.", summary: "Tests passed." }
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n")
+    );
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    store.db.query("UPDATE events SET text = 'Lint passed.' WHERE session_id = $sid AND type = 'final_response'").run({ $sid: sessionId });
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => [c.id, c.verdict]);
+    store.db.close();
+    expect(claims).toEqual([
+      ["test", "unsupported"],
+      ["lint", "supported"]
+    ]);
   });
 });
