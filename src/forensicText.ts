@@ -254,15 +254,28 @@ function extractFilePaths(line: string): string[] {
 }
 
 function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>): string | null {
-  const marker = [...lines].reverse().find((entry) => /^(?:final|assistant|summary|result)\s*:/i.test(entry.line));
-  if (marker) return compact(marker.line.replace(/^(?:final|assistant|summary|result)\s*:\s*/i, ""));
+  const markerPattern = /^(?:final|assistant|summary|result)\s*:\s*/i;
+  let markerIndex = -1;
+  lines.forEach((entry, index) => {
+    if (markerPattern.test(entry.line)) markerIndex = index;
+  });
+  if (markerIndex >= 0) {
+    // The response runs from the marker to the next command or exit-code line, so a
+    // claim on a continuation line is still checked.
+    const parts = [(lines[markerIndex]?.line ?? "").replace(markerPattern, "")];
+    for (const entry of lines.slice(markerIndex + 1)) {
+      if (extractObservedCommand(entry.line) || extractExitCode(entry.line) !== null) break;
+      parts.push(entry.line);
+    }
+    return collapse(parts.join(" ")) || null;
+  }
 
   const candidates = lines
     .filter((entry) => !extractObservedCommand(entry.line) && !extractExitCode(entry.line))
     .map((entry) => entry.line)
     .filter((line) => line.length > 20);
   const tail = candidates.slice(-3).join(" ");
-  return tail ? compact(tail) : null;
+  return tail ? collapse(tail) : null;
 }
 
 function inferAgent(input: string): string {
@@ -272,7 +285,7 @@ function inferAgent(input: string): string {
   return "Unknown";
 }
 
-function compact(value: string): string {
-  const oneLine = value.replace(/\s+/g, " ").trim();
-  return oneLine.length > 1000 ? `${oneLine.slice(0, 997)}...` : oneLine;
+/** Whitespace-collapsed but never clipped: claim checks read the whole final response. */
+function collapse(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }

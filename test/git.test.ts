@@ -44,3 +44,18 @@ test("lists each untracked file inside a new directory, not the directory", () =
 
   expect(getGitChanges(dir).map((change) => change.path)).toEqual(["nested-new/example.ts"]);
 });
+
+test("keeps non-ASCII paths literal whatever the user's quotePath setting", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-git-")));
+  const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], { cwd: dir });
+  git("init", "-q");
+  git("config", "core.quotePath", "true");
+  writeFileSync(join(dir, "README.md"), "x\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  mkdirSync(join(dir, "new", "deep"), { recursive: true });
+  writeFileSync(join(dir, "new", "deep", "example.ts"), "export {};\n");
+  writeFileSync(join(dir, "new", "deep", "café.ts"), "export {};\n");
+
+  expect(getGitChanges(dir).map((change) => change.path).sort()).toEqual(["new/deep/café.ts", "new/deep/example.ts"]);
+});

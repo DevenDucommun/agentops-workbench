@@ -71,7 +71,8 @@ export function mergeGitChanges(
 
 function git(args: string[], cwd: string): string {
   try {
-    return execFileSync("git", args, {
+    // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
+    return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
