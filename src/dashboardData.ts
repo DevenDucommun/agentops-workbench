@@ -1,4 +1,5 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
+import { type RiskFlag, evaluateSessionRisks, claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand, successfulCommands } from "./analyzer";
+import { evaluateQualityGate, type GateResult } from "./gate";
 import type { AgentOpsConfig } from "./config";
 import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
@@ -116,6 +117,7 @@ type DashboardEvidenceQuality = {
 };
 
 type DashboardMergeReadiness = {
+  gateStatus: GateResult["status"];
   status: "ready" | "needs-review" | "blocked";
   label: string;
   reasons: string[];
@@ -296,7 +298,11 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
+  const successful = successfulCommands(commands, session.source_adapter);
+  const evidence = [...successful, ...commands.filter((command) => command.status === "inferred")];
+  const currentRisks = evaluateSessionRisks(store, sessionId, config);
+  const gate = evaluateQualityGate(store, sessionId, config, { risks: currentRisks });
+  const decision = buildDashboardDecision(events, evidence, currentRisks, evidence.filter((command) => isVerificationCommand(command.command, config)), gate, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -439,8 +445,9 @@ function buildRiskItem(
 function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
-  risks: RiskFlagRecord[],
+  risks: RiskFlag[],
   verification: CommandRecord[],
+  gate: GateResult,
   ledger: ClaimsLedger
 ): DashboardDecision {
   const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
@@ -454,7 +461,7 @@ function buildDashboardDecision(
   let status: DashboardMergeReadiness["status"] = "ready";
 
   if (highRiskCount > 0) {
-    status = "blocked";
+    status = gate.checks.some((check) => check.id === "max-high-risks" && check.status === "failed") ? "blocked" : "needs-review";
     reasons.push(`${highRiskCount} high-severity risk${highRiskCount === 1 ? "" : "s"} detected.`);
   }
   if (mediumRiskCount > 0) {
@@ -477,10 +484,15 @@ function buildDashboardDecision(
     if (status === "ready") status = "needs-review";
     reasons.push("No verification command was recorded.");
   }
+  if (gate.status === "failed") {
+    if (status === "ready") status = "needs-review";
+    reasons.push(...gate.checks.filter((check) => check.status === "failed").map((check) => check.message));
+  }
   if (!reasons.length) reasons.push("No blocking risks or missing evidence detected.");
 
   return {
     mergeReadiness: {
+      gateStatus: gate.status,
       status,
       label: status === "ready" ? "Ready" : status === "blocked" ? "Blocked" : "Needs review",
       reasons,
@@ -503,7 +515,7 @@ const LEDGER_ROW_LABELS: Partial<Record<LedgerClaim["id"], string>> = {
 function buildEvidenceRows(
   finalSummary: string,
   commands: CommandRecord[],
-  risks: RiskFlagRecord[],
+  risks: RiskFlag[],
   verification: CommandRecord[],
   ledger: ClaimsLedger
 ): DashboardEvidenceRow[] {
@@ -557,7 +569,7 @@ function buildEvidenceRows(
   return rows;
 }
 
-function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): DashboardEvidenceRow {
+function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlag[]): DashboardEvidenceRow {
   const risk =
     entry.verdict === "contradicted"
       ? (risks.find((item) => item.category === "contradicted-claim" && item.message.includes(entry.claimText)) ?? null)
@@ -580,7 +592,7 @@ function toEvidenceRow(input: {
   evidenceFound: boolean;
   contradicted?: boolean;
   command: Pick<CommandRecord, "command" | "status" | "exitCode"> | null;
-  risk: RiskFlagRecord | null;
+  risk: RiskFlag | null;
 }): DashboardEvidenceRow {
   const status = input.contradicted ? "contradicted" : evidenceStatus(input.evidenceFound, input.claimed, input.command);
   return {

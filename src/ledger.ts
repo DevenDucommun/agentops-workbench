@@ -1,7 +1,7 @@
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { getCommands } from "./store";
+import { getCommands, getSession } from "./store";
 import type { CommandRecord } from "./types";
 
 // Claims ledger (forensic recorder spec R2.1, R2.2). Every claim the final
@@ -40,7 +40,7 @@ export type EvidenceClaimRule = {
   /** Non-shell tool names that back the claim. */
   toolPattern?: RegExp;
   /** Pass/fail of a matching run; defaults to {@link commandOutcome}. */
-  outcome?: (run: LedgerRun) => "passed" | "failed";
+  outcome?: (run: LedgerRun) => "passed" | "failed" | null;
   /** "fix": only verification runs after the last file change count. */
   afterLastEdit?: boolean;
 };
@@ -82,9 +82,9 @@ const PASS = "(?:pass(?:ed|es)?|passing|green|succeed(?:ed)?|successful|verified
 const CLEAN = "(?:pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)";
 
 /** Searches: exit 1 means "no matches", which is evidence too; only errors (exit 2+) fail. */
-function searchOutcome(run: LedgerRun): "passed" | "failed" {
+function searchOutcome(run: LedgerRun): "passed" | "failed" | null {
   if (typeof run.exitCode === "number") return run.exitCode >= 2 ? "failed" : "passed";
-  return commandOutcome(run);
+  return runOutcome(run);
 }
 
 export const evidenceClaimRules: EvidenceClaimRule[] = [
@@ -176,13 +176,25 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
 
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
 /** A run that started but has not reported a result (e.g. Codex `item.started`) proves nothing yet. */
-const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued"]);
+const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "unconfirmed"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
 
-/** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
-export function commandOutcome(run: Pick<CommandRecord, "status" | "exitCode">): "passed" | "failed" {
-  if (typeof run.exitCode === "number" && run.exitCode !== 0) return "failed";
-  return FAILED_STATUSES.has((run.status ?? "").toLowerCase()) ? "failed" : "passed";
+const SUCCESS_STATUSES = new Set(["succeeded", "success", "passed", "completed"]);
+
+/** Only a recorded result can support or contradict a shell command claim. */
+export function commandOutcome(run: Pick<CommandRecord, "status" | "exitCode">, adapter?: string | null): "passed" | "failed" | null {
+  const status = (run.status ?? "").toLowerCase();
+  if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status)) return null;
+  // Older Claude imports marked requests completed before receiving their results.
+  if (adapter === "claude-code-stream-json" && status === "completed") return null;
+  if (FAILED_STATUSES.has(status) || (run.exitCode !== null && run.exitCode !== 0)) return "failed";
+  return run.exitCode === 0 || SUCCESS_STATUSES.has(status) ? "passed" : null;
+}
+
+function runOutcome(run: LedgerRun) {
+  // For non-shell evidence an observed tool call can itself establish the action.
+  if (run.source === "tool") return FAILED_STATUSES.has((run.status ?? "").toLowerCase()) ? "failed" : "passed";
+  return commandOutcome(run);
 }
 
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
@@ -220,18 +232,22 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
 
   for (const rule of evidenceClaimRules) {
     if (!rule.claimPattern.test(finalEvent.text)) continue;
-    const outcome = rule.outcome ?? commandOutcome;
+    const outcome = rule.outcome ?? runOutcome;
     const evidence = runs
       .filter((run) => matches(rule, run, input.lastEditRowId ?? null, config))
-      .map((run): LedgerEvidence => ({
-        source: run.source,
-        eventRowId: run.eventRowId,
-        eventId: run.eventRowId === null ? null : (input.eventIds.get(run.eventRowId) ?? null),
-        command: run.text,
-        status: run.status,
-        exitCode: run.exitCode,
-        outcome: outcome(run)
-      }));
+      .flatMap((run): LedgerEvidence[] => {
+        const result = outcome(run);
+        if (!result) return [];
+        return [{
+          source: run.source,
+          eventRowId: run.eventRowId,
+          eventId: run.eventRowId === null ? null : (input.eventIds.get(run.eventRowId) ?? null),
+          command: run.text,
+          status: run.status,
+          exitCode: run.exitCode,
+          outcome: result
+        }];
+      });
     const cited = evidence.at(-1) ?? null;
     ledger.claims.push({
       id: rule.id,
@@ -266,11 +282,13 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
     ...getCommands(store, sessionId).map(toRun),
     ...tools.map((tool): LedgerRun => ({ source: "tool", eventRowId: tool.eventId, text: tool.toolName, status: tool.status, exitCode: null }))
   ];
+  const claudeStream = getSession(store, sessionId)?.source_adapter === "claude-code-stream-json";
   runs.sort((a, b) => (a.eventRowId ?? -1) - (b.eventRowId ?? -1));
   return buildClaimsLedger({
     sessionId,
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.summary } : null,
-    runs,
+    // Older Claude imports marked requests completed before the provider returned a result.
+    runs: claudeStream ? runs.filter((run) => run.status !== "completed") : runs,
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     lastEditRowId: lastEdit?.id ?? null,
     config

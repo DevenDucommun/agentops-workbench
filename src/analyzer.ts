@@ -1,11 +1,12 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
+import type { CommandRecord } from "./types";
 import type { Store } from "./store";
-import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
+import { type EvidenceClaimId, commandOutcome, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
-type RiskFlag = {
+export type RiskFlag = {
   eventId: number | null;
   severity: "low" | "medium" | "high";
   category: string;
@@ -34,9 +35,27 @@ const credentialRedactionPattern = /\[REDACTED:(aws-access-key|openai-style-key|
 const privacyRedactionPattern = /\[REDACTED:(email|local-path)\]/;
 
 export function analyzeSession(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): void {
+  const flags = evaluateSessionRisks(store, sessionId, config);
   const db = store.db;
-  db.query("DELETE FROM risk_flags WHERE session_id = $sessionId").run({ $sessionId: sessionId });
+  const insert = db.query(`
+    INSERT INTO risk_flags (session_id, event_id, severity, category, message)
+    VALUES ($sessionId, $eventId, $severity, $category, $message)
+  `);
+  db.transaction(() => {
+    db.query("DELETE FROM risk_flags WHERE session_id = $sessionId").run({ $sessionId: sessionId });
+    for (const flag of flags) {
+      insert.run({
+        $sessionId: sessionId,
+        $eventId: flag.eventId,
+        $severity: flag.severity,
+        $category: flag.category,
+        $message: flag.message
+      });
+    }
+  })();
+}
 
+export function evaluateSessionRisks(store: Store, sessionId: string, config: AgentOpsConfig): RiskFlag[] {
   const flags: RiskFlag[] = [];
   const commands = getCommands(store, sessionId);
   const fileChanges = getFileChanges(store, sessionId);
@@ -133,7 +152,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
-  const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
+  const observedCommands = successfulCommands(commands, session?.source_adapter);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -205,29 +224,16 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  const unsuppressedFlags = flags.filter((flag) => !isSuppressed(flag, config.suppressions));
-
-  const insert = db.query(`
-    INSERT INTO risk_flags (session_id, event_id, severity, category, message)
-    VALUES ($sessionId, $eventId, $severity, $category, $message)
-  `);
-  db.transaction(() => {
-    for (const flag of unsuppressedFlags) {
-      insert.run({
-        $sessionId: sessionId,
-        $eventId: flag.eventId,
-        $severity: flag.severity,
-        $category: flag.category,
-        $message: flag.message
-      });
-    }
-  })();
+  return flags.filter((flag) => !isSuppressed(flag, config.suppressions));
 }
 
-const NOT_EXECUTED_COMMAND_STATUSES = new Set(["inferred", "denied", "declined"]);
-
-export function isExecutedCommandStatus(status: string | null | undefined): boolean {
-  return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
+// Explicit per-command requirements use the latest recorded result for that exact command.
+export function successfulCommands(commands: CommandRecord[], adapter: string | null | undefined): CommandRecord[] {
+  const latest = new Map<string, CommandRecord>();
+  for (const command of commands) {
+    if (commandOutcome(command, adapter)) latest.set(command.command, command);
+  }
+  return [...latest.values()].filter((command) => commandOutcome(command, adapter) === "passed");
 }
 
 /** Denied (by a permission rule or the user) or declined (by the agent runtime's approval policy). */

@@ -69,7 +69,16 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
 
   // permission_denials (on the final result) name the tool_use ids that never ran.
   const denied = deniedToolUses(records);
-  const events = records.flatMap((record) => normalizeRecord(record, denied));
+  const outcomes = new Map<string, ToolOutcome>();
+  for (const record of records) {
+    if (record.type !== "user") continue;
+    for (const block of contentBlocks(record.message?.content)) {
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+        outcomes.set(block.tool_use_id, block.is_error ? "failed" : "succeeded");
+      }
+    }
+  }
+  const events = records.flatMap((record) => normalizeRecord(record, denied, outcomes));
   events.push(...unmatchedDenialEvents(denied));
   const session: SessionRecord & { id: string; sourcePath: string; sourceAdapter: string } = {
     type: "session",
@@ -125,12 +134,12 @@ function validateClaudeRecords(records: ClaudeStreamRecord[]): void {
   }
 }
 
-function normalizeRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
+function normalizeRecord(record: ClaudeStreamRecord, denied: DeniedToolUses, outcomes: ToolOutcomes): RawEvent[] {
   switch (record.type) {
     case "system":
       return normalizeSystemRecord(record);
     case "assistant":
-      return normalizeAssistantRecord(record, denied);
+      return normalizeAssistantRecord(record, denied, outcomes);
     case "user":
       return normalizeUserRecord(record);
     case "result":
@@ -188,7 +197,7 @@ function normalizeSystemRecord(record: ClaudeStreamRecord): RawEvent[] {
   ];
 }
 
-function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
+function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedToolUses, outcomes: ToolOutcomes): RawEvent[] {
   if (record.is_api_error_message === true || typeof record.error === "string") {
     const text = textContent(record.message?.content);
     const reason = typeof record.error === "string" ? record.error : "api_error";
@@ -218,10 +227,10 @@ function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedTool
     ];
   }
 
-  return blocks.flatMap((block) => normalizeAssistantBlock(block, denied));
+  return blocks.flatMap((block) => normalizeAssistantBlock(block, denied, outcomes));
 }
 
-function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUses): RawEvent[] {
+function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUses, outcomes: ToolOutcomes): RawEvent[] {
   if (block.type === "text") {
     return [
       {
@@ -240,7 +249,7 @@ function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUs
       denied.get(block.id)!.matched = true;
       return [deniedToolUseEvent(block.name, block.input)];
     }
-    return [normalizeToolUse(block)];
+    return [normalizeToolUse(block, typeof block.id === "string" ? outcomes.get(block.id) : undefined)];
   }
 
   return [
@@ -307,6 +316,9 @@ function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
   return [result];
 }
 
+type ToolOutcome = "failed" | "succeeded";
+type ToolOutcomes = ReadonlyMap<string, ToolOutcome>;
+
 type DeniedToolUses = Map<string, { toolName?: string; input?: Record<string, unknown>; matched: boolean }>;
 
 function deniedToolUses(records: ClaudeStreamRecord[]): DeniedToolUses {
@@ -352,7 +364,7 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
   return initModel ?? records.map((record) => record.message?.model).find(usable);
 }
 
-function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
+function normalizeToolUse(block: ClaudeContentBlock, status: ToolOutcome | "unconfirmed" = "unconfirmed"): RawEvent {
   const name = block.name ?? "claude_tool";
   const input = block.input;
   const command = typeof input?.command === "string" ? input.command : undefined;
@@ -366,7 +378,7 @@ function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
       toolName: name,
       command,
       input,
-      status: "completed",
+      status,
       summary: command ?? "Claude Code Bash tool use."
     };
   }
@@ -374,13 +386,13 @@ function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
   if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(name)) {
     return {
       schemaVersion: "agentops.event.v1",
-      type: "file_edit",
+      type: status === "succeeded" ? "file_edit" : "tool_call",
       source: "claude-code",
       toolName: name,
       path,
       operation: name.toLowerCase(),
       input,
-      status: "completed",
+      status,
       summary: path ?? `Claude Code ${name} tool use.`
     };
   }
@@ -388,12 +400,12 @@ function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
   if (["Read", "Glob", "Grep"].includes(name)) {
     return {
       schemaVersion: "agentops.event.v1",
-      type: "file_read",
+      type: status === "succeeded" ? "file_read" : "tool_call",
       source: "claude-code",
       toolName: name,
       path,
       input,
-      status: "completed",
+      status,
       summary: path ?? `Claude Code ${name} tool use.`
     };
   }
@@ -404,7 +416,7 @@ function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
     source: "claude-code",
     toolName: name,
     input,
-    status: "completed",
+    status,
     summary: name
   };
 }

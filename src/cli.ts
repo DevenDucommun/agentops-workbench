@@ -154,7 +154,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
   }
 }
 
-function readSessionArg(args: string[]): string {
+function readSessionArg(args: string[], outputPath?: string | null): string {
   const explicit = readOption(args, "--session");
   if (explicit) return explicit;
   const optionNamesWithValues = new Set(["--session", "--config", "--format", "--scope", "--out", "--port", "--host"]);
@@ -166,8 +166,7 @@ function readSessionArg(args: string[]): string {
       continue;
     }
     if (arg.startsWith("--")) continue;
-    const positional = arg;
-    if (!positional.includes(".")) return positional;
+    if (arg !== outputPath) return arg;
   }
   return "latest";
 }
@@ -316,7 +315,7 @@ function runDemo(args: string[]): CliResult {
   });
   const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
   store.db.close();
-  const server = args.includes("--serve") ? startDashboardServer({ host, port }) : null;
+  const server = args.includes("--serve") ? startDashboardServer({ host, port, config }) : null;
 
   const lines = [
     "# AgentOps Demo",
@@ -448,7 +447,8 @@ function runOpen(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const server = startDashboardServer({ host, port });
+  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
+  const server = startDashboardServer({ host, port, config });
   return {
     stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,
     exitCode: 0,
@@ -515,7 +515,7 @@ function runSave(args: string[]): CliResult {
 
   const variant = kind === "json" ? (format === "openinference" ? "openinference" : repo ? "repo" : "session") : kind;
   const outPath = readOption(args, "--out") ?? readSaveOutputPath(remaining) ?? defaultSavePath(variant);
-  const sessionArg = readSessionArg(remaining);
+  const sessionArg = readSessionArg(remaining, readSaveOutputPath(remaining));
   const config = loadConfig(configPath);
   const store = openStore();
   const sessionId = getSessionId(store, sessionArg);

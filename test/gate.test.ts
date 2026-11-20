@@ -1,3 +1,5 @@
+import { getDashboardSession } from "../src/dashboardData";
+import { getClaimsLedger } from "../src/ledger";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,6 +93,67 @@ test("denied and declined commands are not verification evidence", () => {
 
     expect(result.status).toBe("failed");
     expect(result.checks).toContainEqual(expect.objectContaining({ id: "required-verification", status: "failed" }));
+    store.db.close();
+  }
+});
+
+test("checks the current sensitive path policy against an already imported session", () => {
+  const store = openFixture("fixtures/sample-session.jsonl");
+  try {
+    analyzeSession(store, "sample-session", defaultConfig);
+    const policy = { ...defaultConfig, risk: { ...defaultConfig.risk, sensitivePaths: ["src/server.ts"] } };
+    expect(evaluateQualityGate(store, "sample-session", policy).checks).toContainEqual(
+      expect.objectContaining({ id: "max-high-risks", status: "failed" })
+    );
+    const readiness = getDashboardSession(store, "sample-session", policy)?.decision.mergeReadiness;
+    expect(readiness?.status).toBe("blocked");
+    expect(readiness?.highRiskCount).toBe(1);
+    analyzeSession(store, "sample-session", policy);
+    expect(getDashboardSession(store, "sample-session", defaultConfig)?.decision.mergeReadiness.highRiskCount).toBe(0);
+    expect(evaluateQualityGate(store, "sample-session", defaultConfig).status).toBe("passed");
+  } finally {
+    store.db.close();
+  }
+});
+
+test("legacy Claude imports require re-import before their old completed markers can verify a session", () => {
+  const store = openInlineFixture([
+    { type: "session", id: "legacy" },
+    { type: "tool_call", command: "bun test", status: "completed" },
+    { type: "final_response", content: "Tests passed." }
+  ]);
+  try {
+    store.db.query("UPDATE sessions SET source_adapter = 'claude-code-stream-json' WHERE id = 'legacy'").run();
+    const gate = evaluateQualityGate(store, "legacy", defaultConfig);
+    expect(gate.status).toBe("failed");
+    expect(getClaimsLedger(store, "legacy").claims.find((claim) => claim.id === "test")?.verdict).toBe("unsupported");
+    expect(gate.checks.find((check) => check.id === "required-verification")?.message).toContain("Re-import");
+  } finally {
+    store.db.close();
+  }
+});
+
+test.each([
+  { label: "full suite recovers a targeted failure", first: { command: "bun test test/new.test.ts", exitCode: 1 }, last: { command: "bun test", exitCode: 0 }, passed: true, verdict: "supported" },
+  { label: "a lint pass leaves a test failure open", first: { command: "bun test", exitCode: 1 }, last: { command: "bun run lint", exitCode: 0 }, passed: false, verdict: "contradicted" },
+  { label: "an unfinished retry leaves a test failure open", first: { command: "bun test", exitCode: 1 }, last: { command: "bun test", status: "started" }, passed: false, verdict: "contradicted" },
+  { label: "a new failure supersedes a passing suite", first: { command: "bun test", exitCode: 0 }, last: { command: "bun test test/new.test.ts", exitCode: 1 }, passed: false, verdict: "contradicted" },
+  { label: "a request alone cannot verify a claim", first: { command: "bun test" }, last: { command: "bun test" }, passed: false, verdict: "unsupported" }
+])("$label", ({ first, last, passed, verdict }) => {
+  const store = openInlineFixture([
+    { type: "session", id: "retry" },
+    { type: "tool_call", ...first },
+    { type: "tool_call", ...last },
+    { type: "final_response", content: "All tests pass." }
+  ]);
+  try {
+    const gate = evaluateQualityGate(store, "retry");
+    expect(getClaimsLedger(store, "retry").claims.find((claim) => claim.id === "test")?.verdict).toBe(verdict);
+    expect(gate.status).toBe(passed ? "passed" : "failed");
+    expect(gate.checks.some((check) => check.id === "failed-verification" && check.status === "failed")).toBe(verdict === "contradicted");
+    const row = getDashboardSession(store, "retry", defaultConfig)?.decision.evidence.find((item) => item.id === "test");
+    expect(row?.status).toBe(passed ? "verified" : verdict === "unsupported" ? "missing-evidence" : "contradicted");
+  } finally {
     store.db.close();
   }
 });
