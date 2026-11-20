@@ -73,6 +73,28 @@ passed on 2026-06-28. See
 - [x] Direct Claude/Codex adapters are not advertised as implemented until tested.
 - [x] Any adapter-specific fixture has been redacted and reviewed.
 
+## Recorder Readiness
+
+Applies from v3.3.0, when the recorder plugin ships. Clear these boxes for
+each release.
+
+- [ ] `bun run smoke:recorder` passes against the release binary (p95 hook
+      latency within budget).
+- [ ] The `plugin/.claude-plugin/plugin.json` version matches `package.json`.
+- [ ] `claude plugin validate ./plugin` and `claude plugin validate .` pass.
+- [ ] A fresh plugin install in a scratch repo records an interactive session
+      that appears in `agentops sessions` (AC1).
+- [ ] With the binary off `PATH`, the plugin's hooks show no hook error.
+- [ ] A repository that is not enrolled gets no spool (AC2).
+- [ ] The secret grep test (AC3) passes. No spool or store content appears in
+      tracked files, fixtures or docs.
+- [ ] `fixtures/claude-hooks/` is synthetic, and `docs/COMPATIBILITY.md` names
+      the Claude Code version the hook shapes were checked against.
+- [ ] The dogfood gate passed: one week of enrolled use with no hook errors
+      or slowdowns, and `agentops verify` clean once it exists.
+- [ ] [Recorder data](PUBLICATION_AND_PRIVACY.md#forensic-recorder-data)
+      (fields kept, location, retention, removal) matches the code.
+
 ## Recommended Pre-Public Commands
 
 ```bash
