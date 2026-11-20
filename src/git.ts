@@ -22,8 +22,9 @@ export function getGitChanges(cwd = process.cwd(), options: { base?: string } = 
   if (!isInsideWorkTree(cwd)) throw new NotAGitRepositoryError(`Not inside a git work tree: ${cwd}`);
   const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
   if (!options.base) {
-    // Before the first commit there is no HEAD; the staged files are the whole diff.
-    const head = hasHead(cwd) ? ["HEAD"] : ["--cached"];
+    // Before the first commit there is no HEAD: compare the work tree with the empty
+    // tree, so staged and unstaged edits to tracked files both count.
+    const head = hasHead(cwd) ? ["HEAD"] : [emptyTree(cwd)];
     const numstatOutput = git(["diff", "--numstat", "-z", ...head, "--"], cwd);
     return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
   }
@@ -50,6 +51,11 @@ function isInsideWorkTree(cwd: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** The empty tree's id in this repository's object format (SHA-1 or SHA-256). */
+function emptyTree(cwd: string): string {
+  return execFileSync("git", ["hash-object", "-t", "tree", "--stdin"], { cwd, input: "", encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 
 function hasHead(cwd: string): boolean {
