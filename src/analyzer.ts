@@ -178,8 +178,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
-    // Claims are checked against the full final response, not the display summary.
-    const finalText = finalEvent.text ?? finalEvent.summary;
+    const finalText = finalClaimTexts(finalEvent);
     const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalText, observedCommands.map((command) => command.command));
     for (const claim of unsupportedEvidenceClaims) {
       flags.push({
@@ -257,25 +256,48 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
   return pattern.test(command);
 }
 
-export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
+/**
+ * The texts whose claims a final response makes: the full response and, when the
+ * producer supplied a separate summary that is not just a clip of that response, the
+ * summary too, so every claim shown as the Final Outcome needs evidence. Older stores
+ * have no `text`, so the summary alone is used.
+ */
+export function finalClaimTexts(event: { text?: string | null; summary: string }): string[] {
+  const text = event.text?.trim() ? event.text : null;
+  if (!text) return [event.summary];
+  const summary = normalizeClaimText(event.summary).replace(/\.\.\.$/, "");
+  return summary && !normalizeClaimText(text).includes(summary) ? [text, event.summary] : [text];
+}
+
+/** Whitespace-normalized for matching only, so a Markdown soft wrap inside a claim still matches. */
+function normalizeClaimText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function toClaimTexts(value: string | readonly string[]): string[] {
+  return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
+}
+
+export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimEvaluation[] {
+  const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
     const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
       label: rule.label,
-      claimed: rule.claimPattern.test(value),
+      claimed: texts.some((text) => rule.claimPattern.test(text)),
       supported: matchingCommand !== null,
       matchingCommand
     };
   });
 }
 
-export function claimsFinalSuccess(value: string): boolean {
+export function claimsFinalSuccess(value: string | readonly string[]): boolean {
   return claimsSuccess(value);
 }
 
-function findUnsupportedEvidenceClaims(value: string, commands: string[]): EvidenceClaimRule[] {
+function findUnsupportedEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimRule[] {
   const unsupported = new Set(
     evaluateEvidenceClaims(value, commands)
       .filter((claim) => claim.claimed && !claim.supported)
@@ -284,8 +306,8 @@ function findUnsupportedEvidenceClaims(value: string, commands: string[]): Evide
   return evidenceClaimRules.filter((rule) => unsupported.has(rule.category));
 }
 
-function claimsSuccess(value: string): boolean {
-  return /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(value);
+function claimsSuccess(value: string | readonly string[]): boolean {
+  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(text));
 }
 
 function isSensitivePath(path: string, config: AgentOpsConfig): boolean {

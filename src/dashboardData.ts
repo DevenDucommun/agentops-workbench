@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, evaluateEvidenceClaims, finalClaimTexts, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import {
   getCommands,
@@ -442,8 +442,8 @@ function buildDashboardDecision(
   verification: CommandRecord[]
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
-  const finalSummary = finalEvent?.text ?? finalEvent?.summary ?? "";
-  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification);
+  const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
+  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
@@ -488,13 +488,13 @@ function buildDashboardDecision(
 }
 
 function buildEvidenceRows(
-  finalSummary: string,
+  finalTexts: string[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[]
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
     return toEvidenceRow({
@@ -507,7 +507,7 @@ function buildEvidenceRows(
     });
   });
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
-  const finalSuccessClaimed = claimsFinalSuccess(finalSummary) || successRisk !== null;
+  const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
   rows.push(
     toEvidenceRow({
       id: "final-success",

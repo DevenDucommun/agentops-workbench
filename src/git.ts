@@ -7,12 +7,49 @@ export type GitChange = {
   deletions: number | null;
 };
 
+/** Thrown when `cwd` is not inside a Git work tree (or Git is not installed). */
+export class NotAGitRepositoryError extends Error {}
+
+/**
+ * Changed files in the work tree. Throws NotAGitRepositoryError outside a repository;
+ * any other failure throws, so an unreadable diff is never reported as an empty one.
+ */
 export function getGitChanges(cwd = process.cwd()): GitChange[] {
+  if (!isInsideWorkTree(cwd)) throw new NotAGitRepositoryError(`Not inside a git work tree: ${cwd}`);
   // NUL-delimited output keeps every path literal: no quoting, and no ambiguity with
   // names that contain " -> ", " => ", tabs, newlines or control characters.
   const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
-  const numstatOutput = git(["diff", "--numstat", "-z", "HEAD", "--"], cwd);
+  // Before the first commit there is no HEAD; the staged files are the whole diff.
+  const base = hasHead(cwd) ? ["HEAD"] : ["--cached"];
+  const numstatOutput = git(["diff", "--numstat", "-z", ...base, "--"], cwd);
   return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
+}
+
+/** Git changes for a report, or none outside a repository. Other Git errors propagate. */
+export function getGitChangesOrEmpty(cwd = process.cwd()): GitChange[] {
+  try {
+    return getGitChanges(cwd);
+  } catch (error) {
+    if (error instanceof NotAGitRepositoryError) return [];
+    throw error;
+  }
+}
+
+function isInsideWorkTree(cwd: string): boolean {
+  try {
+    return gitRaw(["rev-parse", "--is-inside-work-tree"], cwd).trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
+function hasHead(cwd: string): boolean {
+  try {
+    gitRaw(["rev-parse", "--verify", "--quiet", "HEAD"], cwd);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Parses `git status --porcelain=v1 -z`: `XY path\0`, with `orig\0` after a rename or copy. */
@@ -24,7 +61,9 @@ export function parseGitStatusZ(input: string): GitChange[] {
     if (field.length < 4) continue;
     const status = field.slice(0, 2);
     changes.push({ path: field.slice(3), status: status.trim() || "modified", additions: null, deletions: null });
-    if (status[0] === "R" || status[0] === "C") i++; // skip the original path
+    // Skip the original path. A rename or copy can sit in either column: ` R` comes from
+    // `git add -N` on a renamed file.
+    if (/[RC]/.test(status)) i++;
   }
   return changes;
 }
@@ -104,16 +143,25 @@ export function mergeGitChanges(
 
 function git(args: string[], cwd: string): string {
   try {
-    // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
-    return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    return gitRaw(args, cwd);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Unable to read git state: ${message}`);
   }
+}
+
+// Large untracked trees (vendored SDKs, generated schemas) produce many megabytes of
+// status output; the 1 MiB default would fail with ENOBUFS.
+const GIT_MAX_BUFFER = 1024 * 1024 * 1024;
+
+function gitRaw(args: string[], cwd: string): string {
+  // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
+  return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: GIT_MAX_BUFFER,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
 }
 
 function parseNumstatCount(value: string | undefined): number | null {
