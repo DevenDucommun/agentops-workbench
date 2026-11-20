@@ -1,9 +1,9 @@
-import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
+import { evaluateSessionRisks, latestCommandAttempts, successfulCommands, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { evidenceClaimRules } from "./ledger";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
-import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
+import { getCommands, getFileChanges, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
 
@@ -44,9 +44,9 @@ export function evaluateQualityGate(
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
   const commands = getCommands(store, sessionId);
-  const risks = getRiskFlags(store, sessionId);
+  const risks = evaluateSessionRisks(store, sessionId, config);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
+  const verification = successfulCommands(commands, session.source_adapter).filter((command) => isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
   checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));
@@ -54,14 +54,30 @@ export function evaluateQualityGate(
   checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", risks.filter((risk) => risk.category === "blocked-attempt").length, config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
+    const legacyClaude = session.source_adapter === "claude-code-stream-json"
+      && commands.some((command) => command.status === "completed" && isVerificationCommand(command.command, config));
+    const missingEvidence = legacyClaude
+      ? "Re-import the original Claude stream to verify tool outcomes for this older session."
+      : commands.some((command) => isVerificationCommand(command.command, config))
+        ? "No successful verification command recorded."
+        : "No observed verification command recorded.";
     checks.push({
       id: "required-verification",
       label: "Verification evidence",
       status: verification.length > 0 ? "passed" : "failed",
-      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.` : "No observed verification command recorded.",
+      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.` : missingEvidence,
       observed: verification.length,
       threshold: ">= 1"
     });
+
+    const failed = latestCommandAttempts(commands).filter((command) => isVerificationCommand(command.command, config)
+      && (command.status === "failed" || (command.exitCode !== null && command.exitCode !== 0)));
+    if (failed.length) {
+      checks.push({
+        ...checkAtMost("failed-verification", "Failed verification commands", failed.length, 0),
+        message: `Latest attempt failed: ${failed.map((command) => command.command).join(", ")}.`
+      });
+    }
   }
 
   for (const required of config.gates.requiredVerificationCommands) {

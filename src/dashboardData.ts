@@ -1,4 +1,5 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand, successfulCommands } from "./analyzer";
+import { evaluateQualityGate, type GateResult } from "./gate";
 import type { AgentOpsConfig } from "./config";
 import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
@@ -116,6 +117,7 @@ type DashboardEvidenceQuality = {
 };
 
 type DashboardMergeReadiness = {
+  gateStatus: GateResult["status"];
   status: "ready" | "needs-review" | "blocked";
   label: string;
   reasons: string[];
@@ -296,7 +298,10 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
+  const successful = successfulCommands(commands, session.source_adapter);
+  const evidence = [...successful, ...commands.filter((command) => command.status === "inferred")];
+  const gate = evaluateQualityGate(store, sessionId, config);
+  const decision = buildDashboardDecision(events, evidence, risks, evidence.filter((command) => isVerificationCommand(command.command, config)), gate, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -441,6 +446,7 @@ function buildDashboardDecision(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
+  gate: GateResult,
   ledger: ClaimsLedger
 ): DashboardDecision {
   const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
@@ -454,7 +460,7 @@ function buildDashboardDecision(
   let status: DashboardMergeReadiness["status"] = "ready";
 
   if (highRiskCount > 0) {
-    status = "blocked";
+    status = gate.checks.some((check) => check.id === "max-high-risks" && check.status === "failed") ? "blocked" : "needs-review";
     reasons.push(`${highRiskCount} high-severity risk${highRiskCount === 1 ? "" : "s"} detected.`);
   }
   if (mediumRiskCount > 0) {
@@ -477,10 +483,15 @@ function buildDashboardDecision(
     if (status === "ready") status = "needs-review";
     reasons.push("No verification command was recorded.");
   }
+  if (gate.status === "failed") {
+    if (status === "ready") status = "needs-review";
+    reasons.push(...gate.checks.filter((check) => check.status === "failed").map((check) => check.message));
+  }
   if (!reasons.length) reasons.push("No blocking risks or missing evidence detected.");
 
   return {
     mergeReadiness: {
+      gateStatus: gate.status,
       status,
       label: status === "ready" ? "Ready" : status === "blocked" ? "Blocked" : "Needs review",
       reasons,

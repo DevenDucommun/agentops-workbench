@@ -1,7 +1,7 @@
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { getCommands } from "./store";
+import { getCommands, getSession } from "./store";
 import type { CommandRecord } from "./types";
 
 // Claims ledger (forensic recorder spec R2.1, R2.2). Every claim the final
@@ -176,7 +176,7 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
 
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
 /** A run that started but has not reported a result (e.g. Codex `item.started`) proves nothing yet. */
-const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued"]);
+const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "unconfirmed"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
 
 /** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
@@ -266,11 +266,13 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
     ...getCommands(store, sessionId).map(toRun),
     ...tools.map((tool): LedgerRun => ({ source: "tool", eventRowId: tool.eventId, text: tool.toolName, status: tool.status, exitCode: null }))
   ];
+  const claudeStream = getSession(store, sessionId)?.source_adapter === "claude-code-stream-json";
   runs.sort((a, b) => (a.eventRowId ?? -1) - (b.eventRowId ?? -1));
   return buildClaimsLedger({
     sessionId,
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.summary } : null,
-    runs,
+    // Older Claude imports marked requests completed before the provider returned a result.
+    runs: claudeStream ? runs.filter((run) => run.status !== "completed") : runs,
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     lastEditRowId: lastEdit?.id ?? null,
     config

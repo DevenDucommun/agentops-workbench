@@ -241,7 +241,7 @@
         '<div class="panel readiness-card ' + escapeAttr(readiness.status) + '">' +
           '<div class="readiness-head">' +
             '<div><h3>Merge Readiness</h3><div class="readiness-title">' + escapeHtml(readiness.label) + '</div></div>' +
-            '<span class="pill ' + readinessPillClass(readiness.status) + '">' + escapeHtml(readiness.status) + '</span>' +
+            '<span class="pill ' + readinessPillClass(readiness.status) + '">Quality gate ' + escapeHtml(readiness.gateStatus) + '</span>' +
           '</div>' +
           '<ul class="reason-list">' + readiness.reasons.map((reason) => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' +
         '</div>' +

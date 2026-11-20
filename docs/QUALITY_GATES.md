@@ -220,3 +220,21 @@ jobs:
 
 Use ignored local paths such as `.agentops/captures/` for raw captures. Upload
 sanitized gate/report outputs only when needed.
+
+## Interpreting verification results
+
+The CLI, dashboard quality-gate badge, and Action evaluate the same session
+under the selected configuration. The dashboard opens with the repository's
+`agentops.config.json`; use `agentops open --config <path>` to select another
+policy. Dashboard review notes can still call attention to nonblocking risks.
+
+Verification uses the latest observed attempt at each command. A successful
+retry counts. Under the default gate, an unresolved failed verification command
+fails the session even when a different check succeeded. Claude stream tool
+requests need a matching successful result to establish a command’s success
+or a file change. Re-import previously stored Claude streams to recover that
+evidence from the original artifact.
+
+Session IDs such as `build.17` work with `agentops check build.17`. For save
+commands where a positional argument could also name an output file, use
+`--session <id> --out <file>`.

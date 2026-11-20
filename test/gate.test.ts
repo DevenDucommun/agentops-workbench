@@ -1,3 +1,4 @@
+import { getClaimsLedger } from "../src/ledger";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,6 +92,37 @@ test("denied and declined commands are not verification evidence", () => {
 
     expect(result.status).toBe("failed");
     expect(result.checks).toContainEqual(expect.objectContaining({ id: "required-verification", status: "failed" }));
+    store.db.close();
+  }
+});
+
+test("checks the current sensitive path policy against an already imported session", () => {
+  const store = openFixture("fixtures/sample-session.jsonl");
+  try {
+    analyzeSession(store, "sample-session", defaultConfig);
+    const policy = { ...defaultConfig, risk: { ...defaultConfig.risk, sensitivePaths: ["src/server.ts"] } };
+    expect(evaluateQualityGate(store, "sample-session", policy).checks).toContainEqual(
+      expect.objectContaining({ id: "max-high-risks", status: "failed" })
+    );
+    expect(evaluateQualityGate(store, "sample-session", defaultConfig).status).toBe("passed");
+  } finally {
+    store.db.close();
+  }
+});
+
+test("legacy Claude imports require re-import before their old completed markers can verify a session", () => {
+  const store = openInlineFixture([
+    { type: "session", id: "legacy" },
+    { type: "tool_call", command: "bun test", status: "completed" },
+    { type: "final_response", content: "Tests passed." }
+  ]);
+  try {
+    store.db.query("UPDATE sessions SET source_adapter = 'claude-code-stream-json' WHERE id = 'legacy'").run();
+    const gate = evaluateQualityGate(store, "legacy", defaultConfig);
+    expect(gate.status).toBe("failed");
+    expect(getClaimsLedger(store, "legacy").claims.find((claim) => claim.id === "test")?.verdict).toBe("unsupported");
+    expect(gate.checks.find((check) => check.id === "required-verification")?.message).toContain("Re-import");
+  } finally {
     store.db.close();
   }
 });
