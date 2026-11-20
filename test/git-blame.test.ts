@@ -82,6 +82,18 @@ describe("git wrappers", () => {
     return r.stdout.toString().trim();
   };
 
+  /** Starts a merge that is expected to conflict; asserts that it left MERGE_HEAD behind. */
+  const conflictingMerge = (cwd: string, branch: string, env: Record<string, string> = {}) => {
+    const r = Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", "merge", "-q", branch], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, ...env }
+    });
+    expect(r.exitCode).toBe(1);
+    git(cwd, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+  };
+
   function repo() {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-")));
     git(dir, "init", "-q");
@@ -170,12 +182,13 @@ describe("git wrappers", () => {
     g(dir, "checkout", "-q", "-");
     writeFileSync(join(dir, "math.js"), "main\n");
     g(dir, "commit", "-q", "-am", "main change");
-    Bun.spawnSync(["git", "merge", "-q", "side"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    conflictingMerge(dir, "side");
     writeFileSync(join(dir, "math.js"), "resolved\n");
     writeFileSync(join(dir, "merge-only"), "new\n");
     g(dir, "add", "-A");
     g(dir, "commit", "-q", "-m", "merge side");
     const merge = g(dir, "rev-parse", "HEAD");
+    expect(getCommitInfo(dir, merge)?.parents).toHaveLength(2);
     expect(commitsTouching(dir, "merge-only")).toEqual([merge]);
     expect(commitsTouching(dir, "math.js")[0]).toBe(merge);
   });
@@ -212,5 +225,164 @@ console.log(JSON.stringify([blameFile(${JSON.stringify(dir)}, "math.js"), commit
     const notRepo = realpathSync(mkdtempSync(join(tmpdir(), "agentops-not-a-repo-")));
     expect(blameFile(notRepo, "math.js")).toEqual([]);
     expect(commitsTouching(notRepo, "math.js")).toEqual([]);
+  });
+
+  describe("review round 3 regressions", () => {
+    const dated = (seconds: number) => ({ GIT_AUTHOR_DATE: `@${seconds} +0000`, GIT_COMMITTER_DATE: `@${seconds} +0000` });
+    const gAt = (cwd: string, seconds: number, ...args: string[]) => {
+      const r = Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, ...dated(seconds) }
+      });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+      return r.stdout.toString().trim();
+    };
+    const emptyRepo = () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-")));
+      git(dir, "init", "-q");
+      return dir;
+    };
+
+    test("a rename does not hide the merge that created the file", () => {
+      const { dir, git: g } = repo();
+      g(dir, "checkout", "-q", "-b", "side");
+      writeFileSync(join(dir, "math.js"), "side\n");
+      g(dir, "commit", "-q", "-am", "side change");
+      g(dir, "checkout", "-q", "-");
+      writeFileSync(join(dir, "math.js"), "main\n");
+      g(dir, "commit", "-q", "-am", "main change");
+      conflictingMerge(dir, "side");
+      writeFileSync(join(dir, "math.js"), "resolved\n");
+      writeFileSync(join(dir, "created"), "created by the merge\n");
+      g(dir, "add", "-A");
+      g(dir, "commit", "-q", "-m", "merge side");
+      const merge = g(dir, "rev-parse", "HEAD");
+      expect(getCommitInfo(dir, merge)?.parents).toHaveLength(2);
+      g(dir, "mv", "created", "moved");
+      g(dir, "commit", "-q", "-m", "rename");
+      const rename = g(dir, "rev-parse", "HEAD");
+      expect(commitsTouching(dir, "moved")).toEqual([rename, merge]);
+      expect(blameFile(dir, "moved")[0]).toMatchObject({ sha: merge, originalPath: "created" });
+    });
+
+    test("a merge that leaves the file as one parent had it, or does not touch it, is not listed", () => {
+      const { dir, first, second, git: g } = repo();
+      g(dir, "checkout", "-q", "-b", "side");
+      writeFileSync(join(dir, "math.js"), "side\n");
+      g(dir, "commit", "-q", "-am", "side change");
+      const side = g(dir, "rev-parse", "HEAD");
+      g(dir, "checkout", "-q", "-");
+      writeFileSync(join(dir, "other"), "o\n");
+      g(dir, "add", "-A");
+      g(dir, "commit", "-q", "-m", "main other");
+      g(dir, "merge", "-q", "--no-ff", "-m", "merge takes side", "side");
+      g(dir, "checkout", "-q", "-b", "side2");
+      writeFileSync(join(dir, "other"), "o2\n");
+      g(dir, "commit", "-q", "-am", "side2 other");
+      g(dir, "checkout", "-q", "-");
+      g(dir, "merge", "-q", "--no-ff", "-m", "merge untouched", "side2");
+      expect(commitsTouching(dir, "math.js")).toEqual([side, second, first]);
+      // The newest log entries are merges with nothing at the path; the limit still fills.
+      expect(commitsTouching(dir, "math.js", { limit: 1 })).toEqual([side]);
+      expect(commitsTouching(dir, "math.js", { limit: 2 })).toEqual([side, second]);
+    });
+
+    test("a reused filename does not inherit the deleted file's history", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "target"), "t\n");
+      gAt(dir, 1, "add", "-A");
+      gAt(dir, 1, "commit", "-q", "-m", "A");
+      gAt(dir, 2, "rm", "-q", "target");
+      gAt(dir, 2, "commit", "-q", "-m", "D");
+      writeFileSync(join(dir, "source"), "unrelated\nsource content\nmore\n");
+      gAt(dir, 3, "add", "-A");
+      gAt(dir, 3, "commit", "-q", "-m", "S");
+      const source = gAt(dir, 3, "rev-parse", "HEAD");
+      gAt(dir, 4, "mv", "source", "target");
+      gAt(dir, 4, "commit", "-q", "-m", "R");
+      const rename = gAt(dir, 4, "rev-parse", "HEAD");
+      expect(commitsTouching(dir, "target")).toEqual([rename, source]);
+    });
+
+    test("a limit keeps the newest commits in Git's date order", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "f"), "base\n");
+      gAt(dir, 1, "add", "-A");
+      gAt(dir, 1, "commit", "-q", "-m", "base");
+      const at = (seconds: number, content: string) => {
+        writeFileSync(join(dir, "f"), `${content}\n`);
+        gAt(dir, seconds, "commit", "-q", "-am", content);
+        return gAt(dir, seconds, "rev-parse", "HEAD");
+      };
+      gAt(dir, 1, "checkout", "-q", "-b", "b");
+      const b20 = at(20, "b20");
+      const b30 = at(30, "b30");
+      gAt(dir, 1, "checkout", "-q", "-");
+      const a10 = at(10, "a10");
+      const a40 = at(40, "a40");
+      conflictingMerge(dir, "b", dated(50));
+      const m50 = at(50, "m50");
+      expect(commitsTouching(dir, "f", { limit: 2 })).toEqual([m50, a40]);
+      expect(commitsTouching(dir, "f").slice(0, 5)).toEqual([m50, a40, b30, b20, a10]);
+    });
+
+    test("a 30,000-commit history is listed without per-commit arguments", () => {
+      const dir = emptyRepo();
+      const parts = ["blob\nmark :1\ndata 2\na\nblob\nmark :2\ndata 2\nb\n"];
+      for (let i = 1; i <= 30_000; i++) parts.push(`commit refs/heads/main\ncommitter synthetic <synthetic> ${i} +0000\ndata 1\nc\nM 100644 :${(i % 2) + 1} f\n\n`);
+      const imported = Bun.spawnSync(["git", "-C", dir, "fast-import", "--quiet"], { stdin: new TextEncoder().encode(parts.join("")), stdout: "pipe", stderr: "pipe" });
+      expect(imported.exitCode).toBe(0);
+      git(dir, "checkout", "-q", "main");
+      const head = git(dir, "rev-parse", "HEAD");
+      expect(commitsTouching(dir, "f", { limit: 1 })).toEqual([head]);
+      const all = commitsTouching(dir, "f");
+      expect(all).toHaveLength(30_000);
+      expect(all[0]).toBe(head);
+    }, 10_000);
+
+    test("quoted paths keep astral characters and a leading U+FEFF", () => {
+      expect(unquoteGitPath('"🚀\\tlog"')).toBe("🚀\tlog");
+      expect(unquoteGitPath('"\\357\\273\\277lead\\t"')).toBe("﻿lead\t");
+      expect(unquoteGitPath('"﻿lead\\t"')).toBe("﻿lead\t");
+    });
+
+    for (const quotePath of ["true", "false"]) {
+      test(`blameFile reports Unicode filenames that Git quotes (core.quotePath=${quotePath})`, () => {
+        const { dir, git: g } = repo();
+        g(dir, "config", "core.quotePath", quotePath);
+        for (const name of ["🚀\tlog", "﻿lead\t"]) {
+          writeFileSync(join(dir, name), "x\n");
+          g(dir, "add", "-A");
+          g(dir, "commit", "-q", "-m", "add file");
+          expect(blameFile(dir, name)[0]?.originalPath).toBe(name);
+        }
+      });
+    }
+
+    test("trailers follow Git's rules: whitespace before the separator, mixed final paragraphs", () => {
+      expect(parseTrailers("subject\n\nAgentOps-Session : s1")).toEqual([{ key: "AgentOps-Session", value: "s1" }]);
+      const mixed = "subject\n\nprose line here\nSigned-off-by: Synthetic <synthetic>\nAgentOps-Session: s1";
+      const expected = [
+        { key: "Signed-off-by", value: "Synthetic <synthetic>" },
+        { key: "AgentOps-Session", value: "s1" }
+      ];
+      expect(parseTrailers(mixed)).toEqual(expected);
+      const { dir, git: g } = repo();
+      writeFileSync(join(dir, "math.js"), "changed\n");
+      g(dir, "commit", "-q", "-am", mixed);
+      expect(getCommitInfo(dir, "HEAD")?.trailers).toEqual(expected);
+      writeFileSync(join(dir, "math.js"), "changed again\n");
+      g(dir, "commit", "-q", "-am", "subject\n\nAgentOps-Session : s1");
+      expect(getCommitInfo(dir, "HEAD")?.trailers).toEqual([{ key: "AgentOps-Session", value: "s1" }]);
+    });
+
+    test("a subject containing U+001F is returned whole", () => {
+      const { dir, git: g } = repo();
+      writeFileSync(join(dir, "math.js"), "changed\n");
+      g(dir, "commit", "-q", "--cleanup=verbatim", "-am", "unit\u001fseparator\n\nAgentOps-Session: s1\n");
+      expect(getCommitInfo(dir, "HEAD")).toMatchObject({ subject: "unit\u001fseparator", trailers: [{ key: "AgentOps-Session", value: "s1" }], files: ["math.js"] });
+    });
   });
 });
