@@ -655,8 +655,10 @@ describe("regressions against the base: outcome-less retries and stores written 
     const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
     const stream = records.map((record) => JSON.stringify(record)).join("\n");
     const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
-    // Stores written by the base did not record tool_use_id on Claude events.
+    // Stores written by the base did not record tool_use_id on Claude events and
+    // stored every Bash call as completed, whatever its result (see the probe in review).
     store.db.query("UPDATE events SET tool_use_id = NULL WHERE session_id = $sid").run({ $sid: sessionId });
+    store.db.query("UPDATE commands SET status = 'completed', exit_code = NULL WHERE session_id = $sid").run({ $sid: sessionId });
     const [claim] = getClaimsLedger(store, sessionId).claims;
     store.db.close();
     return claim;
@@ -686,6 +688,19 @@ describe("regressions against the base: outcome-less retries and stores written 
       { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Read", input: { path: "a.ts" }, status: "completed" },
       failed,
       { schemaVersion: "agentops.event.v1", type: "tool_result", status: "completed", output: "contents" },
+      final
+    ]);
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.command).toBe("bun test a.ts");
+  });
+
+  test("an explicit failed status survives an unrelated tool result, with or without an exit code", () => {
+    const claim = generic([
+      header,
+      { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "shell", command: "bun test", exitCode: 0, status: "completed" },
+      { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Read", input: { path: "a.ts" }, status: "completed" },
+      { schemaVersion: "agentops.event.v1", type: "tool_result", status: "completed", output: "contents" },
+      { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Bash", command: "bun test a.ts", status: "failed" },
       final
     ]);
     expect(claim.verdict).toBe("contradicted");

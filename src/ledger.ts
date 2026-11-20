@@ -310,8 +310,11 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
   return buildClaimsLedger({
     sessionId,
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
+    // Only a stored success is unattributable: earlier versions wrote every such
+    // call as completed, so an explicit failure status is real evidence and stays.
     commands: getCommands(store, sessionId).filter(
-      (command) => !(command.eventId !== null && command.exitCode === null && unattributable.has(command.eventId))
+      (command) =>
+        !(command.eventId !== null && command.exitCode === null && unattributable.has(command.eventId) && commandOutcome(command) === "passed")
     ),
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     resultRowIds,
