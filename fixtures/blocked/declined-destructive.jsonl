@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"blocked-declined-destructive","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic blocked-attempt case: a destructive command declined once"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Clean up the build output and rerun the tests."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"rm -rf ./out"},"status":"declined","output":""}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":""}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Removing ./out was declined, so I left it. The test suite passes."}

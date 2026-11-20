@@ -1,0 +1,7 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"blocked-repeated-attempts","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic blocked-attempt case: a destructive command denied three times"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Clean up the build output and rerun the tests."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"rm -rf ./out"},"status":"denied","output":""}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"rm -rf out/"},"status":"denied","output":""}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"sudo rm -r ./out"},"status":"denied","output":""}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":""}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"I could not remove ./out. The test suite passes."}
