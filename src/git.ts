@@ -192,6 +192,22 @@ export function displayGitPath(path: string): string {
   return path.replace(/\\|[\uDC80-\uDCFF]/gu, (match) => (match === "\\" ? "\\\\" : `\\x${(match.charCodeAt(0) - 0xdc00).toString(16)}`));
 }
 
+/** True when the path holds bytes that were not valid UTF-8 (lone surrogates from decodeGitOutput). */
+export function hasInvalidPathBytes(path: string): boolean {
+  return /[\uDC80-\uDCFF]/u.test(path);
+}
+
+/** The original bytes of a decoded Git path, as lowercase hex. */
+export function gitPathBytesHex(path: string): string {
+  const bytes: number[] = [];
+  for (const char of path) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 0xdc80 && code <= 0xdcff && char.length === 1) bytes.push(code - 0xdc00);
+    else bytes.push(...Buffer.from(char, "utf8"));
+  }
+  return Buffer.from(bytes).toString("hex");
+}
+
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /**

@@ -161,6 +161,18 @@ test("the repo JSON export keeps non-UTF-8 git paths distinct after a JSON round
   const output = generateRepoJsonExport(store, "json-paths", changes, defaultConfig);
   // Lone surrogates would decode to U+FFFD in most JSON readers (jq, Python); none may remain.
   expect(/\\ud[c-f][0-9a-f]{2}/i.test(output)).toBe(false);
-  expect(JSON.parse(output).git.changes.map((change: { path: string }) => change.path)).toEqual(["f-\\x80", "f-\\x81"]);
+  const exported = JSON.parse(output).git.changes as Array<{ path: string; pathBytesHex?: string }>;
+  expect(exported.map((change) => change.pathBytesHex)).toEqual(["662d80", "662d81"]);
+  expect(exported.map((change) => change.path)).toEqual(["f-\\x80", "f-\\x81"]);
+  store.db.close();
+});
+
+test("the repo JSON export keeps valid paths exactly as they are, backslashes included", () => {
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-json-exact-")), "agentops.db"));
+  ingestTranscript(store, parseJsonlTranscript("s.jsonl", JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "exact" })), defaultConfig);
+  const changes = ["part\\name.txt", "case-💡.ts", "﻿note.md"].map((path) => ({ path, status: "??", additions: null, deletions: null }));
+  const exported = JSON.parse(generateRepoJsonExport(store, "exact", changes, defaultConfig)).git.changes as Array<{ path: string; pathBytesHex?: string }>;
+  expect(exported.map((change) => change.path)).toEqual(["part\\name.txt", "case-💡.ts", "﻿note.md"]);
+  expect(exported.every((change) => change.pathBytesHex === undefined)).toBe(true);
   store.db.close();
 });
