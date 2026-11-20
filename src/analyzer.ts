@@ -265,8 +265,10 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
 export function finalClaimTexts(event: { text?: string | null; summary: string }): string[] {
   const text = event.text?.trim() ? event.text : null;
   if (!text) return [event.summary];
+  // Skip the summary only when it is the body's own opening clipped for display; any
+  // other summary is checked too, even when its words occur inside a longer word.
   const summary = normalizeClaimText(event.summary).replace(/\.\.\.$/, "");
-  return summary && !normalizeClaimText(text).includes(summary) ? [text, event.summary] : [text];
+  return summary && !normalizeClaimText(text).startsWith(summary) ? [text, event.summary] : [text];
 }
 
 /** Whitespace-normalized for matching only, so a Markdown soft wrap inside a claim still matches. */

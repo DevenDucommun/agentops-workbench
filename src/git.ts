@@ -45,11 +45,20 @@ export function getGitChangesOrEmpty(cwd = process.cwd()): GitChange[] {
   }
 }
 
+/**
+ * True inside a work tree. False outside a repository or when Git is not installed;
+ * any other failure (an unreadable config or index, for example) throws, so a broken
+ * repository is never reported as having no changes.
+ */
 function isInsideWorkTree(cwd: string): boolean {
   try {
     return gitRaw(["rev-parse", "--is-inside-work-tree"], cwd).trim() === "true";
-  } catch {
-    return false;
+  } catch (error) {
+    const { code, stderr } = error as { code?: string; stderr?: string | Buffer };
+    if (code === "ENOENT") return false;
+    if (/not a git repository/i.test(String(stderr ?? ""))) return false;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to read git state: ${message}`);
   }
 }
 

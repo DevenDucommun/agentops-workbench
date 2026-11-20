@@ -88,10 +88,11 @@ export function fallbackSessionId(sourcePath: string, input: string, defaultStem
   const stem = basename(sourcePath).replace(/\.[^.]+$/, "") || defaultStem;
   const hash = sha256(input.replace(/\r\n/g, "\n")).slice(0, 32);
   // Events are redacted before they are stored, session id included. A stem such as
-  // "task" or "ghp" followed by the hash can look like a credential ("task-<hex>"
-  // contains "sk-<hex>") and would be redacted to one shared id, so fall back to a
-  // neutral stem whenever redaction would change the id.
-  for (const candidate of [`${stem}-${hash}`, `${defaultStem}-${hash}`, `session-${hash}`]) {
+  // "task" followed by "-<hex>" contains "sk-<hex>" and would be redacted to one shared
+  // id. Try other separators first so the file stem, and with it the distinction
+  // between same-text captures from different files, survives; a neutral stem is the
+  // last resort.
+  for (const candidate of [`${stem}-${hash}`, `${stem}_${hash}`, `${stem}~${hash}`, `${defaultStem}-${hash}`, `session-${hash}`]) {
     if (redactString(candidate) === candidate) return candidate;
   }
   return `session-${hash}`;
