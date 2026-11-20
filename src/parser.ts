@@ -1,7 +1,7 @@
 import { basename, resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
-import { redactValue, sha256 } from "./redaction";
+import { redactString, redactValue, sha256 } from "./redaction";
 import type { ParsedTranscript, RawEvent, SessionRecord } from "./types";
 
 export type ParseOptions = {
@@ -86,7 +86,15 @@ export function finalResponseText(event: RawEvent): string | null {
  */
 export function fallbackSessionId(sourcePath: string, input: string, defaultStem: string): string {
   const stem = basename(sourcePath).replace(/\.[^.]+$/, "") || defaultStem;
-  return `${stem}-${sha256(input.replace(/\r\n/g, "\n")).slice(0, 32)}`;
+  const hash = sha256(input.replace(/\r\n/g, "\n")).slice(0, 32);
+  // Events are redacted before they are stored, session id included. A stem such as
+  // "task" or "ghp" followed by the hash can look like a credential ("task-<hex>"
+  // contains "sk-<hex>") and would be redacted to one shared id, so fall back to a
+  // neutral stem whenever redaction would change the id.
+  for (const candidate of [`${stem}-${hash}`, `${defaultStem}-${hash}`, `session-${hash}`]) {
+    if (redactString(candidate) === candidate) return candidate;
+  }
+  return `session-${hash}`;
 }
 
 export function extractCommand(event: RawEvent): string | null {
