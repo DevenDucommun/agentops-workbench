@@ -59,7 +59,7 @@ Sizes are relative effort: S, M or L.
 - [x] **T2.4 (S) Blocked-attempt policy plus gate threshold.** Verify: the
   declined destructive command fixture raises an info flag; CHANGELOG lists
   the behavior change and the config key that restores it.
-- [ ] **T2.5 (M) Ledger rendering** in the report, dashboard and PR comment.
+- [x] **T2.5 (M) Ledger rendering** in the report, dashboard and PR comment.
   Verify: demo artifacts regenerated (`smoke:demo-artifacts`).
 - [ ] **T2.6 (S) Release v3.4.0.**
 

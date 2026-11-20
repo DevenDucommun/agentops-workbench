@@ -75,6 +75,10 @@ verdict cites the run it rests on by `eventId`, or by stored event row for
 sessions recorded without event IDs. A claim that fails, then passes on a
 re-run, is supported.
 
+The session report (`agentops save report`) and the PR comment (`agentops save
+pr`) list every claim with its verdict and the timeline step it rests on. The
+dashboard's claim/evidence matrix uses the same verdicts.
+
 Before the ledger, any matching run supported a claim, including a failed one.
 To keep that behavior, suppress the new flag:
 
