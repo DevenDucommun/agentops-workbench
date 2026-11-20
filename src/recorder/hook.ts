@@ -85,8 +85,13 @@ export function pushSource(command: string, output = ""): string | undefined {
   if (tokens[0] !== "git" || tokens[1] !== "push") return;
   const positionals: string[] = [];
   let remoteInOption = false;
+  let quiet = false;
   for (let i = 2; i < tokens.length; i++) {
     const token = tokens[i] as string;
+    if (token === "--") {
+      positionals.push(...tokens.slice(i + 1));
+      break;
+    }
     if (token === "--repo" || token.startsWith("--repo=")) remoteInOption = true;
     if (PUSH_VALUE_OPTIONS.has(token)) {
       i++;
@@ -95,10 +100,13 @@ export function pushSource(command: string, output = ""): string | undefined {
     if (token.startsWith("--")) {
       // Git accepts unambiguous long-option prefixes such as --dry.
       const option = token.split("=")[0] as string;
+      if ("--quiet".startsWith(option)) quiet = true;
       if (PUSH_NO_COMMIT.some((name) => name.startsWith(option))) return;
       continue;
     }
     if (token.startsWith("-")) {
+      if (token.startsWith("-o")) continue; // Attached push-option value.
+      if (token.includes("q")) quiet = true;
       if (/[nd]/.test(token.slice(1))) return; // -n (dry run) or -d (delete), alone or grouped
       continue;
     }
@@ -115,7 +123,9 @@ export function pushSource(command: string, output = ""): string | undefined {
     return source;
   }
   if (/^Everything up-to-date$/m.test(output)) return;
-  if (refspecs.length === 0) {
+  // A quiet success with only a command and exit code is indistinguishable
+  // from a quiet no-op. Require an actual update line before crediting it.
+  if (refspecs.length === 0 || quiet) {
     const updates = output.split(/\r?\n/).filter((line) => line.includes(" -> "));
     const sources = updates.map((line) => /\s([A-Za-z0-9_][A-Za-z0-9_./-]*) -> \S+\s*$/.exec(line)?.[1]);
     return sources.length && sources.every((source) => source && source === sources[0]) ? sources[0] : undefined;
