@@ -10,7 +10,7 @@ import { enrollRepository } from "../src/recorder/enrollment";
 import { handleHook, ingestAfterSessionEnd } from "../src/recorder/hook";
 import { ingestSpoolFile, resolveCommit } from "../src/recorder/ingest";
 import { buildSpoolRecord, readSpool, spoolPath } from "../src/recorder/spool";
-import { findSessionsForCommit, getEventChain, getSessionCommits, openStore } from "../src/store";
+import { findSessionsForCommit, getEventChain, getEvents, getSessionCommits, getToolCalls, ingestTranscript, openStore } from "../src/store";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "claude-hooks");
 const NAMES = ["clean-session", "risky-session", "subagent-session", "failing-test-session", "commit-session"];
@@ -62,6 +62,24 @@ describe("normalization", () => {
     expect(typeof edit?.contentHash).toBe("string");
     const commit = events.find((e) => e.gitCommit);
     expect(commit).toMatchObject({ command: 'git add -A && git -c user.name=demo -c user.email=demo commit -m "fix: add returns the sum"', exitCode: 0, gitCommit: { sha: "a1b2c3d", kind: "committed", branch: "main" } });
+  });
+
+  test("a matched start/finish pair counts as one tool call; an unmatched start still counts", () => {
+    const store = openStore(join(realpathSync(mkdtempSync(join(tmpdir(), "agentops-toolcalls-"))), "a.db"));
+    const lines = fixtureLines("commit-session");
+    const transcript = parseClaudeHooksJsonl("commit-session.jsonl", fixtureText("commit-session"), defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const finished = lines.filter((l) => l.hook_event_name === "PostToolUse" || l.hook_event_name === "PostToolUseFailure").length;
+    const calls = getToolCalls(store, sessionId);
+    expect(calls.reduce((n, c) => n + c.count, 0)).toBe(finished);
+    expect(calls.every((c) => c.status !== null)).toBe(true);
+    expect(getEvents(store, sessionId).filter((e) => e.type === "tool_started").length).toBeGreaterThan(0);
+
+    const denied = { session_id: "0a1b2c3d-0099-4000-8000-000000000099", hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "toolu_unmatched", tool_input: { command: "ls" } };
+    const lone = parseClaudeHooksJsonl("lone.jsonl", `${JSON.stringify(denied)}\n`, defaultConfig);
+    const loneId = ingestTranscript(store, lone, defaultConfig).sessionId;
+    expect(getToolCalls(store, loneId).map((c) => c.toolName)).toEqual(["Bash"]);
+    store.db.close();
   });
 
   test("failures keep their exit code; successes are exit 0", () => {
