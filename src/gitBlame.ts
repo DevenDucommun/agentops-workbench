@@ -9,7 +9,7 @@ export type BlameLine = {
   originalLine: number;
   /** Line number in the blamed revision. */
   finalLine: number;
-  /** Path of the file in the commit that introduced the line (after renames). */
+  /** Path in the introducing commit. Non-UTF-8 names use lone surrogates for non-ASCII bytes. */
   originalPath: string;
   authorTime: number | null;
   summary: string | null;
@@ -28,6 +28,7 @@ export type CommitInfo = {
   trailers: Array<{ key: string; value: string }>;
   /**
    * Paths changed relative to the first parent (or added, for a root commit).
+   * Non-UTF-8 names use the same byte-preserving representation as originalPath.
    * Null at a shallow-clone boundary, where the first parent was not fetched.
    */
   files: string[] | null;
@@ -88,13 +89,33 @@ export function parseBlamePorcelain(output: string): BlameLine[] {
  */
 export function parseTrailers(message: string): Array<{ key: string; value: string }> {
   const out = run(["git", "interpret-trailers", "--parse", "--no-divider"], new TextEncoder().encode(message));
-  if (out === null) return [];
+  if (!out) return [];
+  // Git can print a configured canonical key verbatim, including its separator
+  // (e.g. "Bug #42" for key "Bug #"). Its configured spelling is part of the key.
+  const config = run(["git", "config", "--null", "--get-regexp", "^trailer\\.(separators|.+\\.key)$"]) ?? "";
+  let separators = ":";
+  const keys: string[] = [];
+  for (const entry of config.split("\0").filter(Boolean)) {
+    const end = entry.indexOf("\n");
+    const value = entry.slice(end + 1);
+    if (entry.slice(0, end) === "trailer.separators") separators = value;
+    else if (value.length) keys.push(value);
+  }
+  const separator = separators[0] ?? ":";
+  const configured = keys.sort((a, b) => b.length - a.length).map((key) => {
+    // A key ending in a separator supplies its own formatting, including spaces.
+    const last = key.replace(/[ \t]+$/, "").slice(-1);
+    return { key, prefix: last && separators.includes(last) ? key : key + separator + " " };
+  });
   const trailers: Array<{ key: string; value: string }> = [];
   for (const line of out.split("\n")) {
-    // Git prints `key<separator> value`; a key is alphanumerics and dashes. Only \n
-    // ends a line: the value may hold U+2028 and other characters `.` would skip.
-    const trailer = /^([A-Za-z0-9-]+)\S ?([^\n]*)$/.exec(line);
-    if (trailer) trailers.push({ key: trailer[1] as string, value: trailer[2] as string });
+    const match = configured.find(({ prefix }) => line.startsWith(prefix));
+    if (match) {
+      trailers.push({ key: match.key, value: line.slice(match.prefix.length) });
+    } else {
+      const split = line.indexOf(separator);
+      if (split > 0) trailers.push({ key: line.slice(0, split), value: line.slice(split + 1).replace(/^ /, "") });
+    }
   }
   return trailers;
 }
@@ -131,7 +152,13 @@ export function unquoteGitPath(value: string): string {
     }
   }
   // ignoreBOM keeps a leading U+FEFF, which is part of the filename.
-  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(bytes));
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(new Uint8Array(bytes));
+  } catch {
+    // Match the byte-preserving Git path representation used by repo reports.
+    // Valid Unicode never decodes to a lone surrogate.
+    return bytes.map((byte) => String.fromCharCode(byte < 0x80 ? byte : 0xdc00 + byte)).join("");
+  }
 }
 
 /**
@@ -158,7 +185,9 @@ export function getCommitInfo(repo: string, rev: string): CommitInfo | null {
   // NUL cannot occur in a commit message, so it is the only safe field delimiter.
   // Trailers come from Git's own parser, as alternating key and value fields.
   const format = "%H%x00%at%x00%s%x00%(trailers:only,unfold,separator=%x00,key_value_separator=%x00)";
-  const header = git(repo, ["show", "-s", "--encoding=UTF-8", `--format=${format}`, `${rev}^{commit}`]);
+  const object = git(repo, ["rev-parse", "--verify", "--end-of-options", rev])?.trim();
+  if (!object || !SHA.test(object)) return null;
+  const header = git(repo, ["show", "-s", "--encoding=UTF-8", `--format=${format}`, `${object}^{commit}`, "--"]);
   if (header === null) return null;
   const [sha, authorTime, subject, ...trailerFields] = header.replace(/\n$/, "").split("\0");
   if (!sha || !SHA.test(sha)) return null;
@@ -170,14 +199,14 @@ export function getCommitInfo(repo: string, rev: string): CommitInfo | null {
   // Without an explicit base, diff-tree prints nothing for a merge commit, so
   // compare against the first parent; a root commit lists everything it adds.
   const first = parentShas[0];
-  const files = git(repo, first ? ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", first, sha] : ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha]);
+  const files = git(repo, first ? ["diff-tree", "--no-commit-id", "--name-only", "-r", first, sha, "--"] : ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha, "--"]);
   return {
     sha,
     parents: parentShas,
     authorTime: Number(authorTime),
     subject: subject ?? "",
     trailers,
-    files: files === null ? (first ? null : []) : files.split("\0").filter(Boolean)
+    files: files === null ? (first ? null : []) : files.split("\n").filter(Boolean).map(unquoteGitPath)
   };
 }
 
@@ -203,6 +232,8 @@ function git(repo: string, args: string[]): string | null {
 }
 
 const PINNED_CONFIG = [
+  "-c",
+  "core.quotePath=true",
   "-c",
   "i18n.logOutputEncoding=UTF-8",
   "-c",

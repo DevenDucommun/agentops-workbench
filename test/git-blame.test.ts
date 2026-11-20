@@ -107,6 +107,56 @@ describe("git wrappers", () => {
     return { dir, first, second, git };
   }
 
+  test("single-commit revision expressions and names shared with files resolve to the requested commit", () => {
+    const { dir, first, second } = repo();
+    expect(getCommitInfo(dir, ":/feat: add")?.sha).toBe(first);
+    writeFileSync(join(dir, "HEAD^{commit}"), "path");
+    expect(getCommitInfo(dir, "HEAD")?.sha).toBe(second);
+  });
+
+  test("a revision range has no single commit record", () => {
+    const { dir } = repo();
+    expect(getCommitInfo(dir, "HEAD~1..HEAD")).toBeNull();
+  });
+
+  test("configured trailer keys keep their spelling and separator", () => {
+    const { dir, git: g } = repo();
+    g(dir, "config", "trailer.separators", ":#=");
+    g(dir, "config", "trailer.bug.key", "Bug #");
+    const message = "subject\n\nBug #42";
+    g(dir, "commit", "-q", "--allow-empty", "-m", message);
+    const expected = [{ key: "Bug #", value: "42" }];
+    expect(getCommitInfo(dir, "HEAD")?.trailers).toEqual(expected);
+    const previous = process.cwd();
+    try {
+      process.chdir(dir);
+      expect(parseTrailers(message)).toEqual(expected);
+      const value = String.fromCharCode(0xa0) + "42";
+      expect(parseTrailers("subject\n\nbug=" + value)).toEqual([{ key: "Bug #", value }]);
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
+  test("different invalid UTF-8 tree paths retain distinct identities in commit info and blame", () => {
+    const { dir, git: g } = repo();
+    const blob = g(dir, "rev-parse", "HEAD:math.js");
+    const put = (data: Buffer) => {
+      const result = Bun.spawnSync(["git", "update-index", "-z", "--index-info"], { cwd: dir, stdin: data });
+      expect(result.exitCode).toBe(0);
+    };
+    const entry = (prefix: string, byte: number) => Buffer.concat([Buffer.from(prefix + "\tfile-"), Buffer.from([byte, 0])]);
+    put(Buffer.concat([entry("100644 " + blob, 254), entry("100644 " + blob, 255)]));
+    g(dir, "commit", "-qm", "distinct names");
+    const expected = [254, 255].map((byte) => "file-" + String.fromCharCode(0xdc00 + byte));
+    expect(getCommitInfo(dir, "HEAD")?.files).toEqual(expected);
+    const zero = "0".repeat(blob.length);
+    put(Buffer.concat([entry("0 " + zero, 254), Buffer.from("100644 " + blob + "\treadable\0")]));
+    g(dir, "commit", "-qm", "rename");
+    g(dir, "config", "core.quotePath", "false");
+    expect(blameFile(dir, "readable")[0]?.originalPath).toBe(expected[0]);
+  });
+
   test("blameFile attributes each line to the commit that last changed it", () => {
     const { dir, first, second } = repo();
     expect(blameFile(dir, "math.js").map((line) => [line.finalLine, line.sha, line.content])).toEqual([
