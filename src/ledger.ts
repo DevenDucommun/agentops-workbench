@@ -157,7 +157,9 @@ const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
  * Code tool_use with no matching tool_result: `no_result`).
  */
 const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "no_result"]);
-const FAILED_STATUSES = new Set(["failed", "error"]);
+// Terminal statuses other than success: a run that timed out, was cancelled,
+// interrupted or killed did not pass.
+const FAILED_STATUSES = new Set(["failed", "error", "timed_out", "timeout", "cancelled", "canceled", "interrupted", "killed", "aborted"]);
 
 /** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
 export function commandOutcome(command: Pick<CommandRecord, "status" | "exitCode">): "passed" | "failed" {
@@ -201,6 +203,14 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     const resultRowId = input.resultRowIds?.get(command.eventId);
     return command.eventId < finalEvent.rowId && (resultRowId === undefined || resultRowId < finalEvent.rowId);
   });
+  // Runs are ordered by when their outcome was recorded, so with overlapping
+  // calls the latest run is the one whose result arrived last.
+  const recordedAt = (command: CommandRecord) =>
+    command.eventId === null ? null : (input.resultRowIds?.get(command.eventId) ?? command.eventId);
+  const ordered = runs
+    .map((command, index) => ({ command, index, at: recordedAt(command) }))
+    .sort((a, b) => (a.at === null || b.at === null ? a.index - b.index : a.at - b.at || a.index - b.index))
+    .map((entry) => entry.command);
   const fromShell = (command: CommandRecord) => command.eventId === null || isShellTool(input.toolNames?.get(command.eventId));
 
   // Claims are read from the full final response and the summary together.
@@ -209,7 +219,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     if (!claimsRule(rule, text)) continue;
     // Evidence is asymmetric: any failed run that mentions the kind counts
     // against the claim; only a passing shell run of the strict shape counts for it.
-    const evidence = runs
+    const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed" ? mentionsRuleCommand(rule, command.command) : fromShell(command) && runsRuleCommand(rule, command.command)
       )

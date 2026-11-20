@@ -467,6 +467,7 @@ function pathFromInput(input: Record<string, unknown> | undefined): string | und
   if (typeof input.file_path === "string") return input.file_path;
   if (typeof input.path === "string") return input.path;
   if (typeof input.notebook_path === "string") return input.notebook_path;
+  if (typeof input.file === "string") return input.file;
   return undefined;
 }
 

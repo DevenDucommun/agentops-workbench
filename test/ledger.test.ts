@@ -566,3 +566,63 @@ describe("the ledger reads the full final response when the store has it", () =>
     ]);
   });
 });
+
+describe("regressions against the base: outcome order, terminal statuses, edit paths", () => {
+  const ingestStream = (records: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const stream = records.map((record) => JSON.stringify(record)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    return { store, sessionId };
+  };
+  const call = (id: string, command: string) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input: { command } }] } });
+  const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: "out" }] } });
+
+  test("overlapping Claude runs: the run whose result arrived last is cited", () => {
+    const { store, sessionId } = ingestStream([
+      { type: "system", subtype: "init", session_id: "claude-overlap" },
+      call("toolu_a", "bun test a.test.ts"),
+      call("toolu_b", "bun test b.test.ts"),
+      result("toolu_b", false),
+      result("toolu_a", true),
+      { type: "result", subtype: "success", session_id: "claude-overlap", result: "Tests passed." }
+    ]);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.command).toBe("bun test a.test.ts");
+    expect(claim.cited?.outcome).toBe("failed");
+  });
+
+  test("a timed-out or cancelled run is a failure, never cited as a pass", () => {
+    for (const status of ["timed_out", "cancelled", "interrupted"]) expect(commandOutcome({ status, exitCode: null })).toBe("failed");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript(
+      "timeout.jsonl",
+      [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "ledger-timeout" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "bun test", exitCode: 1, status: "failed" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "bun test", status: "timed_out", output: "Timed out" },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: "Tests passed." }
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n")
+    );
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.outcome).toBe("failed");
+  });
+
+  test("a Claude edit that names its file through input.file still records the changed file", () => {
+    const { store, sessionId } = ingestStream([
+      { type: "system", subtype: "init", session_id: "claude-file" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_e", name: "Write", input: { file: "src/a.ts", content: "x" } }] } },
+      { type: "result", subtype: "success", session_id: "claude-file", result: "Done." }
+    ]);
+    const paths = store.db.query("SELECT path FROM file_changes WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ path: string }>;
+    store.db.close();
+    expect(paths.map((row) => row.path)).toEqual(["src/a.ts"]);
+  });
+});
