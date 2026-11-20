@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"ledger-pass","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic ledger case: test passes, then claim"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Fix the add function so the tests pass."}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/math.ts","operation":"edit","linesAdded":1,"linesRemoved":1,"summary":"Return the sum."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":"synthetic test output"}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Fixed add. All tests pass."}
