@@ -43,16 +43,42 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
   return { recorded: false, reason: "append-failed", detail: result.detail };
 }
 
-/** Capture the checkout HEAD at hook time. Never execute the reported shell command. */
+/** Recognize a single explicit push source. Ignore shell expressions and ambiguous refspecs. */
+function pushSource(command: string, output: string): string | undefined {
+  const pieces = command.trim().split(/\s*&&\s*/);
+  const last = pieces.pop() ?? "";
+  // A successful status check before the push cannot change the checkout or its refs.
+  if (!pieces.every((piece) => /^git\s+status(?:\s+[A-Za-z0-9._/-]+)*$/.test(piece))) return;
+  if (!/^git\s+push(?:\s|$)/.test(last) || /[^A-Za-z0-9_./+:@= \t-]/.test(last)) return;
+  const operands: string[] = [];
+  for (const word of last.split(/\s+/).slice(2)) {
+    if (!word.startsWith("-")) operands.push(word);
+    else if (!/^-[ufqv]+$/.test(word) && !["--set-upstream", "--force", "--verbose", "--quiet", "--porcelain", "--atomic", "--no-verify"].includes(word)) return;
+  }
+  if (operands.length < 2) {
+    // Default refspecs are configurable. Git's human-readable push summary names the actual sources.
+    const updates = output.split(/\r?\n/).filter((line) => line.includes(" -> "));
+    const sources = updates.map((line) => /\s([A-Za-z0-9_][A-Za-z0-9_./-]*) -> \S+\s*$/.exec(line)?.[1]);
+    if (sources.length && sources.every((source) => source && source === sources[0])) return sources[0];
+    return;
+  }
+  if (operands.length !== 2) return;
+  const refspec = /^\+?([A-Za-z0-9_][A-Za-z0-9_./-]*)(?::[A-Za-z0-9_./-]+)?$/.exec(operands[1]);
+  return refspec?.[1];
+}
+
+/** Resolve the source while the successful tool result is being recorded. */
 function observedPush(payload: Record<string, unknown>, cwd: string): { sha: string; kind: string } | undefined {
   if (payload.hook_event_name !== "PostToolUse" || payload.tool_name !== "Bash") return;
   const input = payload.tool_input as { command?: unknown } | undefined;
-  const response = payload.tool_response as { interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
+  const response = payload.tool_response as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
   if (!response || response.interrupted || (response.exitCode ?? response.exit_code ?? 0) !== 0 || payload.error) return;
-  if (typeof input?.command !== "string" || !/^\s*git\s+push(?:\s|$)/.test(input.command)
-      || /[;&|`$<>\n]/.test(input.command) || /(?:^|\s)(?:--dry-run|-n|--help)(?:\s|$)/.test(input.command)) return;
+  if (typeof input?.command !== "string" || !input.command.includes("push")) return;
+  const output = [response.stdout, response.stderr].filter((v) => typeof v === "string").join("\n");
+  const source = pushSource(input.command, output);
+  if (!source) return;
   try {
-    const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "HEAD^{commit}"], { stdout: "pipe", stderr: "ignore" });
+    const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "--end-of-options", `${source}^{commit}`], { stdout: "pipe", stderr: "ignore" });
     const sha = result.stdout.toString().trim();
     if (result.exitCode === 0 && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)) return { sha, kind: "pushed" };
   } catch {

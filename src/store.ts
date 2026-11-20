@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { defaultStateDir, enrolledRepository } from "./recorder/enrollment";
 import { Database } from "bun:sqlite";
 import type {
   CommandRecord,
@@ -23,7 +24,13 @@ export type Store = {
   path: string;
 };
 
-export function openStore(path = process.env.AGENTOPS_DB ?? ".agentops/agentops.db"): Store {
+function defaultStorePath(): string {
+  if (process.env.AGENTOPS_DB !== undefined) return process.env.AGENTOPS_DB;
+  const cwd = process.cwd();
+  return join(enrolledRepository(cwd, defaultStateDir()) ?? cwd, ".agentops", "agentops.db");
+}
+
+export function openStore(path = defaultStorePath()): Store {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);

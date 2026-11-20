@@ -1,6 +1,7 @@
-import { basename, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve, sep } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { redactValue } from "./redaction";
+import { findRepositoryRoots } from "./recorder/enrollment";
 import { buildSpoolRecord, RECORDER_ERROR_TYPE, SPOOL_RECORD_TYPE } from "./recorder/spool";
 import type { ParsedTranscript, RawEvent, SessionRecord } from "./types";
 
@@ -38,8 +39,28 @@ export function detectClaudeHooks(content: string): { matched: boolean; confiden
   return { matched: false, confidence: 0, reason: "empty input" };
 }
 
+/** Use one root for the entire raw recording, including offline captures from another checkout. */
+function rawRecordingRoot(cwds: string[]): string | undefined {
+  if (!cwds.length || !cwds.every(isAbsolute)) return;
+  const contains = (root: string, path: string) => path === root || path.startsWith(root + sep);
+  const localRoot = findRepositoryRoots(process.cwd())?.checkout;
+  if (localRoot && cwds.every((path) => contains(localRoot, path))) return localRoot;
+  let common = cwds[0];
+  for (const cwd of cwds) {
+    while (!contains(common, cwd)) {
+      const parent = dirname(common);
+      if (parent === common) return;
+      common = parent;
+    }
+  }
+  // A drive, volume or user home is not a repository boundary.
+  if (common === dirname(common) || /^\/(?:Users|home|Volumes)(?:\/[^/]+)?$/.test(common)) return;
+  return common;
+}
+
 export function parseClaudeHooksJsonl(sourcePath: string, content: string, config: AgentOpsConfig): ParsedTranscript {
-  const records: Spooled[] = [];
+  const inputRecords: Spooled[] = [];
+  const rawCwds = new Set<string>();
   const lines = content.split(/\r?\n/);
   lines.forEach((line) => {
     if (!line.trim()) return;
@@ -52,12 +73,16 @@ export function parseClaudeHooksJsonl(sourcePath: string, content: string, confi
     }
     if (parsed?.type === RECORDER_ERROR_TYPE) return;
     if (parsed?.type === SPOOL_RECORD_TYPE) {
-      records.push(parsed as Spooled);
+      inputRecords.push(parsed as Spooled);
     } else if (typeof parsed?.hook_event_name === "string") {
-      const cwd = typeof parsed.cwd === "string" ? [parsed.cwd] : [];
-      records.push(buildSpoolRecord(parsed, { storeRawPayload: config.privacy.storeRawPayload, repoRoots: cwd }) as Spooled);
+      if (typeof parsed.cwd === "string") rawCwds.add(parsed.cwd);
+      inputRecords.push(parsed as Spooled);
     }
   });
+  const root = rawRecordingRoot([...rawCwds]);
+  const records = inputRecords.map((record) => record.type === SPOOL_RECORD_TYPE ? record : buildSpoolRecord(record, {
+    storeRawPayload: config.privacy.storeRawPayload, repoRoots: root ? [root] : []
+  }) as Spooled);
   if (records.length === 0) throw new Error("Unsupported claude-hooks shape: expected forensic recorder spool records or Claude Code hook payloads.");
 
   const sessionId = records.map((r) => r.payload?.session_id).find((v): v is string => typeof v === "string") ?? basename(sourcePath).replace(/\.[^.]+$/, "");

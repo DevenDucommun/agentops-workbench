@@ -35,29 +35,36 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
 export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
   return store.db.transaction(() => {
     const previousRows = new Map(getEventChain(store, transcript.session.id).map((row) => [row.id, row.eventUid]));
-    const prior = new Map(getSessionCommits(store, transcript.session.id).map((commit) => [previousRows.get(commit.eventId ?? -1), commit.sha]));
+    const previousCommits = getSessionCommits(store, transcript.session.id);
+    const prior = new Map(previousCommits.map((commit) => [previousRows.get(commit.eventId ?? -1), commit.sha]));
+    // session_commits has one row per SHA, so a push can replace its earlier commit event ID.
+    const fullShas = new Set(previousCommits.map((commit) => commit.sha).filter((sha) => sha.length === 40 || sha.length === 64));
+    for (const event of transcript.events) {
+      const sha = (event.gitCommit as { sha?: unknown } | undefined)?.sha;
+      if (typeof sha === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)) fullShas.add(sha.toLowerCase());
+    }
     const { sessionId, eventCount } = ingestTranscript(store, transcript, config);
     analyzeSession(store, sessionId, config);
 
     const rowByEventId = new Map(getEventChain(store, sessionId).filter((row) => row.eventUid).map((row) => [row.eventUid as string, row.id]));
-    const commits: SessionCommit[] = [];
     for (const event of transcript.events) {
       const commit = event.gitCommit as { sha?: unknown; kind?: unknown; branch?: unknown } | undefined;
       if (typeof commit?.sha !== "string" || !/^[0-9a-f]{7,64}$/i.test(commit.sha)) continue;
       const known = typeof event.eventId === "string" ? prior.get(event.eventId) : undefined;
       const sha = commit.sha.toLowerCase();
+      const matches = !fullShas.has(sha) ? [...fullShas].filter((full) => full.startsWith(sha)) : [];
+      const retained = known && [40, 64].includes(known.length) && known.startsWith(sha) ? known : undefined;
       const link: SessionCommit = {
         sessionId,
-        sha: known && [40, 64].includes(known.length) && known.startsWith(sha) ? known : resolveCommit(repoRoot, sha) ?? sha,
+        sha: retained ?? (matches.length === 1 ? matches[0] : undefined) ?? resolveCommit(repoRoot, sha) ?? sha,
         branch: typeof commit.branch === "string" ? commit.branch : null,
         kind: typeof commit.kind === "string" ? commit.kind : null,
         source: "tool",
         eventId: (typeof event.eventId === "string" ? rowByEventId.get(event.eventId) : undefined) ?? null
       };
       linkSessionCommit(store, link);
-      commits.push(link);
     }
-    return { sessionId, eventCount, commits };
+    return { sessionId, eventCount, commits: getSessionCommits(store, sessionId) };
   })();
 }
 

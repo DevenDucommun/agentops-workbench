@@ -806,7 +806,7 @@ Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
 
 Environment:
-  AGENTOPS_DB  Path to SQLite database. Defaults to .agentops/agentops.db
+  AGENTOPS_DB  Path to SQLite database. Enrolled worktrees share the main checkout’s .agentops/agentops.db
 `;
 }
 
