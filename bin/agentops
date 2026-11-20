@@ -1,11 +1,4 @@
 #!/usr/bin/env bun
-import { runCli } from "../src/cli";
-
-const result = await runCli(process.argv.slice(2));
-if (result.stdout) process.stdout.write(result.stdout);
-if (result.stderr) process.stderr.write(result.stderr);
-if (result.keepAlive) {
-  await result.keepAlive;
-}
-result.cleanup?.();
-process.exit(result.exitCode);
+// Package entry (package.json "bin"). It shares src/main.ts with the compiled
+// binary so both dispatch `hook`, `recorder` and the CLI the same way.
+import "../src/main";

@@ -84,10 +84,12 @@ function writeRegistry(stateDir: string, repositories: string[]): void {
 
 /** The enrolled main-checkout root for `cwd`, or null when it is not enrolled (or not a repo). */
 export function enrolledRepository(cwd: string, stateDir: string): string | null {
+  return enrolledRoots(cwd, stateDir)?.main ?? null;
+}
+
+export function enrolledRoots(cwd: string, stateDir: string): RepositoryRoots | null {
   const roots = findRepositoryRoots(cwd);
-  if (!roots) return null;
-  const enrolled = readRegistry(stateDir);
-  return enrolled.includes(roots.main) ? roots.main : null;
+  return roots && readRegistry(stateDir).includes(roots.main) ? roots : null;
 }
 
 /** Enrolls the repository containing `cwd`. Returns its main-checkout root. */
