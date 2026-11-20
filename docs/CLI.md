@@ -360,6 +360,18 @@ and commands run.
 
 Session reports answer "what did the agent do?"; the repo report answers "does
 the current diff line up with what the agent did?" — the PR-review-oriented view.
+
+By default the comparison is uncommitted work against `HEAD`, so after you commit
+the report shows no changes. On a committed branch or a clean PR checkout, pass
+`--base <ref>` (or set `AGENTOPS_GIT_BASE`) to compare against the point where
+the branch left that ref, committed and uncommitted changes together:
+
+```bash
+agentops save pr --base origin/main
+agentops check latest --base origin/main
+```
+
+A base that git cannot resolve is an error rather than an empty change list.
 It reads local git state only. Untracked files show no churn (git has no tracked
 base), rename handling is basic, and path comparison is exact. The `v1.x`
 `repo-report` command was removed in `v2.0.0`; the Markdown-only variant is not

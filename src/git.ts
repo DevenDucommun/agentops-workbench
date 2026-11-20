@@ -7,10 +7,34 @@ export type GitChange = {
   deletions: number | null;
 };
 
-export function getGitChanges(cwd = process.cwd()): GitChange[] {
+/**
+ * Changes in the working tree. With `base`, changes since the merge base of
+ * `base` and HEAD, committed or not, so a clean PR checkout still reports the
+ * branch's edits; without it, only uncommitted work relative to HEAD.
+ */
+export function getGitChanges(cwd = process.cwd(), options: { base?: string } = {}): GitChange[] {
   const statusOutput = git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
-  const numstatOutput = git(["diff", "--numstat", "HEAD", "--"], cwd);
-  return mergeGitChanges(parseGitStatus(statusOutput), parseGitNumstat(numstatOutput));
+  if (!options.base) {
+    const numstatOutput = git(["diff", "--numstat", "HEAD", "--"], cwd);
+    return mergeGitChanges(parseGitStatus(statusOutput), parseGitNumstat(numstatOutput));
+  }
+  const mergeBase = git(["merge-base", options.base, "HEAD"], cwd).trim();
+  const committed = parseGitNameStatus(git(["diff", "--name-status", "-M", mergeBase, "--"], cwd));
+  const untracked = parseGitStatus(statusOutput).filter((change) => change.status === "??");
+  const numstatOutput = git(["diff", "--numstat", "-M", mergeBase, "--"], cwd);
+  return mergeGitChanges([...committed, ...untracked], parseGitNumstat(numstatOutput));
+}
+
+/** `git diff --name-status` output; a rename or copy reports its new path. */
+export function parseGitNameStatus(input: string): GitChange[] {
+  return input
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [status = "", ...paths] = line.split("\t");
+      return { path: unquoteGitPath(paths.at(-1) ?? ""), status: status.charAt(0) || "M", additions: null, deletions: null };
+    })
+    .filter((change) => change.path.length > 0);
 }
 
 export function parseGitStatus(input: string): GitChange[] {
