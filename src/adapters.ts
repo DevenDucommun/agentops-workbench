@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { AgentOpsConfig } from "./config";
+import { detectClaudeHooks, parseClaudeHooksJsonl } from "./claudeHooks";
 import { parseClaudeCodeStreamJsonl } from "./claudeStream";
 import { parseCodexExecJsonl } from "./codexExec";
 import { detectForensicText, parseForensicTextTranscript } from "./forensicText";
@@ -95,6 +96,18 @@ export const claudeCodeStreamJsonlAdapter: Adapter = {
   }
 };
 
+export const claudeHooksAdapter: Adapter = {
+  id: "claude-hooks",
+  displayName: "Claude Code Hooks (forensic recorder)",
+  artifactHint: "Forensic recorder spool, or raw Claude Code hook payloads",
+  detect(input) {
+    return detectClaudeHooks(input.content);
+  },
+  parse(input, config) {
+    return parseClaudeHooksJsonl(input.sourcePath, input.content, config);
+  }
+};
+
 export const forensicTextAdapter: Adapter = {
   id: "forensic-text",
   displayName: "Forensic Plain Text",
@@ -107,7 +120,10 @@ export const forensicTextAdapter: Adapter = {
   }
 };
 
+// Order breaks confidence ties: spool records also carry schemaVersion agentops.event.v1,
+// so claude-hooks must come before agentops-jsonl.
 export const adapters = [
+  claudeHooksAdapter,
   codexExecJsonlAdapter,
   claudeCodeStreamJsonlAdapter,
   agentOpsJsonlAdapter,
