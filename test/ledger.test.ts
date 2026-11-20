@@ -301,7 +301,7 @@ describe("A and B: asymmetric evidence", () => {
       "make test -knj2",
       "go test -run TestRegression",
       "npm run test:label",
-      "npm run test label",
+      "npm run test label",
       "bun test\tbad.test.ts",
       "make test-docs"
     ]) {
@@ -557,7 +557,7 @@ describe("the ledger reads the full final response when the store has it", () =>
         .join("\n")
     );
     const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
-    store.db.query("UPDATE events SET text = 'Lint passed.' WHERE session_id = $sid AND type = 'final_response'").run({ $text: undefined, $sid: sessionId });
+    store.db.query("UPDATE events SET text = 'Lint passed.' WHERE session_id = $sid AND type = 'final_response'").run({ $sid: sessionId });
     const claims = getClaimsLedger(store, sessionId).claims.map((c) => [c.id, c.verdict]);
     store.db.close();
     expect(claims).toEqual([
