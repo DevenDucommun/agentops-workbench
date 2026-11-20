@@ -1,9 +1,10 @@
+import type { ParsedTranscript } from "../types";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig } from "../config";
-import { getEventChain, ingestTranscript, linkSessionCommit, openStore, type SessionCommit } from "../store";
+import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
 // claude-hooks adapter -> store -> analyzer, then link the session to the
@@ -23,8 +24,18 @@ export type SpoolIngestResult = { sessionId: string; eventCount: number; commits
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
   const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
-  const store = openStore(options.dbPath ?? join(options.repoRoot, ".agentops", "agentops.db"));
+  const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
   try {
+    return storeHookTranscript(store, transcript, config, options.repoRoot);
+  } finally {
+    store.db.close();
+  }
+}
+
+export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
+  return store.db.transaction(() => {
+    const previousRows = new Map(getEventChain(store, transcript.session.id).map((row) => [row.id, row.eventUid]));
+    const prior = new Map(getSessionCommits(store, transcript.session.id).map((commit) => [previousRows.get(commit.eventId ?? -1), commit.sha]));
     const { sessionId, eventCount } = ingestTranscript(store, transcript, config);
     analyzeSession(store, sessionId, config);
 
@@ -33,9 +44,11 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
     for (const event of transcript.events) {
       const commit = event.gitCommit as { sha?: unknown; kind?: unknown; branch?: unknown } | undefined;
       if (typeof commit?.sha !== "string" || !/^[0-9a-f]{7,64}$/i.test(commit.sha)) continue;
+      const known = typeof event.eventId === "string" ? prior.get(event.eventId) : undefined;
+      const sha = commit.sha.toLowerCase();
       const link: SessionCommit = {
         sessionId,
-        sha: resolveCommit(options.repoRoot, commit.sha) ?? commit.sha.toLowerCase(),
+        sha: known && [40, 64].includes(known.length) && known.startsWith(sha) ? known : resolveCommit(repoRoot, sha) ?? sha,
         branch: typeof commit.branch === "string" ? commit.branch : null,
         kind: typeof commit.kind === "string" ? commit.kind : null,
         source: "tool",
@@ -45,16 +58,18 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
       commits.push(link);
     }
     return { sessionId, eventCount, commits };
-  } finally {
-    store.db.close();
-  }
+  })();
 }
 
 /** Full SHA for a (possibly short) commit in the repository, or null when git cannot resolve it. */
 export function resolveCommit(repoRoot: string, sha: string): string | null {
-  const proc = Bun.spawnSync(["git", "-C", repoRoot, "rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { stdout: "pipe", stderr: "ignore" });
-  const full = proc.stdout.toString().trim();
-  return proc.exitCode === 0 && /^[0-9a-f]{40,64}$/.test(full) ? full : null;
+  try {
+    const proc = Bun.spawnSync(["git", "-C", repoRoot, "rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { stdout: "pipe", stderr: "ignore" });
+    const full = proc.stdout.toString().trim();
+    return proc.exitCode === 0 && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(full) ? full : null;
+  } catch {
+    return null;
+  }
 }
 
 function repoConfig(repoRoot: string): AgentOpsConfig {

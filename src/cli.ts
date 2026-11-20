@@ -1,3 +1,4 @@
+import { storeHookTranscript } from "./recorder/ingest";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
@@ -636,6 +637,7 @@ function formatAuditImportSummary(sessionId: string, eventCount: number, adapter
 function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
   const adapter = resolveAdapter(input, adapterId);
   const transcript = adapter.parse(input, config);
+  if (adapter.id === "claude-hooks") return storeHookTranscript(store, transcript, config, process.cwd());
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
   return result;

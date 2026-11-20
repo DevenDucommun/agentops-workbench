@@ -188,8 +188,24 @@ describe("AC6: session-end ingest links the commit", () => {
     expect(files.map((f) => f.path)).toEqual(["NOTES.md", "math.js"]);
     store.db.close();
 
-    const spool = readSpool(spoolPath(join(stateDir, "spool"), sid) as string);
+    const spoolFile = spoolPath(join(stateDir, "spool"), sid)!;
+    const spool = readSpool(spoolFile);
     expect(JSON.stringify(spool.records)).not.toContain(repo);
+    const priorDb = process.env.AGENTOPS_DB;
+    process.env.AGENTOPS_DB = join(repo, ".agentops", "agentops.db");
+    try {
+      expect((await runCli(["audit", spoolFile, "--quiet"])).exitCode).toBe(0);
+      const reopened = openStore();
+      try {
+        const [relinked] = getSessionCommits(reopened, sid);
+        expect(relinked?.sha).toBe(full);
+        expect(getEventChain(reopened, sid).find((e) => e.id === relinked?.eventId)?.eventUid)
+          .toBe(chain.find((e) => e.id === commits[0]?.eventId)?.eventUid);
+      } finally { reopened.db.close(); }
+    } finally {
+      if (priorDb === undefined) delete process.env.AGENTOPS_DB;
+      else process.env.AGENTOPS_DB = priorDb;
+    }
   });
 
   test("an unresolvable short SHA is linked as given", () => {
@@ -199,5 +215,72 @@ describe("AC6: session-end ingest links the commit", () => {
     writeFileSync(spoolFile, fixtureText("commit-session"));
     const result = ingestSpoolFile(spoolFile, { repoRoot: root, dbPath: join(root, "db.sqlite") });
     expect(result.commits.map((c) => c.sha)).toEqual(["a1b2c3d"]);
+  });
+});
+
+describe("recorder review regressions", () => {
+  test("detection and import recover the records following a torn first append", () => {
+    const content = '{"typ\n' + fixtureLines("clean-session").map((p) => JSON.stringify(buildSpoolRecord(p))).join("\n");
+    const input = { sourcePath: "interrupted.jsonl", content };
+    expect(resolveAdapter(input).id).toBe("claude-hooks");
+    expect(parseClaudeHooksJsonl(input.sourcePath, content, defaultConfig).events.length).toBe(fixtureLines("clean-session").length);
+  });
+
+  test("legacy paths are retained and failed edits do not produce a file-change row", () => {
+    const records = ["PostToolUse", "PostToolUseFailure"].map((hookEvent, i) => {
+      const r = buildSpoolRecord({ hook_event_name: hookEvent, session_id: "legacy", tool_name: "Edit",
+        tool_input: { file_path: i ? ".env" : "src/old.ts" } });
+      delete r.path;
+      return JSON.stringify(r);
+    });
+    const transcript = parseClaudeHooksJsonl("legacy.jsonl", records.join("\n"), defaultConfig);
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-legacy-")), "store.db"));
+    try {
+      ingestTranscript(store, transcript, defaultConfig);
+      expect(transcript.events.at(-1)).toMatchObject({ type: "tool_call", status: "failed", toolName: "Edit" });
+      expect(store.db.query("SELECT path FROM file_changes").all()).toEqual([{ path: "src/old.ts" }]);
+    } finally { store.db.close(); }
+  });
+
+  test("linked worktree capture uses its path and HEAD, honors the DB override and preserves links on audit", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-hook-review-")));
+    const repo = join(root, "repo"), checkout = join(root, "linked"), stateDir = join(root, "state");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "base");
+    git(repo, "worktree", "add", "-qb", "topic", checkout);
+    git(checkout, "commit", "--allow-empty", "-qm", "feature");
+    const sha = git(checkout, "rev-parse", "HEAD");
+    enrollRepository(repo, stateDir);
+    const previous = process.env.AGENTOPS_DB;
+    const db = join(root, "configured.db");
+    process.env.AGENTOPS_DB = db;
+    const sid = "linked";
+    const emit = (event: string, fields: Record<string, unknown> = {}) => handleHook(event,
+      JSON.stringify({ session_id: sid, cwd: checkout, hook_event_name: event, ...fields }), { stateDir });
+    try {
+      const push = { tool_name: "Bash", tool_input: { command: "git push origin HEAD" }, tool_response: { stdout: "", stderr: "" } };
+      emit("PostToolUseFailure", { ...push, error: "Exit code 1" });
+      emit("PostToolUse", push);
+      emit("PostToolUse", { tool_name: "Edit", tool_input: { file_path: join(checkout, "src/a.ts") } });
+      const outcome = emit("SessionEnd");
+      await ingestAfterSessionEnd(outcome, stateDir);
+      const file = spoolPath(join(stateDir, "spool"), sid)!;
+      const store = openStore(db);
+      try {
+        const check = () => {
+          expect(store.db.query("SELECT path FROM file_changes").all()).toEqual([{ path: "src/a.ts" }]);
+          const commits = getSessionCommits(store, sid);
+          expect(commits).toHaveLength(1);
+          expect(commits[0]).toMatchObject({ sha, kind: "pushed", eventId: expect.any(Number) });
+          expect(store.db.query("SELECT idx FROM events JOIN session_commits ON events.id = session_commits.event_id").all()).toEqual([{ idx: 2 }]);
+        };
+        check();
+        expect((await runCli(["audit", file, "--quiet"])).exitCode).toBe(0);
+        check();
+      } finally { store.db.close(); }
+    } finally {
+      if (previous === undefined) delete process.env.AGENTOPS_DB;
+      else process.env.AGENTOPS_DB = previous;
+    }
   });
 });

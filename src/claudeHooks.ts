@@ -24,8 +24,9 @@ export function detectClaudeHooks(content: string): { matched: boolean; confiden
     try {
       record = JSON.parse(line);
     } catch {
-      return { matched: false, confidence: 0, reason: "first record is not JSON" };
+      continue;
     }
+    if (record?.type === RECORDER_ERROR_TYPE) continue;
     if (record?.type === SPOOL_RECORD_TYPE && typeof record.hookEventName === "string") {
       return { matched: true, confidence: 1, reason: "found forensic recorder spool record" };
     }
@@ -40,17 +41,14 @@ export function detectClaudeHooks(content: string): { matched: boolean; confiden
 export function parseClaudeHooksJsonl(sourcePath: string, content: string, config: AgentOpsConfig): ParsedTranscript {
   const records: Spooled[] = [];
   const lines = content.split(/\r?\n/);
-  const lastNonEmpty = lines.reduce((last, line, i) => (line.trim() ? i : last), -1);
-  lines.forEach((line, index) => {
+  lines.forEach((line) => {
     if (!line.trim()) return;
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(line);
     } catch {
-      // A torn line from a crashed writer stays in the spool (T1.3); skip it, the chain continues past it.
-      // Only an unparseable line that is not the last one, in a file with no spool records yet, is fatal.
-      if (index === lastNonEmpty || records.length > 0) return;
-      throw new Error(`Invalid claude-hooks JSONL record on line ${index + 1}`);
+      // The writer can recover after an interrupted append at any line.
+      return;
     }
     if (parsed?.type === RECORDER_ERROR_TYPE) return;
     if (parsed?.type === SPOOL_RECORD_TYPE) {
@@ -153,25 +151,26 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
       status: response?.interrupted === true ? "interrupted" : status,
       exitCode: typeof r.exitCode === "number" ? r.exitCode : failed ? undefined : 0,
       output: stdout,
-      gitCommit: typeof commit?.sha === "string" ? { sha: commit.sha, kind: commit.kind, branch: commit.branch } : undefined,
+      gitCommit: !failed && response?.interrupted !== true ? (r.gitCommit ?? commit) : undefined,
       summary: command ?? "Bash"
     };
   }
+  const path = [r.path, input?.file_path, input?.notebook_path, input?.path].find((value): value is string => typeof value === "string");
   if (FILE_EDIT_TOOLS.has(name)) {
     return {
       ...base,
-      type: response?.type === "create" ? "file_write" : "file_edit",
+      type: failed ? "tool_call" : response?.type === "create" ? "file_write" : "file_edit",
       toolName: name,
-      path: typeof r.path === "string" ? r.path : undefined,
+      path,
       operation: response?.type === "create" ? "create" : name.toLowerCase(),
       linesAdded: typeof r.linesAdded === "number" ? r.linesAdded : undefined,
       linesRemoved: typeof r.linesRemoved === "number" ? r.linesRemoved : undefined,
       status,
-      summary: typeof r.path === "string" ? r.path : name
+      summary: path ?? name
     };
   }
   if (FILE_READ_TOOLS.has(name)) {
-    return { ...base, type: "file_read", toolName: name, path: typeof r.path === "string" ? r.path : undefined, status, summary: typeof r.path === "string" ? r.path : name };
+    return { ...base, type: "file_read", toolName: name, path, status, summary: path ?? name };
   }
   const subagent = name === "Agent" && typeof response?.agentId === "string" ? response.agentId : undefined;
   const description = typeof input?.description === "string" ? input.description : undefined;

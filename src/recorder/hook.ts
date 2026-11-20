@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { defaultStateDir, enrolledRepository } from "./enrollment";
+import { defaultStateDir, enrolledRoots } from "./enrollment";
 import { appendHookPayload, writeRecorderError } from "./spool";
 
 // `agentops hook <event>`: the Claude Code command-hook entry (spec R1.1-R1.4).
@@ -29,16 +29,35 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
   }
 
   const cwd = typeof payload.cwd === "string" ? payload.cwd : "";
-  const repository = enrolledRepository(cwd, stateDir);
-  if (!repository) return { recorded: false, reason: "not-enrolled" };
+  const roots = enrolledRoots(cwd, stateDir);
+  if (!roots) return { recorded: false, reason: "not-enrolled" };
 
+  const repository = roots.main;
   if (typeof payload.hook_event_name !== "string" && eventArg) payload.hook_event_name = eventArg;
   const result = appendHookPayload(join(stateDir, "spool"), payload, {
     storeRawPayload: storeRawPayload(repository),
-    repoRoots: repositoryRoots(repository, cwd)
+    repoRoots: repositoryRoots(roots.checkout, cwd),
+    gitCommit: observedPush(payload, cwd)
   });
   if (result.ok) return { recorded: true, seq: result.seq, repository, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
   return { recorded: false, reason: "append-failed", detail: result.detail };
+}
+
+/** Capture the checkout HEAD at hook time. Never execute the reported shell command. */
+function observedPush(payload: Record<string, unknown>, cwd: string): { sha: string; kind: string } | undefined {
+  if (payload.hook_event_name !== "PostToolUse" || payload.tool_name !== "Bash") return;
+  const input = payload.tool_input as { command?: unknown } | undefined;
+  const response = payload.tool_response as { interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
+  if (!response || response.interrupted || (response.exitCode ?? response.exit_code ?? 0) !== 0 || payload.error) return;
+  if (typeof input?.command !== "string" || !/^\s*git\s+push(?:\s|$)/.test(input.command)
+      || /[;&|`$<>\n]/.test(input.command) || /(?:^|\s)(?:--dry-run|-n|--help)(?:\s|$)/.test(input.command)) return;
+  try {
+    const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "HEAD^{commit}"], { stdout: "pipe", stderr: "ignore" });
+    const sha = result.stdout.toString().trim();
+    if (result.exitCode === 0 && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)) return { sha, kind: "pushed" };
+  } catch {
+    // A missing Git executable leaves the tool event available without a commit link.
+  }
 }
 
 /** The enrolled root plus the same root as the agent spelled it (it may differ by symlinks, e.g. /tmp vs /private/tmp). */
