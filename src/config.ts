@@ -11,6 +11,7 @@ export type AgentOpsConfig = {
   };
   risk: {
     largeChurnLines: number;
+    repeatedEditThreshold: number;
     sensitivePaths: string[];
     productionPathPatterns: string[];
   };
@@ -57,6 +58,7 @@ export const defaultConfig: AgentOpsConfig = {
   },
   risk: {
     largeChurnLines: 500,
+    repeatedEditThreshold: 6,
     sensitivePaths: [".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "secrets.json", "secrets.yaml", "credentials"],
     productionPathPatterns: ["prod", "production", "terraform", "helm", "k8s", "kubernetes", "deploy", "release"]
   },
@@ -178,6 +180,10 @@ function validateConfigShape(value: unknown): string[] {
       const largeChurnLines = value.risk.largeChurnLines;
       if (largeChurnLines !== undefined && (typeof largeChurnLines !== "number" || !Number.isInteger(largeChurnLines) || largeChurnLines < 1)) {
         errors.push("risk.largeChurnLines must be a positive integer.");
+      }
+      const repeatedEditThreshold = value.risk.repeatedEditThreshold;
+      if (repeatedEditThreshold !== undefined && (typeof repeatedEditThreshold !== "number" || !Number.isInteger(repeatedEditThreshold) || repeatedEditThreshold < 2)) {
+        errors.push("risk.repeatedEditThreshold must be an integer of at least 2.");
       }
       requireStringArray(value.risk, "risk.sensitivePaths", "sensitivePaths", errors);
       requireStringArray(value.risk, "risk.productionPathPatterns", "productionPathPatterns", errors);
