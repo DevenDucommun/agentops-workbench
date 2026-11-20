@@ -153,7 +153,7 @@ describe("git wrappers", () => {
     const merge = getCommitInfo(dir, "HEAD");
     expect(merge?.parents).toHaveLength(2);
     expect(merge?.parents[0]).toBe(mainTip);
-    expect(merge?.files.sort()).toEqual(["a.js", "b.js"]);
+    expect(merge?.files?.sort()).toEqual(["a.js", "b.js"]);
     expect(getCommitInfo(dir, second)?.files).toEqual(["math.js"]);
   });
 
@@ -383,6 +383,94 @@ console.log(JSON.stringify([blameFile(${JSON.stringify(dir)}, "math.js"), commit
       writeFileSync(join(dir, "math.js"), "changed\n");
       g(dir, "commit", "-q", "--cleanup=verbatim", "-am", "unit\u001fseparator\n\nAgentOps-Session: s1\n");
       expect(getCommitInfo(dir, "HEAD")).toMatchObject({ subject: "unit\u001fseparator", trailers: [{ key: "AgentOps-Session", value: "s1" }], files: ["math.js"] });
+    });
+  });
+
+  describe("review round 4 regressions", () => {
+    const gAt = (cwd: string, seconds: number, ...args: string[]) => {
+      const r = Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, GIT_AUTHOR_DATE: `@${seconds} +0000`, GIT_COMMITTER_DATE: `@${seconds} +0000` }
+      });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+      return r.stdout.toString().trim();
+    };
+    const emptyRepo = () => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-")));
+      git(dir, "init", "-q");
+      return dir;
+    };
+    const commitAt = (dir: string, seconds: number, message: string) => {
+      gAt(dir, seconds, "add", "-A");
+      gAt(dir, seconds, "commit", "-q", "-m", message);
+      return gAt(dir, seconds, "rev-parse", "HEAD");
+    };
+
+    test("a clean merge of a rename with an edit is listed, followed by both sides", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "old"), "one\ntwo\nthree\nfour\n");
+      const base = commitAt(dir, 1, "B");
+      gAt(dir, 1, "checkout", "-q", "-b", "topic");
+      gAt(dir, 2, "mv", "old", "new");
+      const rename = commitAt(dir, 2, "R");
+      gAt(dir, 2, "checkout", "-q", "-");
+      writeFileSync(join(dir, "old"), "one\ntwo\nthree\nFOUR\n");
+      const edit = commitAt(dir, 3, "E");
+      gAt(dir, 4, "merge", "-q", "--no-ff", "-m", "M", "topic");
+      const merge = gAt(dir, 4, "rev-parse", "HEAD");
+      expect(getCommitInfo(dir, merge)?.parents).toEqual([edit, rename]);
+      expect(commitsTouching(dir, "new")).toEqual([merge, edit, rename, base]);
+      expect(commitsTouching(dir, "new", { limit: 1 })).toEqual([merge]);
+    });
+
+    test("a shallow clone keeps the boundary commit's real parent and claims no changed files for it", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "changed"), "1\n");
+      writeFileSync(join(dir, "stable"), "s\n");
+      const parent = commitAt(dir, 1, "P");
+      writeFileSync(join(dir, "changed"), "2\n");
+      const child = commitAt(dir, 2, "C");
+      expect(getCommitInfo(dir, child)).toMatchObject({ parents: [parent], files: ["changed"] });
+      const clone = realpathSync(mkdtempSync(join(tmpdir(), "agentops-shallow-")));
+      git(clone, "clone", "-q", "--depth", "1", `file://${dir}`, "c");
+      const shallow = join(clone, "c");
+      expect(getCommitInfo(shallow, "HEAD")).toMatchObject({ sha: child, parents: [parent], files: null });
+      expect(commitsTouching(shallow, "stable")).toEqual([]);
+    });
+
+    test("log.showRoot=false does not hide the root commit", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "untouched"), "u\n");
+      writeFileSync(join(dir, "other"), "1\n");
+      const root = commitAt(dir, 1, "root");
+      writeFileSync(join(dir, "other"), "2\n");
+      commitAt(dir, 2, "edit other");
+      git(dir, "config", "log.showRoot", "false");
+      expect(commitsTouching(dir, "untouched")).toEqual([root]);
+    });
+
+    test("i18n.logOutputEncoding does not corrupt subjects, blame summaries or trailers", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "f"), "x\n");
+      gAt(dir, 1, "add", "-A");
+      gAt(dir, 1, "commit", "-q", "-m", "café\n\nAgentOps-Session: é-1");
+      git(dir, "config", "i18n.logOutputEncoding", "ISO-8859-1");
+      expect(getCommitInfo(dir, "HEAD")).toMatchObject({ subject: "café", trailers: [{ key: "AgentOps-Session", value: "é-1" }] });
+      expect(blameFile(dir, "f")[0]?.summary).toBe("café");
+    });
+
+    test("history stops at a deletion: a recreated path starts fresh", () => {
+      const dir = emptyRepo();
+      writeFileSync(join(dir, "source"), "first file\n");
+      commitAt(dir, 1, "A");
+      gAt(dir, 2, "rm", "-q", "source");
+      commitAt(dir, 2, "D");
+      writeFileSync(join(dir, "source"), "an unrelated second file\n");
+      const recreated = commitAt(dir, 3, "N");
+      expect(commitsTouching(dir, "source")).toEqual([recreated]);
+      expect(blameFile(dir, "source")[0]?.sha).toBe(recreated);
     });
   });
 });
