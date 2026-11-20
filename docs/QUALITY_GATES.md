@@ -39,11 +39,34 @@ Default gates fail when:
 
 - no observed verification command is recorded
 - any high-severity risk is present
-- final success or test/lint/typecheck/build claims are unsupported or only
-  inferred from forensic text
+- final success or test/lint/typecheck/build claims are unsupported,
+  contradicted, or only inferred from forensic text
 - generated-file churn is above the configured threshold
 
 Forensic inferred commands are review evidence, not observed proof.
+
+## Claims Ledger
+
+Each test, lint, typecheck or build claim in the final response gets a verdict
+from the matching commands that ran before it:
+
+| Verdict | When | Risk flag |
+| --- | --- | --- |
+| `supported` | The latest matching run passed | none |
+| `contradicted` | The latest matching run failed, and no later run passed | `contradicted-claim` |
+| `unsupported` | No matching run was observed | `missing-<kind>-evidence` |
+
+A run fails when it reports a non-zero exit code or a failed status. Denied,
+declined and inferred commands never count as runs. The verdict cites the run
+it rests on by `eventId`, or by stored event row for sessions recorded without
+event IDs. A claim that fails, then passes on a re-run, is supported.
+
+Before the ledger, any matching run supported a claim, including a failed one.
+To keep that behavior, suppress the new flag:
+
+```json
+{ "suppressions": [{ "category": "contradicted-claim", "reason": "Accept claims after failing runs." }] }
+```
 
 ## Configuration
 
