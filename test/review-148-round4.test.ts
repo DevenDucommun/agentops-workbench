@@ -5,10 +5,10 @@ import { expect, test } from "bun:test";
 import { finalClaimTexts } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
 import { parseForensicTextTranscript } from "../src/forensicText";
-import { getGitChanges, getGitChangesOrEmpty } from "../src/git";
-import { fallbackSessionId } from "../src/parser";
+import { decodeGitOutput, displayGitPath, getGitChanges, getGitChangesOrEmpty } from "../src/git";
+import { fallbackSessionId, parseJsonlTranscript } from "../src/parser";
 import { redactString } from "../src/redaction";
-import { ingestTranscript, listSessions, openStore } from "../src/store";
+import { getEvents, ingestTranscript, listSessions, openStore } from "../src/store";
 
 test("fallback ids never look like credentials, so redaction cannot merge sessions", () => {
   // "task-<hex>" contains "sk-<hex>", which matched the OpenAI-style key rule.
@@ -50,7 +50,8 @@ test("captures with identical text but different names keep separate sessions", 
 test("a summary whose words occur inside a longer word is still checked for claims", () => {
   const event = { summary: "build complete", text: "The rebuild completed overnight." };
   expect(finalClaimTexts(event)).toEqual(["The rebuild completed overnight.", "build complete"]);
-  expect(finalClaimTexts({ summary: "The rebuild comp...", text: "The rebuild completed overnight." })).toEqual(["The rebuild completed overnight."]);
+  expect(finalClaimTexts({ summary: "Build complete...", text: "Build completeness is still unknown." }))
+    .toEqual(["Build completeness is still unknown.", "Build complete..."]);
 });
 
 test("an unreadable git config fails instead of reporting no changes", () => {
@@ -85,4 +86,59 @@ test("captures whose file names redact keep separate sessions", () => {
   expect(ids).toHaveLength(2);
   expect(ids.every((id) => redactString(id) === id)).toBe(true);
   store.db.close();
+});
+
+test("a content-only final response keeps its full text as the summary, so no clipped claim appears", () => {
+  const content = "I reviewed the release notes and packaging checklist. One item still needs confirmation from the team. Build completeness is still unknown.";
+  const transcript = parseJsonlTranscript("final.jsonl", [
+    JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "derived" }),
+    JSON.stringify({ schemaVersion: "agentops.event.v1", type: "final_response", content })
+  ].join("\n"));
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-r7-")), "agentops.db"));
+  ingestTranscript(store, transcript, defaultConfig);
+  const final = getEvents(store, "derived").find((event) => event.type === "final_response");
+  expect(final?.summary).toBe(content);
+  expect(finalClaimTexts(final as { text?: string | null; summary: string })).toEqual([content]);
+  store.db.close();
+});
+
+test("git paths that differ only in non-UTF-8 bytes stay distinct", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r7-git-")));
+  const sh = (script: string) => Bun.spawnSync(["bash", "-c", script], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+  sh("git init -q && git -c user.name=synthetic -c user.email=synthetic -c commit.gpgsign=false commit -q --allow-empty -m init");
+  sh("blob=$(printf x | git hash-object -w --stdin); { printf '100644 %s\\tfile-\\x80.txt\\000' $blob; printf '100644 %s\\tfile-\\x81.txt\\000' $blob; } | git update-index -z --add --index-info");
+  const paths = getGitChanges(dir).map((change) => change.path).sort();
+  expect(paths).toHaveLength(2);
+  expect(new Set(paths).size).toBe(2);
+});
+
+test("git path decoding: raw bytes never collide with a name spelled with backslashes, and a leading U+FEFF is kept", () => {
+  const raw = decodeGitOutput(Buffer.from([0x78, 0x2d, 0x80, 0x81]));
+  const literal = decodeGitOutput(Buffer.from("x-\\200\\201", "utf8"));
+  expect(raw).not.toBe(literal);
+  expect(decodeGitOutput(Buffer.from("﻿note.md", "utf8"))).toBe("﻿note.md");
+  expect(decodeGitOutput(Buffer.from("café.ts", "utf8"))).toBe("café.ts");
+});
+
+test("outside a repository the diff is empty in any locale", () => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r7-locale-")));
+  const previous = process.env.LC_ALL;
+  process.env.LC_ALL = "fr_FR.UTF-8";
+  try {
+    expect(getGitChangesOrEmpty(outside)).toEqual([]);
+  } finally {
+    if (previous === undefined) delete process.env.LC_ALL;
+    else process.env.LC_ALL = previous;
+  }
+});
+
+test("reports show non-UTF-8 git path bytes as \\xNN, so distinct paths stay distinct", () => {
+  expect(displayGitPath(decodeGitOutput(Buffer.from([0x66, 0x2d, 0x80])))).toBe("f-\\x80");
+  expect(displayGitPath(decodeGitOutput(Buffer.from([0x66, 0x2d, 0x81])))).toBe("f-\\x81");
+  expect(displayGitPath("café.ts")).toBe("café.ts");
+});
+
+test("the redacted-name fallback id hashes the whole file name, extension included", () => {
+  const name = (ext: string) => `${["one", "example.invalid"].join("@")}.${ext}`;
+  expect(fallbackSessionId(name("txt"), "same", "forensic-session")).not.toBe(fallbackSessionId(name("log"), "same", "forensic-session"));
 });

@@ -47,7 +47,8 @@ function isInsideWorkTree(cwd: string): boolean {
   } catch (error) {
     const { code, stderr } = error as { code?: string; stderr?: string | Buffer };
     if (code === "ENOENT") return false;
-    if (/not a git repository/i.test(String(stderr ?? ""))) return false;
+    // Only Git's own diagnostic line counts, not the phrase inside another message.
+    if (/^fatal: not a git repository\b/m.test(String(stderr ?? ""))) return false;
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Unable to read git state: ${message}`);
   }
@@ -171,12 +172,47 @@ const GIT_MAX_BUFFER = 1024 * 1024 * 1024;
 
 function gitRaw(args: string[], cwd: string): string {
   // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
-  return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+  const output = execFileSync("git", ["-c", "core.quotePath=false", ...args], {
     cwd,
-    encoding: "utf8",
+    // English diagnostics, so "not a git repository" is recognized in any locale.
+    env: { ...process.env, LC_ALL: "C" },
     maxBuffer: GIT_MAX_BUFFER,
     stdio: ["ignore", "pipe", "pipe"]
   });
+  return decodeGitOutput(output);
+}
+
+/**
+ * A Git path for display: bytes that were not valid UTF-8 (lone surrogates from
+ * decodeGitOutput) are shown as \xNN, so distinct paths stay distinguishable in reports.
+ */
+export function displayGitPath(path: string): string {
+  return path.replace(/[\uDC80-\uDCFF]/g, (char) => `\\x${(char.charCodeAt(0) - 0xdc00).toString(16)}`);
+}
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * Decodes Git output field by field (NUL-delimited), keeping a leading U+FEFF. A field
+ * that is not valid UTF-8 (a path stored with Latin-1 bytes, say) maps each byte at or
+ * above 0x80 to a lone surrogate (U+DC80-U+DCFF), as Python's "surrogateescape" does.
+ * Valid UTF-8 never decodes to a lone surrogate, so two different byte paths can never
+ * collapse into one name.
+ */
+export function decodeGitOutput(output: Buffer): string {
+  const fields: string[] = [];
+  let start = 0;
+  for (let i = 0; i <= output.length; i++) {
+    if (i < output.length && output[i] !== 0) continue;
+    const field = output.subarray(start, i);
+    try {
+      fields.push(strictUtf8.decode(field));
+    } catch {
+      fields.push([...field].map((byte) => String.fromCharCode(byte < 0x80 ? byte : 0xdc00 + byte)).join(""));
+    }
+    start = i + 1;
+  }
+  return fields.join("\0");
 }
 
 function parseNumstatCount(value: string | undefined): number | null {

@@ -56,6 +56,9 @@ function parseLine(line: string, lineNumber: number): RawEvent | SessionRecord {
 
 export function summarizeEvent(event: RawEvent): string {
   if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
+  // A final response without a producer summary keeps its full text: a clipped copy would
+  // be checked for claims alongside the body and could invent one ("Build complete...").
+  if (event.type === "final_response" && typeof event.content === "string" && event.content.trim()) return event.content.trim();
   if (typeof event.content === "string" && event.content.trim()) return compact(event.content);
   if (typeof event.toolName === "string") return event.toolName;
   const command = extractCommand(event);
@@ -97,7 +100,7 @@ export function fallbackSessionId(sourcePath: string, input: string, defaultStem
   }
   // The stem itself is redacted (an email address in the file name, say): keep the
   // name in the identity by hashing it with the content under a neutral stem.
-  const named = sha256(`${stem}\0${input.replace(/\r\n/g, "\n")}`).slice(0, 32);
+  const named = sha256(`${basename(sourcePath)}\0${input.replace(/\r\n/g, "\n")}`).slice(0, 32);
   const neutral = `${defaultStem}-${named}`;
   return redactString(neutral) === neutral ? neutral : `session-${named}`;
 }
