@@ -60,9 +60,12 @@ command whose outcome cannot be attributed is at most `unverified`.
 ### 3. Command matching is exact, not parsed
 
 - A run matches a claim kind when the command is a **simple command** (no
-  `;`, `&&`, `||`, `|`, `&`, `$(`, backticks or newlines after stripping
-  leading `VAR=value` assignments) and it **is** one of the kind's configured
-  commands (`bun test`, `npm run lint`, `tsc --noEmit`, …), word for word.
+  `;`, `&&`, `||`, `|`, `&`, `$(`, backticks or newlines) and it **is** one of
+  the kind's configured commands (`bun test`, `npm run lint`, `tsc --noEmit`,
+  …), word for word.
+- Leading environment assignments are part of the command. `MAKEFLAGS=n make
+  test` is a dry run that exits 0 without testing, so a run with an assignment
+  that is not in the configured form is inferred.
 - Extra arguments make the run inferred: `bun test a.test.ts` or `bun test -t
   parser` ran a subset, so it cannot support "All tests passed". A repository
   that wants a narrower or longer form to count adds that exact form to the
