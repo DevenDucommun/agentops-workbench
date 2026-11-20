@@ -1,0 +1,103 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook SessionStart; exit 0"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook UserPromptSubmit; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook PreToolUse; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook PostToolUse; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook PostToolUseFailure; exit 0"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook SubagentStart; exit 0"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook SubagentStop; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook Stop; exit 0"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "A=\"${AGENTOPS_BIN:-agentops}\"; command -v \"$A\" >/dev/null 2>&1 && exec \"$A\" hook SessionEnd; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
