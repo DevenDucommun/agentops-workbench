@@ -24,11 +24,24 @@ test("CLI, dashboard and Action identify the same session and apply its verifica
   const run = (...args: string[]) => Bun.spawnSync([cli, ...args], { cwd, env });
   const config = join(cwd, "agentops.config.json");
   writeFileSync(config, JSON.stringify({ gates: { requiredVerificationCommands: ["lint"] } }));
-  const cases: { id: string; passed: boolean; edited: boolean; attempts: Array<[string, boolean | null]> }[] = [
+  const cases: { id: string; passed: boolean; edited: boolean; artifact?: string; attempts: Array<[string, boolean | null]> }[] = [
     { id: "build.17", passed: false, edited: false, attempts: [["bun run lint", false]] },
     { id: "missing-lint", passed: false, edited: true, attempts: [["bun test", true]] },
     { id: "partial", passed: false, edited: false, attempts: [["bun run lint", null]] },
     { id: "last-failed", passed: false, edited: true, attempts: [["bun test", true], ["bun test", false], ["bun run lint", true]] },
+    { id: "generic-no-outcome", passed: false, edited: false, attempts: [], artifact: [
+      { type: "session", id: "generic-no-outcome" },
+      { type: "tool_call", command: "bun run lint" },
+      { type: "final_response", content: "Lint passed." }
+    ].map((record) => JSON.stringify(record)).join("\n") },
+    { id: "full-suite-retry", passed: true, edited: true, attempts: [], artifact: [
+      { type: "session", id: "full-suite-retry" },
+      { type: "tool_call", command: "bun test test/new.test.ts", exitCode: 1 },
+      { type: "file_edit", path: "reviewed.ts", operation: "edit" },
+      { type: "tool_call", command: "bun test", exitCode: 0 },
+      { type: "tool_call", command: "bun run lint", exitCode: 0 },
+      { type: "final_response", content: "All tests pass." }
+    ].map((record) => JSON.stringify(record)).join("\n") },
     { id: "recovered", passed: true, edited: true, attempts: [["bun run lint", false], ["bun run lint", true]] }
   ];
 
@@ -39,9 +52,9 @@ test("CLI, dashboard and Action identify the same session and apply its verifica
   try {
     const startup = await dashboard.stdout.getReader().read();
     expect(new TextDecoder().decode(startup.value)).toContain("dashboard listening");
-    for (const { id, edited, attempts } of cases) {
+    for (const { id, edited, attempts, artifact: records } of cases) {
       const artifact = join(cwd, id + ".jsonl");
-      writeFileSync(artifact, claudeArtifact(id, edited, attempts));
+      writeFileSync(artifact, records ?? claudeArtifact(id, edited, attempts));
       expect(run("audit", artifact, "--quiet").exitCode).toBe(0);
     }
     for (const { id, passed, edited } of cases) {
@@ -54,7 +67,8 @@ test("CLI, dashboard and Action identify the same session and apply its verifica
       expect(detail.decision.mergeReadiness.gateStatus).toBe(status);
       expect(detail.decision.mergeReadiness.status === "ready").toBe(passed);
       const lint = detail.decision.evidence.find((row: { id: string }) => row.id === "lint");
-      if (id === "partial") expect(lint?.status).toBe("missing-evidence");
+      if (id === "full-suite-retry") expect(detail.decision.evidence.find((row: { id: string }) => row.id === "test")?.status).toBe("verified");
+      if (id === "partial" || id === "generic-no-outcome") expect(lint?.status).toBe("missing-evidence");
       if (id === "build.17") expect(lint?.status).toBe("contradicted");
       if (id === "recovered") expect(lint?.status).toBe("verified");
       expect(detail.files.map((file: { path: string }) => file.path)).toEqual(edited ? ["reviewed.ts"] : []);

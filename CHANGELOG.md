@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Verification requires a recorded outcome. The partial Claude stream and partial
+  Codex exec fixtures now fail `required-verification`. Generic JSONL producers
+  can record an exit code or an explicit terminal status.
+- A failed verification stays open until a later run of the same kind succeeds.
+  A passing full test suite can recover a failing targeted test. The
+  `fail-then-claim.jsonl` fixture now fails `required-verification` and
+  `failed-verification` alongside `unsupported-final-claims`. The stall fixtures
+  `repeated-edits.jsonl` and `retry-loop.jsonl` now fail the first two gates
+  because every test attempt failed.
+- Dashboard readiness counts and reasons reflect the current repository policy.
+
 ## v3.2.0 - 2026-11-02
 
 Additive: GitHub Action for PR gating, current-CLI adapter refresh, and a

@@ -161,10 +161,11 @@ describe("buildClaimsLedger", () => {
     expect(buildClaimsLedger({ sessionId: "s", finalEvent: null, runs: [run(1, 1, "bun test", "completed", 0)], eventIds: new Map() }).claims).toEqual([]);
   });
 
-  test("outcome: non-zero exit or failed status fails; unknown exit with no failure status passes", () => {
+  test("command outcomes require a terminal status or an exit code", () => {
     expect(commandOutcome({ status: "completed", exitCode: 1 })).toBe("failed");
     expect(commandOutcome({ status: "failed", exitCode: null })).toBe("failed");
     expect(commandOutcome({ status: "completed", exitCode: null })).toBe("passed");
+    expect(commandOutcome({ status: null, exitCode: null })).toBeNull();
     expect(commandOutcome({ status: null, exitCode: 0 })).toBe("passed");
   });
 });

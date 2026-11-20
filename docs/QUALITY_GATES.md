@@ -37,12 +37,21 @@ The GitHub format is stdout/file only. The CLI does not post comments; the
 
 Default gates fail when:
 
-- no observed verification command is recorded
+- no verification command has a recorded success
+- the latest completed verification of a kind failed (`failed-verification`)
 - any high-severity risk is present
 - more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
   contradicted, or only inferred from forensic text
 - generated-file churn is above the configured threshold
+
+For generic JSONL shell commands, record `exitCode` or an explicit result in
+`status` (for example, `succeeded` or `failed`). A request without a result
+leaves the claim unsupported. Starting a retry leaves the previous result in
+effect until the retry finishes. A later passing test suite clears a failed
+targeted test. Passing lint leaves a test failure open. Custom verification
+commands outside the test, lint, typecheck, and build kinds recover on an
+exact-command retry. Explicit required-command patterns still apply.
 
 Forensic inferred commands are review evidence, not observed proof.
 

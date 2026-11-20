@@ -1,6 +1,6 @@
-import { evaluateSessionRisks, latestCommandAttempts, successfulCommands, isVerificationCommand } from "./analyzer";
+import { evaluateSessionRisks, type RiskFlag, successfulCommands, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { evidenceClaimRules } from "./ledger";
+import { commandOutcome, evidenceClaimRules } from "./ledger";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import { getCommands, getFileChanges, getSession, type Store } from "./store";
@@ -38,13 +38,13 @@ export function evaluateQualityGate(
   store: Store,
   sessionId: string,
   config: AgentOpsConfig = defaultConfig,
-  options: { gitChanges?: GitChange[] } = {}
+  options: { gitChanges?: GitChange[]; risks?: RiskFlag[] } = {}
 ): GateResult {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
   const commands = getCommands(store, sessionId);
-  const risks = evaluateSessionRisks(store, sessionId, config);
+  const risks = options.risks ?? evaluateSessionRisks(store, sessionId, config);
   const files = getFileChanges(store, sessionId);
   const verification = successfulCommands(commands, session.source_adapter).filter((command) => isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
@@ -70,12 +70,23 @@ export function evaluateQualityGate(
       threshold: ">= 1"
     });
 
-    const failed = latestCommandAttempts(commands).filter((command) => isVerificationCommand(command.command, config)
-      && (command.status === "failed" || (command.exitCode !== null && command.exitCode !== 0)));
+    // Use the ledger's test/lint/typecheck/build kinds. Custom verification commands
+    // have no ledger kind and can recover on a retry of the same command.
+    const failures = new Map<string, string>();
+    for (const command of commands) {
+      const outcome = commandOutcome(command, session.source_adapter);
+      if (!outcome || !isVerificationCommand(command.command, config)) continue;
+      const kinds = evidenceClaimRules.filter((rule) => !rule.toolPattern && rule.commandPattern?.test(command.command)).map((rule) => rule.id);
+      for (const key of kinds.length ? kinds : [command.command]) {
+        if (outcome === "failed") failures.set(key, command.command);
+        else failures.delete(key);
+      }
+    }
+    const failed = [...new Set(failures.values())];
     if (failed.length) {
       checks.push({
         ...checkAtMost("failed-verification", "Failed verification commands", failed.length, 0),
-        message: `Latest attempt failed: ${failed.map((command) => command.command).join(", ")}.`
+        message: `Latest attempt failed: ${failed.join(", ")}.`
       });
     }
   }

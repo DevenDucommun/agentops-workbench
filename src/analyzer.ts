@@ -2,11 +2,11 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { CommandRecord } from "./types";
 import type { Store } from "./store";
-import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
+import { type EvidenceClaimId, commandOutcome, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
-type RiskFlag = {
+export type RiskFlag = {
   eventId: number | null;
   severity: "low" | "medium" | "high";
   category: string;
@@ -227,24 +227,13 @@ export function evaluateSessionRisks(store: Store, sessionId: string, config: Ag
   return flags.filter((flag) => !isSuppressed(flag, config.suppressions));
 }
 
-// Use the latest attempt at each command, so a successful retry can restore evidence
-// and a later failure invalidates an earlier success. Inferred text is not an attempt.
-export function latestCommandAttempts(commands: CommandRecord[]): CommandRecord[] {
+// Explicit per-command requirements use the latest recorded result for that exact command.
+export function successfulCommands(commands: CommandRecord[], adapter: string | null | undefined): CommandRecord[] {
   const latest = new Map<string, CommandRecord>();
   for (const command of commands) {
-    if (command.status !== "inferred") latest.set(command.command, command);
+    if (commandOutcome(command, adapter)) latest.set(command.command, command);
   }
-  return [...latest.values()];
-}
-
-export function successfulCommands(commands: CommandRecord[], adapter: string | null | undefined): CommandRecord[] {
-  return latestCommandAttempts(commands).filter(({ status, exitCode }) => {
-    // Old Claude imports marked every request completed before receiving its result.
-    if (adapter === "claude-code-stream-json") return status === "succeeded";
-    if (status && !["completed", "succeeded", "success", "observed", "passed", "executed"].includes(status)) return false;
-    if (exitCode !== null) return exitCode === 0;
-    return status === "succeeded" || status === "success" || status === "passed" || status === "completed";
-  });
+  return [...latest.values()].filter((command) => commandOutcome(command, adapter) === "passed");
 }
 
 /** Denied (by a permission rule or the user) or declined (by the agent runtime's approval policy). */

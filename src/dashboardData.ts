@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand, successfulCommands } from "./analyzer";
+import { type RiskFlag, evaluateSessionRisks, claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand, successfulCommands } from "./analyzer";
 import { evaluateQualityGate, type GateResult } from "./gate";
 import type { AgentOpsConfig } from "./config";
 import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
@@ -300,8 +300,9 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const successful = successfulCommands(commands, session.source_adapter);
   const evidence = [...successful, ...commands.filter((command) => command.status === "inferred")];
-  const gate = evaluateQualityGate(store, sessionId, config);
-  const decision = buildDashboardDecision(events, evidence, risks, evidence.filter((command) => isVerificationCommand(command.command, config)), gate, getClaimsLedger(store, sessionId, config));
+  const currentRisks = evaluateSessionRisks(store, sessionId, config);
+  const gate = evaluateQualityGate(store, sessionId, config, { risks: currentRisks });
+  const decision = buildDashboardDecision(events, evidence, currentRisks, evidence.filter((command) => isVerificationCommand(command.command, config)), gate, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -444,7 +445,7 @@ function buildRiskItem(
 function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
-  risks: RiskFlagRecord[],
+  risks: RiskFlag[],
   verification: CommandRecord[],
   gate: GateResult,
   ledger: ClaimsLedger
@@ -514,7 +515,7 @@ const LEDGER_ROW_LABELS: Partial<Record<LedgerClaim["id"], string>> = {
 function buildEvidenceRows(
   finalSummary: string,
   commands: CommandRecord[],
-  risks: RiskFlagRecord[],
+  risks: RiskFlag[],
   verification: CommandRecord[],
   ledger: ClaimsLedger
 ): DashboardEvidenceRow[] {
@@ -568,7 +569,7 @@ function buildEvidenceRows(
   return rows;
 }
 
-function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): DashboardEvidenceRow {
+function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlag[]): DashboardEvidenceRow {
   const risk =
     entry.verdict === "contradicted"
       ? (risks.find((item) => item.category === "contradicted-claim" && item.message.includes(entry.claimText)) ?? null)
@@ -591,7 +592,7 @@ function toEvidenceRow(input: {
   evidenceFound: boolean;
   contradicted?: boolean;
   command: Pick<CommandRecord, "command" | "status" | "exitCode"> | null;
-  risk: RiskFlagRecord | null;
+  risk: RiskFlag | null;
 }): DashboardEvidenceRow {
   const status = input.contradicted ? "contradicted" : evidenceStatus(input.evidenceFound, input.claimed, input.command);
   return {
