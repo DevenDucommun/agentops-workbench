@@ -168,6 +168,8 @@ describe("AC6: session-end ingest links the commit", () => {
     expect(chain.map((r) => r.seq)).toEqual(chain.map((_, i) => i + 1));
     const files = store.db.query("SELECT path FROM file_changes WHERE session_id = $sid ORDER BY path").all({ $sid: sid }) as Array<{ path: string }>;
     expect(files.map((f) => f.path)).toEqual(["NOTES.md", "math.js"]);
+    const session = store.db.query("SELECT repo FROM sessions WHERE id = $sid").get({ $sid: sid }) as { repo: string };
+    expect(session.repo).toBe("repo");
     store.db.close();
 
     const spool = readSpool(spoolPath(join(stateDir, "spool"), sid) as string);

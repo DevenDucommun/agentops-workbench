@@ -3,16 +3,20 @@
 AgentOps Workbench is safest when it ingests explicit, local, machine-readable
 artifacts. Do not point it at private memory stores or raw transcript folders.
 
-## Two Modes
+## Capture Modes
 
-AgentOps can be used in two ways:
+AgentOps can be used in three ways:
 
+- Automatic recording (preview, Claude Code only): the `agentops-recorder`
+  plugin records every session in repositories you enable with
+  `agentops recorder enable`. See the [recorder guide](RECORDER.md).
 - Live capture: start the agent through AgentOps with `agentops run`.
 - Retrospective audit: import an existing JSONL artifact or lower-fidelity
   plain-text transcript with `agentops audit`.
 
-AgentOps does not run as a daemon. It either launches the provider command and
-saves its JSONL stream, or it analyzes an artifact that already exists.
+AgentOps does not run as a daemon. The recorder runs only inside Claude Code's
+own hooks. Otherwise AgentOps either launches the provider command and saves its
+JSONL stream, or it analyzes an artifact that already exists.
 
 Recommended live capture:
 
