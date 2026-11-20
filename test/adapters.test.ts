@@ -81,6 +81,47 @@ test("parses native Claude Code stream edge and partial fixtures", () => {
   expect(partialTranscript.events.some((event) => event.type === "tool_call" && event.command === "bun test")).toBe(true);
 });
 
+test("a Claude Code Bash invocation takes its status from the matching tool_result", () => {
+  const input = {
+    sourcePath: "claude-bash-results.jsonl",
+    content: [
+      { type: "system", subtype: "init", session_id: "claude-bash-results" },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_ok", name: "Bash", input: { command: "bun run lint" } },
+            { type: "tool_use", id: "toolu_fail", name: "Bash", input: { command: "bun test" } },
+            { type: "tool_use", id: "toolu_none", name: "Bash", input: { command: "bun run build" } }
+          ]
+        }
+      },
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "toolu_fail", is_error: true, content: "1 fail" },
+            { type: "tool_result", tool_use_id: "toolu_ok", is_error: false, content: "clean" }
+          ]
+        }
+      },
+      { type: "result", subtype: "success", session_id: "claude-bash-results", result: "Done." }
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n")
+  };
+  const transcript = resolveAdapter(input, "claude-code-stream-json").parse(input, defaultConfig);
+  const statuses = transcript.events.filter((event) => event.type === "tool_call").map((event) => [event.command, event.status]);
+
+  expect(statuses).toEqual([
+    ["bun run lint", "completed"],
+    ["bun test", "failed"],
+    ["bun run build", "no_result"]
+  ]);
+});
+
 test("reports unsupported Claude Code stream JSONL shapes", () => {
   const input = {
     sourcePath: "claude-unsupported.jsonl",

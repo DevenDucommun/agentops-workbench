@@ -82,9 +82,149 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
   }
 ];
 
+/**
+ * Whether the final response makes this rule's claim. Claims are found per
+ * sentence and contrastive clause, so "Tests failed. Lint passed." claims lint
+ * success only: a claim pattern never borrows a success word from a
+ * neighbouring sentence.
+ */
+export function claimsRule(rule: Pick<EvidenceClaimRule, "claimPattern">, text: string): boolean {
+  return claimClauses(text).some((clause) => rule.claimPattern.test(clause));
+}
+
+function claimClauses(text: string): string[] {
+  return text.split(/[.!?;:](?=\s|$)|\n+|,?\s+(?:but|whereas|although|though|however|yet)\b/i).filter((clause) => clause.trim().length > 0);
+}
+
+/**
+ * Whether `command` executes this rule's verification command, as opposed to
+ * merely mentioning it (`rg 'bun test' README.md`). The pattern must match at
+ * the program position of a shell segment, after env assignments and common
+ * runner wrappers; `sh -c '<script>'` is unwrapped.
+ */
+export function runsRuleCommand(rule: Pick<EvidenceClaimRule, "commandPattern">, command: string): boolean {
+  const anchored = new RegExp(`^(?:${rule.commandPattern.source})`, rule.commandPattern.flags.replace(/[gy]/g, ""));
+  return executedInvocations(command).some((invocation) => anchored.test(invocation));
+}
+
+const SHELL_PROGRAM = /^(?:ba|z|da|k|fi)?sh$/;
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const WRAPPERS = new Set(["env", "time", "command", "exec", "nice", "nohup", "sudo", "npx", "bunx", "pnpx", "xvfb-run"]);
+const SUBCOMMAND_WRAPPERS: Record<string, string[]> = { npm: ["exec"], pnpm: ["exec", "dlx"], yarn: ["exec", "dlx"], uv: ["run"], poetry: ["run"], pipenv: ["run"] };
+
+/** Each shell segment's invocation, normalized to "program arg ..." with the program in first position. */
+function executedInvocations(command: string, depth = 0): string[] {
+  const invocations: string[] = [];
+  for (const segment of shellSegments(command)) {
+    const words = stripWrappers(shellWords(segment));
+    if (words.length === 0) continue;
+    const program = basename(words[0]);
+    if (SHELL_PROGRAM.test(program) && depth < 3) {
+      const flag = words.findIndex((word, index) => index > 0 && /^-[a-z]*c[a-z]*$/.test(word));
+      if (flag > 0 && words[flag + 1] !== undefined) {
+        invocations.push(...executedInvocations(words[flag + 1], depth + 1));
+        continue;
+      }
+    }
+    invocations.push([program, ...words.slice(1)].join(" "));
+  }
+  return invocations;
+}
+
+/** Drops leading env assignments and runner wrappers (`env`, `timeout 60`, `npx`, `uv run`, `python -m` ...). */
+function stripWrappers(input: string[]): string[] {
+  let words = input;
+  for (;;) {
+    if (words.length === 0) return words;
+    const program = basename(words[0]);
+    if (ASSIGNMENT.test(words[0])) {
+      words = words.slice(1);
+    } else if (WRAPPERS.has(program) || program === "timeout") {
+      words = words.slice(1);
+      while (words.length > 0 && (words[0].startsWith("-") || ASSIGNMENT.test(words[0]))) words = words.slice(1);
+      if (program === "timeout") words = words.slice(1);
+    } else if (SUBCOMMAND_WRAPPERS[program]?.includes(words[1] ?? "")) {
+      words = words.slice(2);
+    } else if ((program === "python" || program === "python3") && words[1] === "-m") {
+      words = words.slice(2);
+    } else {
+      return words;
+    }
+  }
+}
+
+function basename(word: string): string {
+  return word.slice(word.lastIndexOf("/") + 1);
+}
+
+/** Splits a shell command on unquoted `&&`, `||`, `;`, `|`, `&`, newlines and parentheses. */
+function shellSegments(command: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    if (quote) {
+      if (char === "\\" && quote === '"' && i + 1 < command.length) {
+        current += char + command[++i];
+        continue;
+      }
+      if (char === quote) quote = null;
+      current += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      current += char;
+    } else if (char === "\\" && i + 1 < command.length) {
+      current += char + command[++i];
+    } else if (";&|\n()".includes(char)) {
+      segments.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  segments.push(current);
+  return segments.map((segment) => segment.trim()).filter(Boolean);
+}
+
+/** Splits one segment into words, removing quotes; a quoted argument stays one word. */
+function shellWords(segment: string): string[] {
+  const words: string[] = [];
+  let current = "";
+  let inWord = false;
+  let quote: string | null = null;
+  for (let i = 0; i < segment.length; i++) {
+    const char = segment[i];
+    if (quote) {
+      if (char === quote) quote = null;
+      else if (char === "\\" && quote === '"' && i + 1 < segment.length) current += segment[++i];
+      else current += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      inWord = true;
+    } else if (char === "\\" && i + 1 < segment.length) {
+      current += segment[++i];
+      inWord = true;
+    } else if (/\s/.test(char)) {
+      if (inWord) words.push(current);
+      current = "";
+      inWord = false;
+    } else {
+      current += char;
+      inWord = true;
+    }
+  }
+  if (inWord) words.push(current);
+  return words;
+}
+
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
-/** A run that started but has not reported a result (e.g. Codex `item.started`) proves nothing yet. */
-const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued"]);
+/**
+ * A run that started but has not reported a result (e.g. Codex `item.started`)
+ * proves nothing yet, nor does one whose result was never recorded (a Claude
+ * Code tool_use with no matching tool_result: `no_result`).
+ */
+const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "no_result"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
 
 /** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
@@ -116,9 +256,9 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   });
 
   for (const rule of evidenceClaimRules) {
-    if (!rule.claimPattern.test(finalEvent.text)) continue;
+    if (!claimsRule(rule, finalEvent.text)) continue;
     const evidence = runs
-      .filter((command) => rule.commandPattern.test(command.command))
+      .filter((command) => runsRuleCommand(rule, command.command))
       .map((command): LedgerEvidence => ({
         eventRowId: command.eventId,
         eventId: command.eventId === null ? null : (input.eventIds.get(command.eventId) ?? null),

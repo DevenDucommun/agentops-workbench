@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, runsRuleCommand } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
@@ -232,12 +232,12 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
 
 export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
   return evidenceClaimRules.map((rule) => {
-    const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
+    const matchingCommand = commands.find((command) => runsRuleCommand(rule, command)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
       label: rule.label,
-      claimed: rule.claimPattern.test(value),
+      claimed: claimsRule(rule, value),
       supported: matchingCommand !== null,
       matchingCommand
     };

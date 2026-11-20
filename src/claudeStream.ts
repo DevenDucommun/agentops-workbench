@@ -69,7 +69,8 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
 
   // permission_denials (on the final result) name the tool_use ids that never ran.
   const denied = deniedToolUses(records);
-  const events = records.flatMap((record) => normalizeRecord(record, denied));
+  const results = toolResults(records);
+  const events = records.flatMap((record) => normalizeRecord(record, denied, results));
   events.push(...unmatchedDenialEvents(denied));
   const session: SessionRecord & { id: string; sourcePath: string; sourceAdapter: string } = {
     type: "session",
@@ -125,12 +126,12 @@ function validateClaudeRecords(records: ClaudeStreamRecord[]): void {
   }
 }
 
-function normalizeRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
+function normalizeRecord(record: ClaudeStreamRecord, denied: DeniedToolUses, results: ToolResults): RawEvent[] {
   switch (record.type) {
     case "system":
       return normalizeSystemRecord(record);
     case "assistant":
-      return normalizeAssistantRecord(record, denied);
+      return normalizeAssistantRecord(record, denied, results);
     case "user":
       return normalizeUserRecord(record);
     case "result":
@@ -188,7 +189,7 @@ function normalizeSystemRecord(record: ClaudeStreamRecord): RawEvent[] {
   ];
 }
 
-function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedToolUses): RawEvent[] {
+function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedToolUses, results: ToolResults): RawEvent[] {
   if (record.is_api_error_message === true || typeof record.error === "string") {
     const text = textContent(record.message?.content);
     const reason = typeof record.error === "string" ? record.error : "api_error";
@@ -218,10 +219,10 @@ function normalizeAssistantRecord(record: ClaudeStreamRecord, denied: DeniedTool
     ];
   }
 
-  return blocks.flatMap((block) => normalizeAssistantBlock(block, denied));
+  return blocks.flatMap((block) => normalizeAssistantBlock(block, denied, results));
 }
 
-function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUses): RawEvent[] {
+function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUses, results: ToolResults): RawEvent[] {
   if (block.type === "text") {
     return [
       {
@@ -240,7 +241,7 @@ function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUs
       denied.get(block.id)!.matched = true;
       return [deniedToolUseEvent(block.name, block.input)];
     }
-    return [normalizeToolUse(block)];
+    return [normalizeToolUse(block, results)];
   }
 
   return [
@@ -352,7 +353,31 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
   return initModel ?? records.map((record) => record.message?.model).find(usable);
 }
 
-function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
+/** tool_use id -> whether its tool_result reported an error. */
+type ToolResults = Map<string, boolean>;
+
+// A tool_use and its outcome arrive on separate records: the tool_result in a
+// later user record carries the tool_use_id and is_error.
+function toolResults(records: ClaudeStreamRecord[]): ToolResults {
+  const results: ToolResults = new Map();
+  for (const record of records) {
+    if (record.type !== "user") continue;
+    for (const block of contentBlocks(record.message?.content)) {
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") results.set(block.tool_use_id, block.is_error === true);
+    }
+  }
+  return results;
+}
+
+// A Bash command's status comes from its tool_result: an error result is a
+// failed run, and a tool_use with no recorded result (`no_result`) proves nothing.
+function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
+  const failed = typeof block.id === "string" ? results.get(block.id) : undefined;
+  if (failed === undefined) return "no_result";
+  return failed ? "failed" : "completed";
+}
+
+function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawEvent {
   const name = block.name ?? "claude_tool";
   const input = block.input;
   const command = typeof input?.command === "string" ? input.command : undefined;
@@ -366,7 +391,7 @@ function normalizeToolUse(block: ClaudeContentBlock): RawEvent {
       toolName: name,
       command,
       input,
-      status: "completed",
+      status: bashStatus(block, results),
       summary: command ?? "Claude Code Bash tool use."
     };
   }
