@@ -283,8 +283,165 @@ describe("only executed verification commands are evidence", () => {
       "env NODE_ENV=test npm test",
       "/usr/local/bin/pytest -q"
     ]) {
-      expect(cite("All tests pass.", [command, 1])).toEqual(["contradicted", command]);
+      expect(cite("All tests pass.", [command, 0])).toEqual(["supported", command]);
     }
     expect(cite("Typecheck passed.", ["npx tsc --noEmit", 0])).toEqual(["supported", "npx tsc --noEmit"]);
+  });
+
+  test("a compound command's exit code is only attributed to a test when it is the test's own", () => {
+    // The shell's single exit code belongs to the test: a lone test, a test after `;`,
+    // a test after setup-only steps, or an all-`&&` chain that exited 0.
+    expect(cite("All tests pass.", ["bun test 2>&1", 1])).toEqual(["contradicted", "bun test 2>&1"]);
+    expect(cite("All tests pass.", ["false; bun test", 0])).toEqual(["supported", "false; bun test"]);
+    expect(cite("All tests pass.", ["cd app && bun test", 1])).toEqual(["contradicted", "cd app && bun test"]);
+    expect(cite("All tests pass.", ["bun install && bun test", 0])).toEqual(["supported", "bun install && bun test"]);
+    expect(cite("All tests pass.", ["bun test && bun run lint", 0])).toEqual(["supported", "bun test && bun run lint"]);
+    // Otherwise the test's own outcome is unknown, so the run is not evidence either way.
+    for (const [command, exitCode] of [
+      ["bun test && false", 1],
+      ["bun test ; true", 0],
+      ["true || bun test", 0],
+      ["bun test || true", 0],
+      ["bun test | tail -5", 0],
+      ["bun install && bun test", 1],
+      ["bun test &", 0]
+    ] as Array<[string, number]>) {
+      expect(cite("All tests pass.", [command, exitCode])).toEqual(["unsupported", null]);
+    }
+  });
+
+  test("a compound command with an unknown test outcome leaves an earlier completed failure cited", () => {
+    expect(cite("All tests pass.", ["bun test", 1], ["bun test ; true", 0])).toEqual(["contradicted", "bun test"]);
+  });
+
+  test("a Claude-style failed status without an exit code follows the same attribution", () => {
+    const [claim] = buildClaimsLedger({
+      sessionId: "s",
+      finalEvent: { rowId: 99, eventId: null, text: "All tests pass." },
+      commands: [{ id: 1, eventId: 1, command: "bun test && false", status: "failed", exitCode: null, output: null }],
+      eventIds: new Map()
+    }).claims;
+    expect(claim.verdict).toBe("unsupported");
+  });
+
+  test("wrapper options are consumed with their operands, and lookups are not runs", () => {
+    for (const command of [
+      "env -u CI bun test",
+      "env --unset=CI bun test",
+      "env -C app bun test",
+      "timeout -s KILL 20 bun test",
+      "timeout --signal=KILL -k 5 20 bun test",
+      "nice -n 5 bun test",
+      "sudo -u ci bun test",
+      "command bun test"
+    ]) {
+      expect(cite("All tests pass.", [command, 0])).toEqual(["supported", command]);
+    }
+    expect(cite("Typecheck passed.", ["npx -p typescript tsc --noEmit", 0])).toEqual(["supported", "npx -p typescript tsc --noEmit"]);
+    for (const command of ["command -v bun test", "command -V bun test", "env -u bun test"]) {
+      expect(cite("All tests pass.", [command, 0])).toEqual(["unsupported", null]);
+    }
+  });
+});
+
+describe("claims: coordination, negation and labels", () => {
+  const run = (id: number, command: string, exitCode: number) => ({ id, eventId: id, command, status: exitCode === 0 ? "completed" : "failed", exitCode, output: null });
+  const claimsFor = (text: string) =>
+    buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 9, eventId: null, text }, commands: [run(1, "bun test", 1), run(2, "bun run lint", 0)], eventIds: new Map() }).claims.map(
+      (c) => [c.id, c.verdict]
+    );
+
+  test("independent clauses joined by 'and' keep their own verdict words", () => {
+    expect(claimsFor("Tests failed and lint passed.")).toEqual([["lint", "supported"]]);
+    expect(claimsFor("Tests failed, lint passed.")).toEqual([["lint", "supported"]]);
+  });
+
+  test("a shared verdict across 'and' still claims both", () => {
+    expect(claimsFor("Tests and lint passed.")).toEqual([
+      ["test", "contradicted"],
+      ["lint", "supported"]
+    ]);
+  });
+
+  test("a negated success word is not a claim", () => {
+    for (const text of ["Tests did not pass.", "Tests didn't pass.", "The tests are not passing.", "Tests never passed.", "Tests still don’t pass."]) {
+      expect(claimsFor(text)).toEqual([]);
+    }
+  });
+
+  test("a label with a colon is still a claim", () => {
+    expect(claimsFor("Tests: passed.")).toEqual([["test", "contradicted"]]);
+    expect(claimsFor("Verification: tests passed, lint clean.")).toEqual([
+      ["test", "contradicted"],
+      ["lint", "supported"]
+    ]);
+  });
+});
+
+describe("Claude Code: a result after the final response is not evidence", () => {
+  const records = (...tail: unknown[]) =>
+    [
+      { type: "system", subtype: "init", session_id: "claude-late" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_t1", name: "Bash", input: { command: "bun test" } }] } },
+      ...tail
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+  const ok = { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_t1", is_error: false, content: "1 pass" }] } };
+  const final = (result: string) => ({ type: "result", subtype: "success", session_id: "claude-late", result });
+  const verdict = (stream: string) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => c.verdict);
+    const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }).checks.find((c) => c.id === "unsupported-final-claims")?.status;
+    store.db.close();
+    return { claims, gate };
+  };
+
+  test("a successful result recorded after the final claim leaves the claim unsupported", () => {
+    expect(verdict(records(final("All tests pass."), ok))).toEqual({ claims: ["unsupported"], gate: "failed" });
+  });
+
+  test("a result before the latest final response still counts", () => {
+    expect(verdict(records(final("Working on it."), ok, final("All tests pass.")))).toEqual({ claims: ["supported"], gate: "passed" });
+  });
+});
+
+describe("the ledger reads the full final response when the store has it", () => {
+  const prose = "This change reorganizes the parser module and documents the behaviour for future readers, with notes on edge cases, history and follow-up work.";
+  const audit = (finalText: string, storedText: (full: string) => string | null) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript(
+      "long.jsonl",
+      [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "ledger-long" },
+        { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Bash", input: { cmd: "bun test" }, status: "failed", exitCode: 1 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: finalText }
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n")
+    );
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    // Simulates a store whose ingest saved the full final response (events.text).
+    store.db.query("UPDATE events SET text = $text WHERE session_id = $sid AND type = 'final_response'").run({ $text: storedText(finalText), $sid: sessionId });
+    const claims = getClaimsLedger(store, sessionId).claims.map((c) => [c.id, c.verdict]);
+    store.db.close();
+    return claims;
+  };
+
+  test("the store has a nullable events.text column", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const columns = (store.db.query("PRAGMA table_info(events)").all() as Array<{ name: string }>).map((c) => c.name);
+    store.db.close();
+    expect(columns).toContain("text");
+  });
+
+  test("a claim beyond the 120-character summary is found in the full text", () => {
+    expect(audit(`${prose} All tests pass.`, (full) => full)).toEqual([["test", "contradicted"]]);
+  });
+
+  test("legacy rows without full text fall back to the summary", () => {
+    expect(audit("All tests pass.", () => null)).toEqual([["test", "contradicted"]]);
   });
 });

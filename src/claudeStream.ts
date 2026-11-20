@@ -286,8 +286,12 @@ function normalizeUserRecord(record: ClaudeStreamRecord): RawEvent[] {
   return events;
 }
 
+function isFailedResult(record: ClaudeStreamRecord): boolean {
+  return record.subtype !== "success" || record.is_error === true;
+}
+
 function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
-  const failed = record.subtype !== "success" || record.is_error === true;
+  const failed = isFailedResult(record);
   const errors = Array.isArray(record.errors) ? record.errors.filter((value): value is string => typeof value === "string") : [];
   // Claude Code 2.x can report subtype "success" with is_error=true; terminal_reason says why the run ended.
   const reason = typeof record.terminal_reason === "string" ? record.terminal_reason : undefined;
@@ -357,11 +361,15 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
 type ToolResults = Map<string, boolean>;
 
 // A tool_use and its outcome arrive on separate records: the tool_result in a
-// later user record carries the tool_use_id and is_error.
+// later user record carries the tool_use_id and is_error. Only results recorded
+// before the last final response count: the claims ledger judges that response,
+// and a result that arrived after it was not known when the claim was made.
 function toolResults(records: ClaudeStreamRecord[]): ToolResults {
   const results: ToolResults = new Map();
-  for (const record of records) {
-    if (record.type !== "user") continue;
+  let lastFinal = -1;
+  for (const [index, record] of records.entries()) if (record.type === "result" && !isFailedResult(record)) lastFinal = index;
+  for (const [index, record] of records.entries()) {
+    if (record.type !== "user" || (lastFinal !== -1 && index > lastFinal)) continue;
     for (const block of contentBlocks(record.message?.content)) {
       if (block.type === "tool_result" && typeof block.tool_use_id === "string") results.set(block.tool_use_id, block.is_error === true);
     }

@@ -111,6 +111,7 @@ export function migrate(db: Database): void {
   addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
   addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
+  addColumnIfMissing(db, "events", "text", "TEXT");
 
   // Forensic recorder (spec R1.5, R1.8, R4.3): chain and provenance fields,
   // the session chain head, and commit links. All nullable, so legacy rows and
