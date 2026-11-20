@@ -61,6 +61,16 @@ describe("verdictAfterStop", () => {
     expect(message).toContain("agentops look 0a1b2c3d-0002-4000-8000-000000000002");
   });
 
+  test("an invalid config is reported, never a pass", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true }, gates: { requiredVerificationCommands: "bun test" } });
+    const out = await verdictAfterStop(recordUntilStop("clean-session", repo, stateDir), stateDir);
+    const parsed = JSON.parse(out as string);
+    expect(Object.keys(parsed)).toEqual(["systemMessage"]);
+    expect(parsed.systemMessage).toMatch(/^agentops: needs review: invalid agentops\.config\.json: .*requiredVerificationCommands/);
+    expect(parsed.systemMessage).toContain("agentops check");
+    expect(parsed.systemMessage).not.toContain("passed");
+  });
+
   test("only Stop produces a verdict", async () => {
     const { repo, stateDir } = setup({ recorder: { verdict: true } });
     const pre = handleHook(undefined, JSON.stringify({ session_id: "s-only-stop", cwd: repo, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" }, tool_response: { stdout: "" } }), { stateDir });
