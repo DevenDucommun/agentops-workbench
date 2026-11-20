@@ -148,7 +148,9 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
     claimPattern:
       /\b(verified|tested|confirmed|checked|validated)\b[\s\S]{0,60}\b(on|against)\s+(the\s+|a\s+|real\s+|live\s+)*(device|router|hardware|board|target|phone)\b|\bon-device\b[\s\S]{0,40}\b(verified|tested|confirmed|works|passed)\b/i,
     commandPattern: /(^|[\s|;&(])(ssh|scp|adb|fastboot|telnet|picocom|minicom|ubus|uci)\s/i,
-    toolPattern: /ssh|serial|console|device|router|adb|lab_/i
+    // Whole name segments only, and never a browser tool: a browser's
+    // `console_messages` is not a hardware console.
+    toolPattern: /^(?!.*(?:browser|playwright|puppeteer|chrome|webdriver))(?:.*[_.-])?(ssh|serial|console|device|router|adb|lab|fastboot|uart)(?:[_.-]|$)/i
   },
   {
     id: "browser",
@@ -173,6 +175,8 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
 ];
 
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
+/** A run that started but has not reported a result (e.g. Codex `item.started`) proves nothing yet. */
+const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
 
 /** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
@@ -206,11 +210,13 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   const ledger: ClaimsLedger = { sessionId: input.sessionId, finalEventRowId: finalEvent?.rowId ?? null, finalEventId: finalEvent?.eventId ?? null, claims: [] };
   if (!finalEvent) return ledger;
 
-  // Only runs that executed before the final response can back it. Runs
-  // without an event row keep their place in session order.
-  const runs = input.runs
-    .map(toRun)
-    .filter((run) => !NOT_EXECUTED_STATUSES.has(run.status ?? "") && (run.eventRowId === null || run.eventRowId < finalEvent.rowId));
+  // Only runs that finished before the final response can back it: never-run
+  // and still-running runs are skipped. Runs without an event row keep their
+  // place in session order.
+  const runs = input.runs.map(toRun).filter((run) => {
+    const status = (run.status ?? "").toLowerCase();
+    return !NOT_EXECUTED_STATUSES.has(status) && !NONTERMINAL_STATUSES.has(status) && (run.eventRowId === null || run.eventRowId < finalEvent.rowId);
+  });
 
   for (const rule of evidenceClaimRules) {
     if (!rule.claimPattern.test(finalEvent.text)) continue;
