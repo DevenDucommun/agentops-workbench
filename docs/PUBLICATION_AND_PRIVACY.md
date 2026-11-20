@@ -66,6 +66,67 @@ Generated reports are publishable only if they are produced from synthetic or ap
 
 Reports from real local sessions should be treated as private working artifacts.
 
+## Forensic Recorder Data
+
+The recorder plugin ([recorder guide](RECORDER.md)) writes real session data
+on the user's machine. Treat it like any real transcript: it is a private
+working artifact. Never commit it, and never turn it into a fixture without a
+redaction review.
+
+### What Is Kept
+
+Records are redacted (secrets, emails, local paths) before they are written.
+
+| Kept as text, after redaction | Kept as length + sha256 only |
+| --- | --- |
+| User prompts and the assistant's turn-end messages | File contents written or read |
+| Bash commands and exit codes | Edit `old_string` / `new_string` |
+| Repository-relative file paths, line counts | Command stdout and stderr |
+| Tool names, search patterns, subagent types | Tool error text |
+| Session, prompt, tool-use and agent IDs; git commit SHAs and branches | |
+
+`privacy.storeRawPayload: true` in `agentops.config.json` keeps the right-hand
+column as text too (still redacted). Claude Code's `transcript_path` fields are
+dropped, and transcript files are never read.
+
+### Where It Lives
+
+| What | Where |
+| --- | --- |
+| Enrolled repositories | `<state>/recorder/enrolled.json` |
+| Spools, one JSONL file per session | `<state>/spool/<session-id>.jsonl` |
+| Recorder errors | `<state>/spool/<session-id>.errors.jsonl` |
+| Imported sessions | `<repository>/.agentops/agentops.db` |
+
+`<state>` is `$AGENTOPS_STATE_DIR`, else `$XDG_STATE_HOME/agentops`, else
+`~/.local/state/agentops`. It is outside every repository. The store is under
+`.agentops/`, which must stay in `.gitignore`.
+
+### Retention
+
+Nothing is deleted automatically. Spools stay after import, because they are
+the source `agentops verify` (planned for M4) will check the store against.
+Sessions stay in the store until you remove it.
+
+### Removal
+
+| To | Do |
+| --- | --- |
+| Stop recording a repository | `agentops recorder disable` |
+| Stop recording everywhere | `claude plugin uninstall agentops-recorder` |
+| Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
+| Delete all spools | remove `<state>/spool/` |
+| Delete imported sessions for a repository | remove `<repository>/.agentops/agentops.db` |
+| Remove all recorder state | remove `<state>/` |
+
+No command deletes a single session from the store yet. You can remove the
+store and re-import the spools you want to keep with `agentops audit`, but the
+re-import is partial. It restores each session's events, tool calls, commands,
+file changes and risk flags. It does not restore the session's links to the
+commits it made, so a lookup from a commit back to its session will not find
+those sessions. Only the recorder's own session-end import creates commit
+links.
+
 ## Public Release Checklist
 
 - Run secret scanner.

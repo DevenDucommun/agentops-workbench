@@ -41,7 +41,7 @@ Sizes are relative effort: S, M or L.
   marketplace manifest, `agentops recorder enable|disable|status`, and
   CAPTURE_GUIDE/README. Verify: manual install in a scratch repo, then an
   interactive session appears in `agentops sessions` (AC1).
-- [ ] **T1.8 (S) Privacy and release docs.** PUBLICATION_AND_PRIVACY (spool
+- [x] **T1.8 (S) Privacy and release docs.** PUBLICATION_AND_PRIVACY (spool
   location, retention, removal) and RELEASE_CHECKLIST recorder items.
 - [ ] **T1.9 (S) Dogfood gate, then release v3.3.0.** Verify: one week of
   enrolled use, `agentops verify` (preview) clean, no hook errors, release

@@ -71,9 +71,13 @@ the session can be found from the commit later.
 
 - **Redaction before writing.** Records go through the same secret and
   local-path redaction as every other import, before they touch disk.
-- **Contents are hashed, not stored.** File contents and command output are
-  kept as their length and sha256 only. Set `privacy.storeRawPayload: true` in
-  `agentops.config.json` to keep them (still redacted).
+- **Contents are hashed, not stored.** File contents, edit text and command
+  output are kept as their length and sha256 only. Set
+  `privacy.storeRawPayload: true` in `agentops.config.json` to keep them
+  (still redacted).
+- **Prompts and replies are kept.** Your prompts, the assistant's turn-end
+  messages and Bash commands are stored as redacted text, because the gate
+  and the report read them.
 - **Paths are repository-relative.** File paths inside the repository are
   stored relative to it; paths outside it are redacted.
 - **No transcripts.** Claude Code's private transcript files are never read or
@@ -92,8 +96,9 @@ the session can be found from the commit later.
 `<state>` is `$AGENTOPS_STATE_DIR`, else `$XDG_STATE_HOME/agentops`, else
 `~/.local/state/agentops`. Nothing is written inside the repository except
 `.agentops/`, which should be in `.gitignore` (`agentops init` adds it).
-Retention and removal are covered in
-[publication and privacy](PUBLICATION_AND_PRIVACY.md).
+Nothing is deleted automatically. The full field list, retention and removal
+steps are in
+[publication and privacy](PUBLICATION_AND_PRIVACY.md#forensic-recorder-data).
 
 ## Turn-End Verdict (optional)
 
@@ -131,3 +136,5 @@ so the summary appears at turn end instead.
 - **Recorder errors:** see `<state>/spool/*.errors.jsonl`. Each line names the
   reason (`lock-timeout`, `write-failed`, `ingest-failed`, `verdict-failed`).
 - **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`.
+  This restores the session's events but not its commit links, which only the
+  recorder's session-end import creates.
