@@ -1,10 +1,11 @@
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import { finalClaimTexts } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
 import { parseForensicTextTranscript } from "../src/forensicText";
-import { getGitChanges } from "../src/git";
+import { getGitChanges, getGitChangesOrEmpty } from "../src/git";
 import { fallbackSessionId } from "../src/parser";
 import { redactString } from "../src/redaction";
 import { ingestTranscript, listSessions, openStore } from "../src/store";
@@ -35,4 +36,34 @@ test("before the first commit, unstaged edits to a staged file count toward line
   Bun.spawnSync(["git", "add", "f.txt"], { cwd: dir });
   writeFileSync(join(dir, "f.txt"), "a\nb\nc\nd\n");
   expect(getGitChanges(dir)).toEqual([{ path: "f.txt", status: "AM", additions: 4, deletions: 0 }]);
+});
+
+test("captures with identical text but different names keep separate sessions", () => {
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-r5-")), "agentops.db"));
+  const text = "$ bun test\nexit code 0\nFinal: same text.\n";
+  ingestTranscript(store, parseForensicTextTranscript("task.txt", text, defaultConfig), defaultConfig);
+  ingestTranscript(store, parseForensicTextTranscript("desk.txt", text, defaultConfig), defaultConfig);
+  expect(listSessions(store)).toHaveLength(2);
+  store.db.close();
+});
+
+test("a summary whose words occur inside a longer word is still checked for claims", () => {
+  const event = { summary: "build complete", text: "The rebuild completed overnight." };
+  expect(finalClaimTexts(event)).toEqual(["The rebuild completed overnight.", "build complete"]);
+  expect(finalClaimTexts({ summary: "The rebuild comp...", text: "The rebuild completed overnight." })).toEqual(["The rebuild completed overnight."]);
+});
+
+test("an unreadable git config fails instead of reporting no changes", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r5-git-")));
+  Bun.spawnSync(["git", "init", "-q"], { cwd: dir });
+  writeFileSync(join(dir, "f.txt"), "a\n");
+  chmodSync(join(dir, ".git", "config"), 0o000);
+  try {
+    expect(() => getGitChanges(dir)).toThrow(/Unable to read git state/);
+    expect(() => getGitChangesOrEmpty(dir)).toThrow(/Unable to read git state/);
+  } finally {
+    chmodSync(join(dir, ".git", "config"), 0o644);
+  }
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r5-norepo-")));
+  expect(getGitChangesOrEmpty(outside)).toEqual([]);
 });
