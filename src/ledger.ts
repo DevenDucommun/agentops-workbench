@@ -161,7 +161,20 @@ const NONTERMINAL_STATUSES = new Set(["in_progress", "started", "running", "pend
 // interrupted or killed did not pass.
 const FAILED_STATUSES = new Set(["failed", "error", "timed_out", "timeout", "cancelled", "canceled", "interrupted", "killed", "aborted"]);
 
-/** A run failed when it reported a non-zero exit code or a failed status; a run with neither counts as passed. */
+const SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "passed", "ok"]);
+
+/**
+ * Whether a run recorded an outcome: an exit code, a failed terminal status or
+ * a success status. A run without one (`skipped`, an unknown status, or none at
+ * all) proves nothing and is never cited: unknown is never a pass.
+ */
+export function hasRecordedOutcome(command: Pick<CommandRecord, "status" | "exitCode">): boolean {
+  if (typeof command.exitCode === "number") return true;
+  const status = (command.status ?? "").toLowerCase();
+  return FAILED_STATUSES.has(status) || SUCCESS_STATUSES.has(status);
+}
+
+/** A run failed when it reported a non-zero exit code or a failed status; otherwise it passed. Callers check `hasRecordedOutcome` first. */
 export function commandOutcome(command: Pick<CommandRecord, "status" | "exitCode">): "passed" | "failed" {
   if (typeof command.exitCode === "number" && command.exitCode !== 0) return "failed";
   return FAILED_STATUSES.has((command.status ?? "").toLowerCase()) ? "failed" : "passed";
@@ -198,18 +211,25 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   // Commands without an event row keep their place in insertion order.
   const runs = input.commands.filter((command) => {
     const status = (command.status ?? "").toLowerCase();
-    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status)) return false;
+    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasRecordedOutcome(command)) return false;
     if (command.eventId === null) return true;
     const resultRowId = input.resultRowIds?.get(command.eventId);
     return command.eventId < finalEvent.rowId && (resultRowId === undefined || resultRowId < finalEvent.rowId);
   });
   // Runs are ordered by when their outcome was recorded, so with overlapping
-  // calls the latest run is the one whose result arrived last.
+  // calls the latest run is the one whose result arrived last. When two runs'
+  // outcomes cannot be told apart, a failure sorts after a pass, so an
+  // ambiguous order never hides a failure.
   const recordedAt = (command: CommandRecord) =>
     command.eventId === null ? null : (input.resultRowIds?.get(command.eventId) ?? command.eventId);
+  const failedLast = (command: CommandRecord) => (commandOutcome(command) === "failed" ? 1 : 0);
   const ordered = runs
     .map((command, index) => ({ command, index, at: recordedAt(command) }))
-    .sort((a, b) => (a.at === null || b.at === null ? a.index - b.index : a.at - b.at || a.index - b.index))
+    .sort((a, b) =>
+      a.at === null || b.at === null
+        ? a.index - b.index
+        : a.at - b.at || failedLast(a.command) - failedLast(b.command) || a.index - b.index
+    )
     .map((entry) => entry.command);
   const fromShell = (command: CommandRecord) => command.eventId === null || isShellTool(input.toolNames?.get(command.eventId));
 
@@ -266,6 +286,25 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
        GROUP BY call.id`
     )
     .all({ $sid: sessionId }) as Array<{ callRowId: number; resultRowId: number }>;
+  // Stores written before tool_use_id was recorded on Claude events have result
+  // rows without it. A call's outcome then arrived no earlier than the first
+  // such result after it; calls in the same turn share that position, and the
+  // tie rule above keeps a failure among them from being hidden.
+  const legacyResults = (
+    store.db
+      .query("SELECT id FROM events WHERE session_id = $sid AND type = 'tool_result' AND tool_use_id IS NULL ORDER BY id")
+      .all({ $sid: sessionId }) as Array<{ id: number }>
+  ).map((row) => row.id);
+  const resultRowIds = new Map(results.map((row) => [row.callRowId, row.resultRowId]));
+  if (legacyResults.length > 0) {
+    const calls = store.db
+      .query("SELECT id FROM events WHERE session_id = $sid AND type = 'tool_call' AND tool_use_id IS NULL")
+      .all({ $sid: sessionId }) as Array<{ id: number }>;
+    for (const { id } of calls) {
+      const first = legacyResults.find((resultId) => resultId > id);
+      if (first !== undefined && !resultRowIds.has(id)) resultRowIds.set(id, first);
+    }
+  }
   const tools = store.db.query("SELECT event_id AS eventId, tool_name AS toolName FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL").all({ $sid: sessionId }) as Array<{
     eventId: number;
     toolName: string;
@@ -275,7 +314,7 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
     commands: getCommands(store, sessionId),
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
-    resultRowIds: new Map(results.map((row) => [row.callRowId, row.resultRowId])),
+    resultRowIds,
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName]))
   });
 }

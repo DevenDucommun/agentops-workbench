@@ -7,7 +7,7 @@ import { defaultConfig } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
 import { parseCodexExecJsonl } from "../src/codexExec";
-import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger } from "../src/ledger";
+import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger, hasRecordedOutcome } from "../src/ledger";
 import { parseJsonlTranscript } from "../src/parser";
 import { getCommands, getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
@@ -624,5 +624,57 @@ describe("regressions against the base: outcome order, terminal statuses, edit p
     const paths = store.db.query("SELECT path FROM file_changes WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ path: string }>;
     store.db.close();
     expect(paths.map((row) => row.path)).toEqual(["src/a.ts"]);
+  });
+});
+
+describe("regressions against the base: outcome-less retries and stores written by the base", () => {
+  const generic = (events: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript("retry.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    return claim;
+  };
+  const header = { schemaVersion: "agentops.event.v1", type: "session", id: "ledger-retry" };
+  const failed = { schemaVersion: "agentops.event.v1", type: "command", command: "bun test a.ts", exitCode: 1, status: "failed" };
+  const final = { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", content: "Tests passed." };
+
+  test("a skipped retry, or one with no recorded outcome, never displaces a recorded failure", () => {
+    for (const retry of [{ status: "skipped" }, {}]) {
+      const claim = generic([header, failed, { schemaVersion: "agentops.event.v1", type: "command", command: "bun test b.ts", ...retry }, final]);
+      expect(claim.verdict).toBe("contradicted");
+      expect(claim.cited?.command).toBe("bun test a.ts");
+    }
+    expect(hasRecordedOutcome({ status: "skipped", exitCode: null })).toBe(false);
+    expect(hasRecordedOutcome({ status: null, exitCode: null })).toBe(false);
+    expect(hasRecordedOutcome({ status: "completed", exitCode: null })).toBe(true);
+  });
+
+  const claudeStore = (records: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const stream = records.map((record) => JSON.stringify(record)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    // Stores written by the base did not record tool_use_id on Claude events.
+    store.db.query("UPDATE events SET tool_use_id = NULL WHERE session_id = $sid").run({ $sid: sessionId });
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    return claim;
+  };
+  const call = (id: string, command: string) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input: { command } }] } });
+  const both = { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_a", name: "Bash", input: { command: "bun test a.ts" } }, { type: "tool_use", id: "toolu_b", name: "Bash", input: { command: "bun test b.ts" } }] } };
+  const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: "out" }] } });
+  const done = { type: "result", subtype: "success", session_id: "claude-legacy", result: "Tests passed." };
+  const init = { type: "system", subtype: "init", session_id: "claude-legacy" };
+
+  test("a base-written store with overlapping runs keeps the failure cited", () => {
+    const claim = claudeStore([init, both, result("toolu_b", false), result("toolu_a", true), done]);
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.command).toBe("bun test a.ts");
+  });
+
+  test("a base-written store with a failure retried in a later turn is supported", () => {
+    const claim = claudeStore([init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), result("toolu_b", false), done]);
+    expect(claim.verdict).toBe("supported");
   });
 });
