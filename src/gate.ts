@@ -1,5 +1,6 @@
 import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
+import { evidenceClaimRules } from "./ledger";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
@@ -28,10 +29,7 @@ export type GateResult = {
 
 const unsupportedClaimCategories = new Set([
   "unsupported-success-claim",
-  "missing-test-evidence",
-  "missing-lint-evidence",
-  "missing-typecheck-evidence",
-  "missing-build-evidence",
+  ...evidenceClaimRules.map((rule) => rule.category),
   "contradicted-claim",
   "inferred-verification-evidence"
 ]);

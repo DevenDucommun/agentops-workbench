@@ -1,0 +1,5 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"ledger-callers-searched","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic ledger case: search ran before a no-callers claim"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Remove legacyAdd if nothing uses it."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"rg -n legacyAdd src test"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/math.ts","operation":"edit","linesAdded":1,"linesRemoved":1,"summary":"Synthetic edit."}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Removed legacyAdd. There are no other callers in the repo."}
