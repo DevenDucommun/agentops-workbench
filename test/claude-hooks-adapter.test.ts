@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { detectAdapters, resolveAdapter } from "../src/adapters";
 import { parseClaudeHooksJsonl } from "../src/claudeHooks";
 import { runCli } from "../src/cli";
+import { evaluateQualityGate } from "../src/gate";
 import { defaultConfig } from "../src/config";
 import { enrollRepository } from "../src/recorder/enrollment";
 import { handleHook, ingestAfterSessionEnd, pushSource } from "../src/recorder/hook";
@@ -359,4 +360,46 @@ describe("recorder review regressions, round 3", () => {
     const transcript = parseClaudeHooksJsonl("raw.jsonl", lines.join("\n"), defaultConfig);
     expect(transcript.events.map((e) => e.path)).toEqual(["src/a.ts", "test/a.ts"]);
   });
+});
+
+test("Stop claims after the preview boundary still require verification", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-stop-")));
+  const file = join(root, "test.jsonl");
+  const dbPath = join(root, "store.db");
+  const message = "Here are the details. ".repeat(8) + "All tests passed.";
+  const records = [
+    { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun run lint" }, tool_response: { exitCode: 0 } },
+    { hook_event_name: "Stop", last_assistant_message: message }
+  ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: "late-claim" })));
+  writeFileSync(file, records.join("\n"));
+  ingestSpoolFile(file, { repoRoot: root, dbPath });
+  const store = openStore(dbPath);
+  try {
+    expect(evaluateQualityGate(store, "late-claim").checks).toContainEqual(expect.objectContaining({ id: "unsupported-final-claims", status: "failed" }));
+  } finally {
+    store.db.close();
+  }
+});
+
+test("an abbreviated dry run cannot link an unpublished commit", () => {
+  expect(pushSource("git push --dry origin HEAD:refs/heads/unpublished")).toBeUndefined();
+  expect(pushSource("git push --dry-r origin HEAD:refs/heads/unpublished")).toBeUndefined();
+});
+
+test("porcelain output identifies the configured source ref of an actual push", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-porcelain-")));
+  const repo = join(root, "local");
+  const remote = join(root, "remote.git");
+  git(root, "init", "-q", "-b", "trunk", repo);
+  git(root, "init", "-q", "--bare", remote);
+  git(repo, "commit", "--allow-empty", "-qm", "first");
+  git(repo, "remote", "add", "fixture", remote);
+  git(repo, "config", "remote.fixture.push", "refs/heads/trunk:refs/heads/published");
+  const push = () => git(repo, "push", "--porcelain", "fixture");
+  const detect = (output: string) => pushSource("git push --porcelain fixture", output);
+  expect(detect(push())).toBe("refs/heads/trunk");
+  expect(git(remote, "rev-parse", "published")).toBe(git(repo, "rev-parse", "trunk"));
+  expect(detect(push())).toBeUndefined();
+  git(repo, "commit", "--allow-empty", "-qm", "second");
+  expect(detect(push())).toBe("refs/heads/trunk");
 });

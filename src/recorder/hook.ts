@@ -68,7 +68,7 @@ function observedPush(payload: Record<string, unknown>, cwd: string): { sha: str
 
 // Push options that take a separate value, and pushes that send no single commit.
 const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--repo", "--receive-pack", "--exec"]);
-const PUSH_NO_COMMIT = new Set(["--dry-run", "--all", "--branches", "--mirror", "--tags", "--delete", "--prune", "--help"]);
+const PUSH_NO_COMMIT = ["--dry-run", "--all", "--branches", "--mirror", "--tags", "--delete", "--prune", "--help"];
 
 /**
  * The local revision a push command sends, or undefined when it cannot be known
@@ -93,7 +93,9 @@ export function pushSource(command: string, output = ""): string | undefined {
       continue;
     }
     if (token.startsWith("--")) {
-      if (PUSH_NO_COMMIT.has(token.split("=")[0] as string)) return;
+      // Git accepts unambiguous long-option prefixes such as --dry.
+      const option = token.split("=")[0] as string;
+      if (PUSH_NO_COMMIT.some((name) => name.startsWith(option))) return;
       continue;
     }
     if (token.startsWith("-")) {
@@ -103,6 +105,16 @@ export function pushSource(command: string, output = ""): string | undefined {
     positionals.push(token);
   }
   const refspecs = remoteInOption ? positionals : positionals.slice(1);
+  // Porcelain emits flag, source:destination, and summary as tab-separated
+  // fields. Only a created, advanced, or force-updated ref conveys a commit.
+  const porcelain = output.split(/\r?\n/).map((line) => /^([ *+=!-])\t([^:\t]*):[^\t]+\t/.exec(line)).filter((row) => row !== null);
+  if (porcelain.length) {
+    const changed = porcelain.filter((row) => row[1] !== "=");
+    const source = changed[0]?.[2];
+    if (!source || !changed.every((row) => row[2] === source && [" ", "*", "+"].includes(row[1] as string))) return;
+    return source;
+  }
+  if (/^Everything up-to-date$/m.test(output)) return;
   if (refspecs.length === 0) {
     const updates = output.split(/\r?\n/).filter((line) => line.includes(" -> "));
     const sources = updates.map((line) => /\s([A-Za-z0-9_][A-Za-z0-9_./-]*) -> \S+\s*$/.exec(line)?.[1]);

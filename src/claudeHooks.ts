@@ -142,7 +142,7 @@ function normalize(r: Spooled, parentByAgent: Map<string, string>): RawEvent {
       case "UserPromptSubmit":
         return { ...base, type: "message", role: "user", content: text(p.prompt), summary: compactText(text(p.prompt) ?? "User prompt") };
       case "Stop":
-        return { ...base, type: "final_response", role: "assistant", content: text(p.last_assistant_message), summary: compactText(text(p.last_assistant_message) ?? "Turn finished") };
+        return { ...base, type: "final_response", role: "assistant", content: text(p.last_assistant_message), summary: text(p.last_assistant_message) ?? "Turn finished" };
       case "SubagentStop":
         return { ...base, type: "message", role: "assistant", content: text(p.last_assistant_message), summary: `Subagent ${text(r.agentType) ?? ""} finished`.replace(/\s+/g, " ") };
       case "PreToolUse":
