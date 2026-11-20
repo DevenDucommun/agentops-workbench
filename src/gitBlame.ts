@@ -71,19 +71,61 @@ export function parseBlamePorcelain(output: string): BlameLine[] {
     const value = space === -1 ? "" : raw.slice(space + 1);
     if (key === "author-time") meta.authorTime = Number(value);
     else if (key === "summary") meta.summary = value;
-    else if (key === "filename") meta.filename = value;
+    else if (key === "filename") meta.filename = unquoteGitPath(value);
   }
   return lines;
 }
 
-/** `Key: value` trailers from the last paragraph of a commit message. */
+/**
+ * `Key: value` trailers from the last paragraph of a commit message. As in Git, a
+ * trailer starts in the first column and an indented line continues the previous
+ * one (values are unfolded with a space). An indented `Key: value` is not a trailer.
+ */
 export function parseTrailers(message: string): Array<{ key: string; value: string }> {
-  const paragraphs = message.trim().split(/\n\s*\n/);
+  const paragraphs = message.replace(/\s+$/, "").split(/\n[ \t]*\n/);
   if (paragraphs.length < 2) return [];
-  const last = (paragraphs.at(-1) as string).split("\n");
-  const trailers = last.map((line) => /^([A-Za-z][A-Za-z0-9-]*):\s+(.+)$/.exec(line.trim()));
-  if (trailers.some((match) => match === null)) return [];
-  return trailers.map((match) => ({ key: (match as RegExpExecArray)[1] as string, value: ((match as RegExpExecArray)[2] as string).trim() }));
+  const trailers: Array<{ key: string; value: string }> = [];
+  for (const line of (paragraphs.at(-1) as string).split("\n")) {
+    const start = /^([A-Za-z][A-Za-z0-9-]*):[ \t]*(.*)$/.exec(line);
+    if (start) {
+      trailers.push({ key: start[1] as string, value: (start[2] as string).trim() });
+      continue;
+    }
+    const previous = trailers.at(-1);
+    if (!previous || !/^[ \t]+\S/.test(line)) return [];
+    previous.value = `${previous.value} ${line.trim()}`.trim();
+  }
+  return trailers;
+}
+
+/**
+ * Decodes a path that Git printed C-quoted ("caf\303\251", "a\tb"), including
+ * octal-escaped UTF-8 bytes. Unquoted paths are returned unchanged.
+ */
+export function unquoteGitPath(value: string): string {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value;
+  const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+  const bytes: number[] = [];
+  const body = value.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i] as string;
+    if (ch !== "\\") {
+      bytes.push(...new TextEncoder().encode(ch));
+      continue;
+    }
+    const next = body[i + 1] ?? "";
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1));
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8));
+      i += 3;
+    } else if (next in escapes) {
+      bytes.push(escapes[next] as number);
+      i += 1;
+    } else {
+      bytes.push(92);
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 /**
@@ -122,16 +164,30 @@ export function getCommitInfo(repo: string, rev: string): CommitInfo | null {
   };
 }
 
-/** Full SHAs of the commits that touched `path`, newest first (follows renames). */
+/**
+ * Full SHAs of the commits that touched `path`, newest first. `path` is literal,
+ * never a pattern. Renames are followed, and merges that changed the path (such as
+ * a conflict resolution that created it) are included, which `--follow` alone skips.
+ * `limit: 0` returns no commits.
+ */
 export function commitsTouching(repo: string, path: string, options: { limit?: number } = {}): string[] {
-  const args = ["log", "--follow", "--format=%H"];
-  if (options.limit) args.push(`-n${options.limit}`);
-  args.push("--", path);
-  const out = git(repo, args);
-  return out === null ? [] : out.split("\n").filter((line) => /^[0-9a-f]{40,64}$/.test(line));
+  if (options.limit !== undefined && options.limit <= 0) return [];
+  const shas = (out: string | null) => (out ?? "").split("\n").filter((line) => /^[0-9a-f]{40,64}$/.test(line));
+  const followed = git(repo, ["log", "--follow", "--format=%H", "--", path]);
+  if (followed === null) return [];
+  const touching = new Set([...shas(followed), ...shas(git(repo, ["log", "--format=%H", "--", path]))]);
+  if (touching.size === 0) return [];
+  // Topological order keeps a merge ahead of its parents even when their commit times tie.
+  const sorted = shas(git(repo, ["rev-list", "--topo-order", ...touching])).filter((sha) => touching.has(sha));
+  return options.limit === undefined ? sorted : sorted.slice(0, options.limit);
 }
 
+/** Runs git with literal pathspecs. Null when git exits nonzero or cannot be started. */
 function git(repo: string, args: string[]): string | null {
-  const proc = Bun.spawnSync(["git", "-C", repo, ...args], { stdout: "pipe", stderr: "ignore" });
-  return proc.exitCode === 0 ? proc.stdout.toString() : null;
+  try {
+    const proc = Bun.spawnSync(["git", "--literal-pathspecs", "-C", repo, ...args], { stdout: "pipe", stderr: "ignore" });
+    return proc.exitCode === 0 ? proc.stdout.toString() : null;
+  } catch {
+    return null;
+  }
 }

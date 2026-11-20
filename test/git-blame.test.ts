@@ -1,8 +1,9 @@
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { blameFile, commitsTouching, getCommitInfo, parseBlamePorcelain, parseTrailers } from "../src/gitBlame";
+import { blameFile, commitsTouching, getCommitInfo, parseBlamePorcelain, parseTrailers, unquoteGitPath } from "../src/gitBlame";
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
@@ -55,6 +56,22 @@ describe("parseTrailers", () => {
   test("a subject-only message or a prose last paragraph has no trailers", () => {
     expect(parseTrailers("fix: add")).toEqual([]);
     expect(parseTrailers("fix: add\n\nThis explains: the fix\nand more prose")).toEqual([]);
+  });
+});
+
+describe("review regressions", () => {
+  test("indented Key: value lines are not trailers; indented lines continue the previous trailer", () => {
+    expect(parseTrailers("subject\n\n    AgentOps-Session: sample")).toEqual([]);
+    expect(parseTrailers("subject\n\nAgentOps-Session: real\n  continued")).toEqual([{ key: "AgentOps-Session", value: "real continued" }]);
+    expect(parseTrailers("subject\n\n  continued\nAgentOps-Session: real")).toEqual([]);
+  });
+
+  test("Git's C-quoted paths are decoded, including octal UTF-8 bytes", () => {
+    expect(unquoteGitPath('"caf\\303\\251"')).toBe("café");
+    expect(unquoteGitPath('"a\\tb\\nc\\"d\\\\e"')).toBe('a\tb\nc"d\\e');
+    expect(unquoteGitPath("plain.ts")).toBe("plain.ts");
+    const [line] = parseBlamePorcelain([`${A} 1 1 1`, 'filename "caf\\303\\251"', "\tx"].join("\n"));
+    expect(line?.originalPath).toBe("café");
   });
 });
 
@@ -135,6 +152,57 @@ describe("git wrappers", () => {
     const third = g(dir, "rev-parse", "HEAD");
     expect(commitsTouching(dir, "sum.js")).toEqual([third, second, first]);
     expect(commitsTouching(dir, "sum.js", { limit: 1 })).toEqual([third]);
+  });
+
+  test("blameFile reports a non-ASCII original path unquoted", () => {
+    const { dir, git: g } = repo();
+    writeFileSync(join(dir, "café"), "x\n");
+    g(dir, "add", "-A");
+    g(dir, "commit", "-q", "-m", "add café");
+    expect(blameFile(dir, "café")[0]?.originalPath).toBe("café");
+  });
+
+  test("commitsTouching includes a merge that created the file during conflict resolution", () => {
+    const { dir, git: g } = repo();
+    g(dir, "checkout", "-q", "-b", "side");
+    writeFileSync(join(dir, "math.js"), "side\n");
+    g(dir, "commit", "-q", "-am", "side change");
+    g(dir, "checkout", "-q", "-");
+    writeFileSync(join(dir, "math.js"), "main\n");
+    g(dir, "commit", "-q", "-am", "main change");
+    Bun.spawnSync(["git", "merge", "-q", "side"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    writeFileSync(join(dir, "math.js"), "resolved\n");
+    writeFileSync(join(dir, "merge-only"), "new\n");
+    g(dir, "add", "-A");
+    g(dir, "commit", "-q", "-m", "merge side");
+    const merge = g(dir, "rev-parse", "HEAD");
+    expect(commitsTouching(dir, "merge-only")).toEqual([merge]);
+    expect(commitsTouching(dir, "math.js")[0]).toBe(merge);
+  });
+
+  test("commitsTouching treats the path literally and limit 0 returns nothing", () => {
+    const { dir, git: g } = repo();
+    writeFileSync(join(dir, "[one].txt"), "1\n");
+    writeFileSync(join(dir, "o.txt"), "o\n");
+    g(dir, "add", "-A");
+    g(dir, "commit", "-q", "-m", "add both");
+    const both = g(dir, "rev-parse", "HEAD");
+    writeFileSync(join(dir, "o.txt"), "o2\n");
+    g(dir, "commit", "-q", "-am", "edit o");
+    expect(commitsTouching(dir, "[one].txt")).toEqual([both]);
+    expect(commitsTouching(dir, "*.txt")).toEqual([]);
+    expect(commitsTouching(dir, "math.js", { limit: 0 })).toEqual([]);
+  });
+
+  test("the wrappers return empty results when git cannot be started", () => {
+    const { dir } = repo();
+    const script = `import { blameFile, commitsTouching, getCommitInfo } from ${JSON.stringify(join(import.meta.dir, "..", "src", "gitBlame.ts"))};
+console.log(JSON.stringify([blameFile(${JSON.stringify(dir)}, "math.js"), commitsTouching(${JSON.stringify(dir)}, "math.js"), getCommitInfo(${JSON.stringify(dir)}, "HEAD")]));`;
+    const file = join(dir, "probe.ts");
+    writeFileSync(file, script);
+    const result = spawnSync(process.execPath, [file], { env: { PATH: join(dir, "no-git-here") }, encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([[], [], null]);
   });
 
   test("missing paths, revisions and repositories return empty results, not errors", () => {
