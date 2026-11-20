@@ -1,0 +1,6 @@
+{"schemaVersion":"agentops.event.v1","type":"session","id":"ledger-fix-verified","agent":"synthetic-agent","model":"synthetic-model","repo":"demo-repo","task":"Synthetic ledger case: verification after the last edit before a fix claim"}
+{"schemaVersion":"agentops.event.v1","type":"message","role":"user","content":"Fix the off-by-one in range()."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test"},"status":"failed","exitCode":1,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"file_edit","path":"src/math.ts","operation":"edit","linesAdded":1,"linesRemoved":1,"summary":"Synthetic edit."}
+{"schemaVersion":"agentops.event.v1","type":"tool_call","toolName":"Bash","input":{"cmd":"bun test"},"status":"completed","exitCode":0,"output":"synthetic output"}
+{"schemaVersion":"agentops.event.v1","type":"final_response","role":"assistant","content":"Fixed the off-by-one in range()."}

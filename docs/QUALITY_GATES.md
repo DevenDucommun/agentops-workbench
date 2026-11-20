@@ -47,8 +47,8 @@ Forensic inferred commands are review evidence, not observed proof.
 
 ## Claims Ledger
 
-Each test, lint, typecheck or build claim in the final response gets a verdict
-from the matching commands that ran before it:
+Each verification claim in the final response gets a verdict from the matching
+runs (shell commands and tool calls) before it:
 
 | Verdict | When | Risk flag |
 | --- | --- | --- |
@@ -56,10 +56,23 @@ from the matching commands that ran before it:
 | `contradicted` | The latest matching run failed, and no later run passed | `contradicted-claim` |
 | `unsupported` | No matching run was observed | `missing-<kind>-evidence` |
 
-A run fails when it reports a non-zero exit code or a failed status. Denied,
-declined and inferred commands never count as runs. The verdict cites the run
-it rests on by `eventId`, or by stored event row for sessions recorded without
-event IDs. A claim that fails, then passes on a re-run, is supported.
+| Claim | Example wording | Matching runs | Kind |
+| --- | --- | --- | --- |
+| Tests pass | "all tests pass" | `bun test`, `pytest`, `cargo test`, ... | `test` |
+| Lint is clean | "lint is clean" | `eslint`, `bun run lint`, ... | `lint` |
+| Typecheck passes | "tsc is clean" | `tsc`, `bun run typecheck`, ... | `typecheck` |
+| Build succeeds | "the build succeeded" | `bun run build`, `cargo build`, ... | `build` |
+| No other callers | "there are no other callers", "not used anywhere" | `rg`, `grep`, `git grep`, or a Grep/search tool | `callers` |
+| Verified on a device | "verified it on the router" | `ssh`, `adb`, `ubus`, `uci`, ..., or a device/router/serial tool | `device` |
+| Verified in a browser | "checked it in the browser", "e2e tests pass" | `playwright`, `cypress`, ..., or a browser tool | `browser` |
+| Fixed | "fixed", "resolved", "now works" | a verification command after the last file edit | `fix` |
+
+A run fails when it reports a non-zero exit code or a failed status. A search
+that finds nothing (exit 1) still counts as a passing search; only search
+errors fail. Denied, declined and inferred commands never count as runs. The
+verdict cites the run it rests on by `eventId`, or by stored event row for
+sessions recorded without event IDs. A claim that fails, then passes on a
+re-run, is supported.
 
 Before the ledger, any matching run supported a claim, including a failed one.
 To keep that behavior, suppress the new flag:

@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger } from "./ledger";
+import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
@@ -12,9 +12,13 @@ type RiskFlag = {
 };
 
 export type { EvidenceClaimId } from "./ledger";
+export { isVerificationCommand } from "./ledger";
+
+/** The command-matched claim kinds that `evaluateEvidenceClaims` reports. */
+export type CommandClaimId = Extract<EvidenceClaimId, "test" | "lint" | "typecheck" | "build">;
 
 export type EvidenceClaimEvaluation = {
-  id: EvidenceClaimId;
+  id: CommandClaimId;
   category: string;
   label: string;
   claimed: boolean;
@@ -142,14 +146,14 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
-    const ledger = getClaimsLedger(store, sessionId);
+    const ledger = getClaimsLedger(store, sessionId, config);
     for (const claim of ledger.claims) {
       if (claim.verdict === "unsupported") {
         flags.push({
           eventId: finalEvent.id,
           severity: "medium",
           category: claim.category,
-          message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
+          message: evidenceClaimRules.find((rule) => rule.id === claim.id)?.unsupportedMessage ?? `Final response claims ${claim.claimText}, but no matching run was recorded.`
         });
       } else if (claim.verdict === "contradicted" && claim.cited) {
         const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
@@ -157,7 +161,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
           eventId: finalEvent.id,
           severity: "medium",
           category: "contradicted-claim",
-          message: `Final response claims ${claim.label} success, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
+          message: `Final response claims ${claim.claimText}, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
         });
       }
     }
@@ -224,17 +228,14 @@ export function isExecutedCommandStatus(status: string | null | undefined): bool
   return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
 }
 
-export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
-  const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
-  return pattern.test(command);
-}
-
+/** Command-matched claims only (test/lint/typecheck/build), as the dashboard shows them; the ledger covers all claims. */
 export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
-  return evidenceClaimRules.map((rule) => {
-    const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
+  return evidenceClaimRules.flatMap((rule) => {
+    const pattern = rule.commandPattern;
+    if (!pattern || rule.toolPattern || rule.afterLastEdit) return [];
+    const matchingCommand = commands.find((command) => pattern.test(command)) ?? null;
     return {
-      id: rule.id,
+      id: rule.id as CommandClaimId,
       category: rule.category,
       label: rule.label,
       claimed: rule.claimPattern.test(value),

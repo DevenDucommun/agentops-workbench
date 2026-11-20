@@ -51,7 +51,7 @@ Sizes are relative effort: S, M or L.
 - [x] **T2.1 (M) Ledger model with supported/unsupported/contradicted and
   event citations.** Verify: AC7 fixtures (pass, fail then claim, no run then
   claim, fail then pass then claim).
-- [ ] **T2.2 (M) New claim categories** (callers/usages, on-device or
+- [x] **T2.2 (M) New claim categories** (callers/usages, on-device or
   in-browser verification, "fixed"). Verify: one positive and one negative
   fixture per category.
 - [ ] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing
