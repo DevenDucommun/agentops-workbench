@@ -94,12 +94,12 @@ command whose outcome cannot be attributed is at most `unverified`.
 
 ### 5. The recorder is the primary source
 
-M1 sessions carry observed evidence for every simple command that completed
-with an outcome, so they get real pass/fail verdicts and reach `unverified`
-only for calls without an outcome and for compound, wrapped or narrowed
-commands (`bun test || true` completes even when tests fail). Text import stays
-supported
-for history and forensics, documented as the weaker path. Product docs and
+M1 sessions carry observed evidence for every command that completed with an
+outcome. A run that also matches a configured command under rule 3 gets a real
+pass/fail verdict. Calls without an outcome, and runs that do not match under
+rule 3 (compound, wrapped or narrowed commands, or unconfigured environment
+assignments), are `unverified`: `bun test || true` completes even when tests
+fail. Text import stays supported for history and forensics, documented as the weaker path. Product docs and
 `agentops audit` output say which tier a session's evidence came from.
 
 ### 6. Roadmap: structured claims
