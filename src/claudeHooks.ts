@@ -1,5 +1,4 @@
-import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, resolve, sep } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { redactValue } from "./redaction";
 import { findRepositoryRoots } from "./recorder/enrollment";
@@ -81,9 +80,8 @@ export function parseClaudeHooksJsonl(sourcePath: string, content: string, confi
     }
   });
   const root = rawRecordingRoot([...rawCwds]);
-  const repoRoots = root ? checkoutRoots(root) : [];
   const records = inputRecords.map((record) => record.type === SPOOL_RECORD_TYPE ? record : buildSpoolRecord(record, {
-    storeRawPayload: config.privacy.storeRawPayload, repoRoots
+    storeRawPayload: config.privacy.storeRawPayload, repoRoots: root ? [root] : []
   }) as Spooled);
   if (records.length === 0) throw new Error("Unsupported claude-hooks shape: expected forensic recorder spool records or Claude Code hook payloads.");
 
@@ -220,15 +218,5 @@ function lifecycleSummary(r: Spooled): string {
       return `Subagent ${typeof r.agentType === "string" ? r.agentType : ""} started`.replace(/\s+/g, " ").trim();
     default:
       return typeof r.hookEventName === "string" ? r.hookEventName : "Hook event";
-  }
-}
-
-function checkoutRoots(cwd: string): string[] {
-  const checkout = findRepositoryRoots(cwd)?.checkout;
-  if (!checkout) return [cwd];
-  try {
-    return [...new Set([checkout, resolve(cwd, relative(realpathSync(cwd), checkout))])];
-  } catch {
-    return [checkout];
   }
 }
