@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
-import { spoolPath } from "./spool";
+import { spoolPath, withSpoolLock } from "./spool";
 
 // `agentops recorder enable|disable|status|forget` (spec R1.7). Dispatched from
 // src/main.ts like `hook`, so it works in the release binary and `bun run
@@ -62,33 +62,58 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
 
 /**
  * Removes one recorded session: its rows in the repository's store (events,
- * commands, files, flags and commit links cascade) and its spool, error and
- * lock files. Nothing else is touched, so other sessions keep verifying.
+ * commands, files, flags and commit links cascade) and its spool and error
+ * files, under the session's spool lock. Nothing else is touched, so other
+ * sessions keep verifying.
  */
 async function forgetSession(sessionId: string, store: string, spoolDir: string): Promise<CommandResult> {
-  const removed: string[] = [];
-  if (existsSync(store)) {
-    const { Database } = await import("bun:sqlite");
-    const db = new Database(store);
-    try {
-      db.exec("PRAGMA foreign_keys = ON");
-      const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId });
-      if (result.changes > 0) removed.push(`session ${sessionId} from ${store}`);
-    } finally {
-      db.close();
-    }
+  const { Database } = await import("bun:sqlite");
+  // Hold the session's spool lock for the whole removal: a hook appending at
+  // the same moment would otherwise recreate the spool mid-chain after it was
+  // deleted. A live writer's lock is never removed; forget waits briefly, then
+  // gives up and deletes nothing.
+  const locked = withSpoolLock(
+    spoolDir,
+    sessionId,
+    () => {
+      const removed: string[] = [];
+      if (existsSync(store)) {
+        const db = new Database(store);
+        try {
+          db.exec("PRAGMA foreign_keys = ON");
+          const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId });
+          if (result.changes > 0) removed.push(`session ${sessionId} from ${store}`);
+        } finally {
+          db.close();
+        }
+      }
+      const spool = spoolPath(spoolDir, sessionId) as string;
+      for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl")]) {
+        if (!existsSync(file)) continue;
+        rmSync(file, { force: true });
+        removed.push(file);
+      }
+      return removed;
+    },
+    { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS }
+  );
+  if (!locked.ok) {
+    const busy = locked.reason === "lock-timeout";
+    return {
+      stdout: "",
+      stderr: busy
+        ? `Session ${sessionId} is being recorded right now (its spool is locked). Nothing was removed; try again when the session has ended.\n`
+        : `Could not lock session ${sessionId}: ${locked.detail}. Nothing was removed.\n`,
+      exitCode: 1
+    };
   }
-  const spool = spoolPath(spoolDir, sessionId);
-  if (spool) {
-    for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl"), `${spool}.lock`]) {
-      if (!existsSync(file)) continue;
-      rmSync(file, { force: true });
-      removed.push(file);
-    }
-  }
+  const removed = locked.value;
   if (!removed.length) return { stdout: `Nothing recorded for session ${sessionId}.\n`, exitCode: 0 };
   return { stdout: `Removed:\n${removed.map((item) => `- ${item}`).join("\n")}\n`, exitCode: 0 };
 }
+
+/** How long forget waits for a hook to finish appending before giving up. */
+const FORGET_LOCK_TIMEOUT_MS = 2000;
 
 function binaryOnPath(env: NodeJS.ProcessEnv): boolean {
   return Bun.which(env.AGENTOPS_BIN || "agentops", { PATH: env.PATH ?? "" }) !== null;

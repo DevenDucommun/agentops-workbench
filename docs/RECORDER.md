@@ -137,3 +137,5 @@ so the summary appears at turn end instead.
 - **Recorder errors:** see `<state>/spool/*.errors.jsonl`. Each line names the
   reason (`lock-timeout`, `write-failed`, `ingest-failed`, `verdict-failed`).
 - **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`.
+  This restores the session's events but not its commit links, which only the
+  recorder's session-end import creates.
