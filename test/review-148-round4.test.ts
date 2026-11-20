@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { finalClaimTexts } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
+import { generateRepoJsonExport } from "../src/export";
 import { parseForensicTextTranscript } from "../src/forensicText";
 import { decodeGitOutput, displayGitPath, getGitChanges, getGitChangesOrEmpty } from "../src/git";
 import { fallbackSessionId, parseJsonlTranscript } from "../src/parser";
@@ -150,4 +151,16 @@ test("report display keeps emoji intact and never prints two paths alike", () =>
   expect(rawByte).toBe("f-\\x80");
   expect(literal).toBe("f-\\\\x80");
   expect(rawByte).not.toBe(literal);
+});
+
+test("the repo JSON export keeps non-UTF-8 git paths distinct after a JSON round trip", () => {
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-json-")), "agentops.db"));
+  const transcript = parseJsonlTranscript("s.jsonl", JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "json-paths" }));
+  ingestTranscript(store, transcript, defaultConfig);
+  const changes = [0x80, 0x81].map((byte) => ({ path: decodeGitOutput(Buffer.from([0x66, 0x2d, byte])), status: "??", additions: null, deletions: null }));
+  const output = generateRepoJsonExport(store, "json-paths", changes, defaultConfig);
+  // Lone surrogates would decode to U+FFFD in most JSON readers (jq, Python); none may remain.
+  expect(/\\ud[c-f][0-9a-f]{2}/i.test(output)).toBe(false);
+  expect(JSON.parse(output).git.changes.map((change: { path: string }) => change.path)).toEqual(["f-\\x80", "f-\\x81"]);
+  store.db.close();
 });
