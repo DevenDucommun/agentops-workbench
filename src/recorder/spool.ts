@@ -179,6 +179,36 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
   }
 }
 
+/**
+ * Runs `fn` while holding the session's spool lock, the same lock appendRecord
+ * takes, so no hook can append to the session meanwhile. A lock older than the
+ * stale limit is reclaimed as appendRecord does. Never throws for lock errors.
+ */
+export function withSpoolLock<T>(
+  dir: string,
+  sessionId: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed" | "invalid-session"; detail: string } {
+  const path = spoolPath(dir, sessionId);
+  if (!path) return { ok: false, reason: "invalid-session", detail: "empty session id" };
+  const settings = { ...DEFAULTS, ...options };
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return { ok: false, reason: "lock-failed", detail: `mkdir: ${message(error)}` };
+  }
+  const lockPath = `${path}.lock`;
+  const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
+  if (lock === "timeout") return { ok: false, reason: "lock-timeout", detail: `lock not acquired within ${settings.lockTimeoutMs} ms` };
+  if (lock !== "acquired") return { ok: false, reason: "lock-failed", detail: lock.error };
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
 /** Reads a spool file: parsed records in order, plus the 1-based line numbers that failed to parse. */
 export function readSpool(path: string): { records: RawEvent[]; invalidLines: number[] } {
   const records: RawEvent[] = [];

@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
+import { spoolPath, withSpoolLock } from "./spool";
 
-// `agentops recorder enable|disable|status` (spec R1.7). Dispatched from
+// `agentops recorder enable|disable|status|forget` (spec R1.7). Dispatched from
 // src/main.ts like `hook`, so it works in the release binary and `bun run
 // agentops`. Enrollment is per repository and lives in the user state dir.
 
@@ -11,7 +12,7 @@ export const PLUGIN_INSTALL = "/plugin install agentops-recorder --marketplace D
 export type CommandResult = { stdout: string; stderr?: string; exitCode: number };
 export type RecorderCommandOptions = { cwd?: string; env?: NodeJS.ProcessEnv };
 
-const USAGE = "Usage: agentops recorder enable|disable|status\n";
+const USAGE = "Usage: agentops recorder enable|disable|status\n       agentops recorder forget <session-id>\n";
 
 export async function runRecorderCommand(args: string[], options: RecorderCommandOptions = {}): Promise<CommandResult> {
   const cwd = options.cwd ?? process.cwd();
@@ -20,7 +21,8 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   const roots = findRepositoryRoots(cwd);
   const [sub] = args;
 
-  if (sub !== "enable" && sub !== "disable" && sub !== "status") return { stdout: "", stderr: USAGE, exitCode: 1 };
+  if (sub !== "enable" && sub !== "disable" && sub !== "status" && sub !== "forget") return { stdout: "", stderr: USAGE, exitCode: 1 };
+  if (sub === "forget" && (args.length !== 2 || !args[1])) return { stdout: "", stderr: USAGE, exitCode: 1 };
   if (!roots) return { stdout: "", stderr: `Not inside a git repository: ${cwd}\nThe recorder is enabled per repository; run this from the repository you want recorded.\n`, exitCode: 1 };
 
   if (sub === "enable") {
@@ -33,6 +35,8 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
     if (!gitignoresAgentops(repo)) lines.push("Warning: .agentops/ is not in .gitignore; recorded sessions are stored there. Run `agentops init` or add it.");
     return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
   }
+
+  if (sub === "forget") return forgetSession(args[1] as string, join(roots.main, ".agentops", "agentops.db"), join(stateDir, "spool"));
 
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
@@ -55,6 +59,61 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   ];
   return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
 }
+
+/**
+ * Removes one recorded session: its rows in the repository's store (events,
+ * commands, files, flags and commit links cascade) and its spool and error
+ * files, under the session's spool lock. Nothing else is touched, so other
+ * sessions keep verifying.
+ */
+async function forgetSession(sessionId: string, store: string, spoolDir: string): Promise<CommandResult> {
+  const { Database } = await import("bun:sqlite");
+  // Hold the session's spool lock for the whole removal: a hook appending at
+  // the same moment would otherwise recreate the spool mid-chain after it was
+  // deleted. A live writer's lock is never removed; forget waits briefly, then
+  // gives up and deletes nothing.
+  const locked = withSpoolLock(
+    spoolDir,
+    sessionId,
+    () => {
+      const removed: string[] = [];
+      if (existsSync(store)) {
+        const db = new Database(store);
+        try {
+          db.exec("PRAGMA foreign_keys = ON");
+          const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId });
+          if (result.changes > 0) removed.push(`session ${sessionId} from ${store}`);
+        } finally {
+          db.close();
+        }
+      }
+      const spool = spoolPath(spoolDir, sessionId) as string;
+      for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl")]) {
+        if (!existsSync(file)) continue;
+        rmSync(file, { force: true });
+        removed.push(file);
+      }
+      return removed;
+    },
+    { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS }
+  );
+  if (!locked.ok) {
+    const busy = locked.reason === "lock-timeout";
+    return {
+      stdout: "",
+      stderr: busy
+        ? `Session ${sessionId} is being recorded right now (its spool is locked). Nothing was removed; try again when the session has ended.\n`
+        : `Could not lock session ${sessionId}: ${locked.detail}. Nothing was removed.\n`,
+      exitCode: 1
+    };
+  }
+  const removed = locked.value;
+  if (!removed.length) return { stdout: `Nothing recorded for session ${sessionId}.\n`, exitCode: 0 };
+  return { stdout: `Removed:\n${removed.map((item) => `- ${item}`).join("\n")}\n`, exitCode: 0 };
+}
+
+/** How long forget waits for a hook to finish appending before giving up. */
+const FORGET_LOCK_TIMEOUT_MS = 2000;
 
 function binaryOnPath(env: NodeJS.ProcessEnv): boolean {
   return Bun.which(env.AGENTOPS_BIN || "agentops", { PATH: env.PATH ?? "" }) !== null;
