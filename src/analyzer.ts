@@ -61,21 +61,22 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   }
 
   for (const command of commands) {
+    // A risky command that was denied or declined never ran (spec R2.4): it is
+    // an informational blocked attempt unless risk.treatBlockedAsExecuted is set.
+    const blocked = isBlockedCommandStatus(command.status) && !config.risk.treatBlockedAsExecuted;
     if (destructiveCommandPattern.test(command.command)) {
-      flags.push({
-        eventId: command.eventId,
-        severity: "high",
-        category: "destructive-command",
-        message: `Destructive command detected: ${command.command}`
-      });
+      flags.push(
+        blocked
+          ? { eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `Destructive command was ${command.status} and did not run: ${command.command}` }
+          : { eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` }
+      );
     }
     if (permissionCommandPattern.test(command.command)) {
-      flags.push({
-        eventId: command.eventId,
-        severity: "medium",
-        category: "permission-change",
-        message: `Permission-changing command detected: ${command.command}`
-      });
+      flags.push(
+        blocked
+          ? { eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `Permission-changing command was ${command.status} and did not run: ${command.command}` }
+          : { eventId: command.eventId, severity: "medium", category: "permission-change", message: `Permission-changing command detected: ${command.command}` }
+      );
     }
     if (command.output && secretPattern.test(command.output)) {
       flags.push({
@@ -230,6 +231,11 @@ const NOT_EXECUTED_COMMAND_STATUSES = new Set(["inferred", "denied", "declined"]
 
 export function isExecutedCommandStatus(status: string | null | undefined): boolean {
   return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
+}
+
+/** Denied (by a permission rule or the user) or declined (by the agent runtime's approval policy). */
+export function isBlockedCommandStatus(status: string | null | undefined): boolean {
+  return status === "denied" || status === "declined";
 }
 
 /** Command-matched claims only (test/lint/typecheck/build), as the dashboard shows them; the ledger covers all claims. */

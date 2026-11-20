@@ -1,0 +1,75 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, test } from "bun:test";
+import { analyzeSession } from "../src/analyzer";
+import { resolveAdapter } from "../src/adapters";
+import { type AgentOpsConfig, defaultConfig, validateConfigFile } from "../src/config";
+import { evaluateQualityGate } from "../src/gate";
+import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
+
+const ROOT = join(import.meta.dir, "..");
+
+function audit(fixture: string, config: AgentOpsConfig = defaultConfig) {
+  const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
+  const path = join(ROOT, fixture);
+  const content = readFileSync(path, "utf8");
+  const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, config);
+  const { sessionId } = ingestTranscript(store, transcript, config);
+  analyzeSession(store, sessionId, config);
+  const flags = getRiskFlags(store, sessionId);
+  const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: [] });
+  store.db.close();
+  const check = (id: string) => gate.checks.find((c) => c.id === id);
+  return { flags, gate, check };
+}
+
+const withConfig = (patch: { risk?: Partial<AgentOpsConfig["risk"]>; gates?: Partial<AgentOpsConfig["gates"]> }): AgentOpsConfig => ({
+  ...defaultConfig,
+  risk: { ...defaultConfig.risk, ...patch.risk },
+  gates: { ...defaultConfig.gates, ...patch.gates }
+});
+
+describe("blocked-attempt policy (spec R2.4)", () => {
+  test("a declined destructive command raises a low blocked-attempt flag, not a high destructive-command", () => {
+    const { flags, gate, check } = audit("fixtures/blocked/declined-destructive.jsonl");
+    expect(flags.map((f) => [f.severity, f.category, f.message])).toEqual([["low", "blocked-attempt", "Destructive command was declined and did not run: rm -rf ./out"]]);
+    expect(check("max-high-risks")?.observed).toBe(0);
+    expect(check("max-blocked-attempts")).toMatchObject({ status: "passed", observed: 1, threshold: "<= 2" });
+    expect(gate.status).toBe("passed");
+  });
+
+  test("repeated blocked attempts fail the gate above gates.maxBlockedAttempts", () => {
+    expect(audit("fixtures/blocked/repeated-attempts.jsonl").check("max-blocked-attempts")).toMatchObject({ status: "failed", observed: 3 });
+    expect(audit("fixtures/blocked/repeated-attempts.jsonl", withConfig({ gates: { maxBlockedAttempts: 3 } })).check("max-blocked-attempts")?.status).toBe("passed");
+  });
+
+  test("risk.treatBlockedAsExecuted restores the v3.2 behavior", () => {
+    const { flags, check } = audit("fixtures/blocked/declined-destructive.jsonl", withConfig({ risk: { treatBlockedAsExecuted: true } }));
+    expect(flags.map((f) => [f.severity, f.category])).toEqual([["high", "destructive-command"]]);
+    expect(check("max-high-risks")?.status).toBe("failed");
+    expect(check("max-blocked-attempts")?.observed).toBe(0);
+  });
+
+  test("the declined rm -rf in the Codex fixture no longer fails max-high-risks", () => {
+    const { flags, check } = audit("fixtures/codex-exec-current-session.jsonl");
+    expect(flags.map((f) => f.category)).toContain("blocked-attempt");
+    expect(flags.map((f) => f.category)).not.toContain("destructive-command");
+    expect(check("max-high-risks")?.status).toBe("passed");
+  });
+
+  test("executed destructive commands are still high severity", () => {
+    const { flags } = audit("fixtures/risky-session.jsonl");
+    expect(flags.filter((f) => f.category === "destructive-command").map((f) => f.severity)).toEqual(["high"]);
+  });
+});
+
+describe("config", () => {
+  test("new keys are validated", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "agentops-blocked-config-")), "agentops.config.json");
+    writeFileSync(path, JSON.stringify({ risk: { treatBlockedAsExecuted: "yes" }, gates: { maxBlockedAttempts: -1 } }));
+    const { errors } = validateConfigFile(path);
+    expect(errors).toContain("risk.treatBlockedAsExecuted must be a boolean.");
+    expect(errors).toContain("gates.maxBlockedAttempts must be a non-negative integer.");
+  });
+});
