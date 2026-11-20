@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
@@ -13,7 +13,7 @@ const ROOT = join(import.meta.dir, "..");
 
 function withSession<T>(fixture: string, use: (store: Store, sessionId: string) => T): T {
   const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-render-")), "agentops.db"));
-  const path = join(ROOT, fixture);
+  const path = isAbsolute(fixture) ? fixture : join(ROOT, fixture);
   const { sessionId } = ingestTranscript(store, parseJsonlTranscript(path, readFileSync(path, "utf8")), defaultConfig);
   analyzeSession(store, sessionId, defaultConfig);
   try {
@@ -87,6 +87,41 @@ describe("dashboard evidence rows", () => {
       label: "No other callers",
       status: "missing-evidence",
       riskCategory: "missing-callers-evidence"
+    });
+  });
+
+  test("a test that ran only after the final claim is unsupported on both surfaces", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "agentops-ledger-render-")), "late-run.jsonl");
+    writeFileSync(
+      path,
+      [
+        { type: "session", id: "ledger-late-run", agent: "synthetic-agent" },
+        { type: "final_response", role: "assistant", content: "All tests pass." },
+        { type: "tool_call", toolName: "Bash", input: { cmd: "bun test" }, status: "completed", exitCode: 0 }
+      ]
+        .map((record) => JSON.stringify({ schemaVersion: "agentops.event.v1", ...record }))
+        .join("\n")
+    );
+    const [report, decision] = withSession(path, (store, sid) => [generateMarkdownReport(store, sid), getDashboardSession(store, sid, defaultConfig)?.decision] as const);
+    expect(report).toContain("| test success | Unsupported |");
+    expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "missing-evidence", command: null });
+  });
+
+  test("inferred-only evidence keeps its own dashboard label", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "agentops-ledger-render-")), "inferred.jsonl");
+    writeFileSync(
+      path,
+      [
+        { type: "session", id: "ledger-inferred", agent: "synthetic-agent" },
+        { type: "tool_call", toolName: "Bash", input: { cmd: "bun test" }, status: "inferred" },
+        { type: "final_response", role: "assistant", content: "All tests pass." }
+      ]
+        .map((record) => JSON.stringify({ schemaVersion: "agentops.event.v1", ...record }))
+        .join("\n")
+    );
+    expect(withSession(path, (store, sid) => getDashboardSession(store, sid, defaultConfig)?.decision)?.evidence.find((row) => row.id === "test")).toMatchObject({
+      status: "inferred-evidence",
+      command: "bun test"
     });
   });
 

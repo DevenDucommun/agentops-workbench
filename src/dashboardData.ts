@@ -1,6 +1,6 @@
 import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { type ClaimsLedger, getClaimsLedger, type LedgerClaim } from "./ledger";
+import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
   getEvents,
@@ -510,10 +510,24 @@ function buildEvidenceRows(
   const commandStrings = commands.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
-    // An observed run decides the claim through the ledger, which knows a failed latest run contradicts it.
-    // Without one, keep the row below: it still shows inferred (forensic) evidence the ledger does not count.
+    // A claimed check renders the ledger verdict, so the dashboard agrees with
+    // the report: a run after the final response does not back it. The one
+    // exception is inferred (forensic) evidence, which the ledger does not count:
+    // an unsupported claim with an inferred matching command keeps that row.
     const entry = ledger.claims.find((item) => item.id === claim.id);
-    if (entry && entry.verdict !== "unsupported") return ledgerRow(entry, titleCase(claim.label), risks);
+    if (entry) {
+      const pattern = evidenceClaimRules.find((rule) => rule.id === claim.id)?.commandPattern;
+      const inferred = entry.verdict === "unsupported" && pattern ? (commands.find((command) => command.status === "inferred" && pattern.test(command.command)) ?? null) : null;
+      if (!inferred) return ledgerRow(entry, titleCase(claim.label), risks);
+      return toEvidenceRow({
+        id: claim.id,
+        label: titleCase(claim.label),
+        claimed: true,
+        evidenceFound: true,
+        command: inferred,
+        risk: risks.find((item) => item.category === claim.category) ?? null
+      });
+    }
     const risk = risks.find((item) => item.category === claim.category) ?? null;
     return toEvidenceRow({
       id: claim.id,
