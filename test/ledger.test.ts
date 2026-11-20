@@ -667,14 +667,39 @@ describe("regressions against the base: outcome-less retries and stores written 
   const done = { type: "result", subtype: "success", session_id: "claude-legacy", result: "Tests passed." };
   const init = { type: "system", subtype: "init", session_id: "claude-legacy" };
 
-  test("a base-written store with overlapping runs keeps the failure cited", () => {
-    const claim = claudeStore([init, both, result("toolu_b", false), result("toolu_a", true), done]);
+  test("a base-written store never cites a Claude Bash call: its outcome cannot be attributed", () => {
+    for (const records of [
+      [init, both, result("toolu_b", false), result("toolu_a", true), done],
+      [init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), result("toolu_b", false), done],
+      [init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), done]
+    ]) {
+      const claim = claudeStore(records);
+      expect(claim.verdict).toBe("unsupported");
+      expect(claim.cited).toBeNull();
+    }
+  });
+
+  test("an unrelated tool result never reorders generic command outcomes", () => {
+    const claim = generic([
+      header,
+      { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "shell", command: "bun test", exitCode: 0, status: "completed" },
+      { schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "Read", input: { path: "a.ts" }, status: "completed" },
+      failed,
+      { schemaVersion: "agentops.event.v1", type: "tool_result", status: "completed", output: "contents" },
+      final
+    ]);
     expect(claim.verdict).toBe("contradicted");
     expect(claim.cited?.command).toBe("bun test a.ts");
   });
 
-  test("a base-written store with a failure retried in a later turn is supported", () => {
-    const claim = claudeStore([init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), result("toolu_b", false), done]);
-    expect(claim.verdict).toBe("supported");
+  test("a malformed is_error on a Claude result is a failure, never a pass", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const stream = [init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_b", is_error: "true", content: "out" }] } }, done]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
   });
 });

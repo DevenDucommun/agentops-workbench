@@ -372,7 +372,9 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
       if (record.type === "assistant" && block.type === "tool_use" && typeof block.id === "string") latestCall.set(block.id, block);
       if (record.type !== "user" || block.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
       const call = latestCall.get(block.tool_use_id);
-      if (call && !results.has(call)) results.set(call, block.is_error === true);
+      // Any is_error value other than false or absent (including a malformed
+      // one such as the string "true") is a failure, matching the result event.
+      if (call && !results.has(call)) results.set(call, Boolean(block.is_error));
     }
   }
   return results;

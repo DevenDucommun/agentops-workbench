@@ -286,25 +286,23 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
        GROUP BY call.id`
     )
     .all({ $sid: sessionId }) as Array<{ callRowId: number; resultRowId: number }>;
-  // Stores written before tool_use_id was recorded on Claude events have result
-  // rows without it. A call's outcome then arrived no earlier than the first
-  // such result after it; calls in the same turn share that position, and the
-  // tie rule above keeps a failure among them from being hidden.
-  const legacyResults = (
-    store.db
-      .query("SELECT id FROM events WHERE session_id = $sid AND type = 'tool_result' AND tool_use_id IS NULL ORDER BY id")
-      .all({ $sid: sessionId }) as Array<{ id: number }>
-  ).map((row) => row.id);
+  // Stores written by earlier versions recorded Claude tool calls without
+  // tool_use_id and stored every Bash call as completed: the outcome lives only
+  // in result rows that cannot be matched to a call. Such a call (no exit code,
+  // no id, in a session with unmatched result rows) has no attributable
+  // outcome, so it is never cited: unknown is never a pass.
+  const unattributable = new Set(
+    (
+      store.db
+        .query(
+          `SELECT call.id AS id FROM events call
+           WHERE call.session_id = $sid AND call.type = 'tool_call' AND call.tool_use_id IS NULL
+             AND EXISTS (SELECT 1 FROM events r WHERE r.session_id = call.session_id AND r.type = 'tool_result' AND r.tool_use_id IS NULL)`
+        )
+        .all({ $sid: sessionId }) as Array<{ id: number }>
+    ).map((row) => row.id)
+  );
   const resultRowIds = new Map(results.map((row) => [row.callRowId, row.resultRowId]));
-  if (legacyResults.length > 0) {
-    const calls = store.db
-      .query("SELECT id FROM events WHERE session_id = $sid AND type = 'tool_call' AND tool_use_id IS NULL")
-      .all({ $sid: sessionId }) as Array<{ id: number }>;
-    for (const { id } of calls) {
-      const first = legacyResults.find((resultId) => resultId > id);
-      if (first !== undefined && !resultRowIds.has(id)) resultRowIds.set(id, first);
-    }
-  }
   const tools = store.db.query("SELECT event_id AS eventId, tool_name AS toolName FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL").all({ $sid: sessionId }) as Array<{
     eventId: number;
     toolName: string;
@@ -312,7 +310,9 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
   return buildClaimsLedger({
     sessionId,
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
-    commands: getCommands(store, sessionId),
+    commands: getCommands(store, sessionId).filter(
+      (command) => !(command.eventId !== null && command.exitCode === null && unattributable.has(command.eventId))
+    ),
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     resultRowIds,
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName]))
