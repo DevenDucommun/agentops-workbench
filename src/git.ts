@@ -8,9 +8,42 @@ export type GitChange = {
 };
 
 export function getGitChanges(cwd = process.cwd()): GitChange[] {
-  const statusOutput = git(["status", "--porcelain=v1", "--untracked-files=all"], cwd);
-  const numstatOutput = git(["diff", "--numstat", "HEAD", "--"], cwd);
-  return mergeGitChanges(parseGitStatus(statusOutput), parseGitNumstat(numstatOutput));
+  // NUL-delimited output keeps every path literal: no quoting, and no ambiguity with
+  // names that contain " -> ", " => ", tabs, newlines or control characters.
+  const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
+  const numstatOutput = git(["diff", "--numstat", "-z", "HEAD", "--"], cwd);
+  return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
+}
+
+/** Parses `git status --porcelain=v1 -z`: `XY path\0`, with `orig\0` after a rename or copy. */
+export function parseGitStatusZ(input: string): GitChange[] {
+  const fields = input.split("\0");
+  const changes: GitChange[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i] as string;
+    if (field.length < 4) continue;
+    const status = field.slice(0, 2);
+    changes.push({ path: field.slice(3), status: status.trim() || "modified", additions: null, deletions: null });
+    if (status[0] === "R" || status[0] === "C") i++; // skip the original path
+  }
+  return changes;
+}
+
+/** Parses `git diff --numstat -z`: `add\tdel\tpath\0`, or `add\tdel\t\0orig\0new\0` for a rename. */
+export function parseGitNumstatZ(input: string): Array<Pick<GitChange, "path" | "additions" | "deletions">> {
+  const fields = input.split("\0");
+  const stats: Array<Pick<GitChange, "path" | "additions" | "deletions">> = [];
+  for (let i = 0; i < fields.length; i++) {
+    const match = /^([^\t]*)\t([^\t]*)\t([\s\S]*)$/.exec(fields[i] as string);
+    if (!match) continue;
+    let path = match[3] as string;
+    if (path === "") {
+      i += 2; // rename: original, then new path
+      path = fields[i] ?? "";
+    }
+    if (path) stats.push({ path, additions: parseNumstatCount(match[1]), deletions: parseNumstatCount(match[2]) });
+  }
+  return stats;
 }
 
 export function parseGitStatus(input: string): GitChange[] {

@@ -441,7 +441,8 @@ function buildDashboardDecision(
   risks: RiskFlagRecord[],
   verification: CommandRecord[]
 ): DashboardDecision {
-  const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
+  const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
+  const finalSummary = finalEvent?.text ?? finalEvent?.summary ?? "";
   const evidence = buildEvidenceRows(finalSummary, commands, risks, verification);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;

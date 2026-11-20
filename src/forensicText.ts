@@ -253,6 +253,9 @@ function extractFilePaths(line: string): string[] {
     .slice(0, 50);
 }
 
+/** A line that starts another speaker's turn in a pasted transcript. */
+const TURN_MARKER = /^(?:user|human|you|me|system|assistant|claude|codex|agent|final|summary|result)\s*:/i;
+
 function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>): string | null {
   const markerPattern = /^(?:final|assistant|summary|result)\s*:\s*/i;
   let markerIndex = -1;
@@ -260,11 +263,12 @@ function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>
     if (markerPattern.test(entry.line)) markerIndex = index;
   });
   if (markerIndex >= 0) {
-    // The response runs from the marker to the next command or exit-code line, so a
-    // claim on a continuation line is still checked.
+    // The response runs from the marker to the next speaker turn or observed command,
+    // so a claim on a continuation line is checked and a later user turn is not. Prose
+    // that mentions an exit code is part of the response.
     const parts = [(lines[markerIndex]?.line ?? "").replace(markerPattern, "")];
     for (const entry of lines.slice(markerIndex + 1)) {
-      if (extractObservedCommand(entry.line) || extractExitCode(entry.line) !== null) break;
+      if (TURN_MARKER.test(entry.line) || extractObservedCommand(entry.line)) break;
       parts.push(entry.line);
     }
     return collapse(parts.join(" ")) || null;
