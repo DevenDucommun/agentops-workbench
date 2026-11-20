@@ -142,3 +142,12 @@ test("the redacted-name fallback id hashes the whole file name, extension includ
   const name = (ext: string) => `${["one", "example.invalid"].join("@")}.${ext}`;
   expect(fallbackSessionId(name("txt"), "same", "forensic-session")).not.toBe(fallbackSessionId(name("log"), "same", "forensic-session"));
 });
+
+test("report display keeps emoji intact and never prints two paths alike", () => {
+  expect(displayGitPath(decodeGitOutput(Buffer.from("case-💡.ts", "utf8")))).toBe("case-💡.ts");
+  const rawByte = displayGitPath(decodeGitOutput(Buffer.from([0x66, 0x2d, 0x80])));
+  const literal = displayGitPath(decodeGitOutput(Buffer.from("f-\\x80", "utf8")));
+  expect(rawByte).toBe("f-\\x80");
+  expect(literal).toBe("f-\\\\x80");
+  expect(rawByte).not.toBe(literal);
+});

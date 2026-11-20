@@ -183,11 +183,13 @@ function gitRaw(args: string[], cwd: string): string {
 }
 
 /**
- * A Git path for display: bytes that were not valid UTF-8 (lone surrogates from
- * decodeGitOutput) are shown as \xNN, so distinct paths stay distinguishable in reports.
+ * A Git path for display. Bytes that were not valid UTF-8 (lone surrogates from
+ * decodeGitOutput) are shown as \xNN and a literal backslash as \\, so every distinct
+ * path prints distinctly. Valid characters, including astral ones such as emoji, are
+ * left alone: the `u` flag matches only lone surrogates, never half of a valid pair.
  */
 export function displayGitPath(path: string): string {
-  return path.replace(/[\uDC80-\uDCFF]/g, (char) => `\\x${(char.charCodeAt(0) - 0xdc00).toString(16)}`);
+  return path.replace(/\\|[\uDC80-\uDCFF]/gu, (match) => (match === "\\" ? "\\\\" : `\\x${(match.charCodeAt(0) - 0xdc00).toString(16)}`));
 }
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
