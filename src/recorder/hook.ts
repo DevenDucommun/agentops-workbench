@@ -43,47 +43,66 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
   return { recorded: false, reason: "append-failed", detail: result.detail };
 }
 
-/** Recognize a single explicit push source. Ignore shell expressions and ambiguous refspecs. */
-function pushSource(command: string, output: string): string | undefined {
-  const pieces = command.trim().split(/\s*&&\s*/);
-  const last = pieces.pop() ?? "";
-  // A successful status check before the push cannot change the checkout or its refs.
-  if (!pieces.every((piece) => /^git\s+status(?:\s+[A-Za-z0-9._/-]+)*$/.test(piece))) return;
-  if (!/^git\s+push(?:\s|$)/.test(last) || /[^A-Za-z0-9_./+:@= \t-]/.test(last)) return;
-  const operands: string[] = [];
-  for (const word of last.split(/\s+/).slice(2)) {
-    if (!word.startsWith("-")) operands.push(word);
-    else if (!/^-[ufqv]+$/.test(word) && !["--set-upstream", "--force", "--verbose", "--quiet", "--porcelain", "--atomic", "--no-verify"].includes(word)) return;
-  }
-  if (operands.length < 2) {
-    // Default refspecs are configurable. Git's human-readable push summary names the actual sources.
-    const updates = output.split(/\r?\n/).filter((line) => line.includes(" -> "));
-    const sources = updates.map((line) => /\s([A-Za-z0-9_][A-Za-z0-9_./-]*) -> \S+\s*$/.exec(line)?.[1]);
-    if (sources.length && sources.every((source) => source && source === sources[0])) return sources[0];
-    return;
-  }
-  if (operands.length !== 2) return;
-  const refspec = /^\+?([A-Za-z0-9_][A-Za-z0-9_./-]*)(?::[A-Za-z0-9_./-]+)?$/.exec(operands[1]);
-  return refspec?.[1];
-}
-
-/** Resolve the source while the successful tool result is being recorded. */
+/**
+ * The commit a successful `git push` sent, resolved in the checkout at hook time.
+ * The reported shell command is parsed, never executed.
+ */
 function observedPush(payload: Record<string, unknown>, cwd: string): { sha: string; kind: string } | undefined {
   if (payload.hook_event_name !== "PostToolUse" || payload.tool_name !== "Bash") return;
   const input = payload.tool_input as { command?: unknown } | undefined;
-  const response = payload.tool_response as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
+  const response = payload.tool_response as { interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
   if (!response || response.interrupted || (response.exitCode ?? response.exit_code ?? 0) !== 0 || payload.error) return;
-  if (typeof input?.command !== "string" || !input.command.includes("push")) return;
-  const output = [response.stdout, response.stderr].filter((v) => typeof v === "string").join("\n");
-  const source = pushSource(input.command, output);
+  if (typeof input?.command !== "string") return;
+  const source = pushSource(input.command);
   if (!source) return;
   try {
-    const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "--end-of-options", `${source}^{commit}`], { stdout: "pipe", stderr: "ignore" });
+    const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "--quiet", "--end-of-options", `${source}^{commit}`], { stdout: "pipe", stderr: "ignore" });
     const sha = result.stdout.toString().trim();
     if (result.exitCode === 0 && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)) return { sha, kind: "pushed" };
   } catch {
     // A missing Git executable leaves the tool event available without a commit link.
   }
+}
+
+// Push options that take a separate value, and pushes that send no single commit.
+const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--repo", "--receive-pack", "--exec"]);
+const PUSH_NO_COMMIT = new Set(["--dry-run", "--all", "--branches", "--mirror", "--tags", "--delete", "--prune", "--help"]);
+
+/**
+ * The local revision a push command sends, or undefined when it cannot be known
+ * from the command alone. Accepts `git push` as the last step of an `&&` chain with
+ * no directory change; with no refspec the current HEAD is pushed, with one refspec
+ * its source side is. Dry runs, deletions, several refspecs and anything with
+ * quoting or other shell syntax give no link.
+ */
+export function pushSource(command: string): string | undefined {
+  const segments = command.split("&&").map((part) => part.trim());
+  if (segments.some((part) => !part || /[;&|`$<>\n"'\\()]/.test(part))) return;
+  if (segments.slice(0, -1).some((part) => /^(?:cd|pushd|popd)(?:\s|$)/.test(part))) return;
+  const tokens = (segments.at(-1) ?? "").split(/\s+/);
+  if (tokens[0] !== "git" || tokens[1] !== "push") return;
+  const positionals: string[] = [];
+  for (let i = 2; i < tokens.length; i++) {
+    const token = tokens[i] as string;
+    if (PUSH_VALUE_OPTIONS.has(token)) {
+      i++;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      if (PUSH_NO_COMMIT.has(token.split("=")[0] as string)) return;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      if (/[nd]/.test(token.slice(1))) return; // -n (dry run) or -d (delete), alone or grouped
+      continue;
+    }
+    positionals.push(token);
+  }
+  const refspecs = positionals.slice(1);
+  if (refspecs.length === 0) return "HEAD";
+  if (refspecs.length > 1) return;
+  const src = (refspecs[0] as string).replace(/^\+/, "").split(":")[0] ?? "";
+  return src && !src.startsWith("-") ? src : undefined;
 }
 
 /** The enrolled root plus the same root as the agent spelled it (it may differ by symlinks, e.g. /tmp vs /private/tmp). */
