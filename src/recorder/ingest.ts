@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig } from "../config";
+import { evaluateQualityGate } from "../gate";
 import { getEventChain, ingestTranscript, linkSessionCommit, openStore, type SessionCommit } from "../store";
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
@@ -45,6 +46,28 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
       commits.push(link);
     }
     return { sessionId, eventCount, commits };
+  } finally {
+    store.db.close();
+  }
+}
+
+/**
+ * One-line gate verdict for the session so far (spec R1.6, T1.6): ingests the
+ * spool, runs the quality gate and summarizes it. Shown at the end of a turn
+ * through the Stop hook's `systemMessage`, because Claude Code discards
+ * SessionEnd hook output.
+ */
+export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): string {
+  const config = options.config ?? repoConfig(options.repoRoot);
+  const { sessionId } = ingestSpoolFile(spoolFile, { ...options, config });
+  const store = openStore(options.dbPath ?? join(options.repoRoot, ".agentops", "agentops.db"));
+  try {
+    const gate = evaluateQualityGate(store, sessionId, config);
+    const failed = gate.checks.filter((check) => check.status === "failed");
+    const detail =
+      failed.length === 0 ? "all quality gates passed" : failed.map((check) => `${check.label}: ${check.message.replace(/\.$/, "")}`).join("; ");
+    const line = `agentops: ${gate.status === "passed" ? "passed" : "needs review"}: ${detail} (agentops look ${sessionId})`;
+    return line.replace(/\s+/g, " ").slice(0, 300);
   } finally {
     store.db.close();
   }
