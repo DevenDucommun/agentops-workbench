@@ -162,7 +162,9 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
       line = JSON.stringify(linked);
       truncated = true;
     }
-    const prefix = tail && !tail.endsWithNewline ? "\n" : "";
+    // Torn bytes from a crashed writer may end the file even when no earlier line
+    // is a valid record; start a new line so this record stays readable.
+    const prefix = endsMidLine(path) ? "\n" : "";
     const fd = openSync(path, "a", 0o600);
     try {
       writeSync(fd, `${prefix}${line}\n`);
@@ -172,6 +174,36 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
     return { ok: true, path, seq, hash: linked.hash as string, truncated };
   } catch (error) {
     return fail(dir, sessionId, "write-failed", message(error));
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
+/**
+ * Runs `fn` while holding the session's spool lock, the same lock appendRecord
+ * takes, so no hook can append to the session meanwhile. A lock older than the
+ * stale limit is reclaimed as appendRecord does. Never throws for lock errors.
+ */
+export function withSpoolLock<T>(
+  dir: string,
+  sessionId: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed" | "invalid-session"; detail: string } {
+  const path = spoolPath(dir, sessionId);
+  if (!path) return { ok: false, reason: "invalid-session", detail: "empty session id" };
+  const settings = { ...DEFAULTS, ...options };
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return { ok: false, reason: "lock-failed", detail: `mkdir: ${message(error)}` };
+  }
+  const lockPath = `${path}.lock`;
+  const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
+  if (lock === "timeout") return { ok: false, reason: "lock-timeout", detail: `lock not acquired within ${settings.lockTimeoutMs} ms` };
+  if (lock !== "acquired") return { ok: false, reason: "lock-failed", detail: lock.error };
+  try {
+    return { ok: true, value: fn() };
   } finally {
     releaseLock(lockPath);
   }
@@ -280,8 +312,27 @@ function writtenContent(input: Record<string, unknown> | undefined, response: Re
 
 // --- tail recovery -----------------------------------------------------------
 
+/** True when the file is non-empty and its last byte is not a newline. */
+function endsMidLine(path: string): boolean {
+  let fd: number;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Last chained record in the file (scanning back past torn or foreign lines). */
-function readTail(path: string): { seq: number; hash: string; endsWithNewline: boolean } | null {
+function readTail(path: string): { seq: number; hash: string } | null {
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -291,9 +342,6 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
   try {
     const size = fstatSync(fd).size;
     if (size === 0) return null;
-    const last = Buffer.alloc(1);
-    readSync(fd, last, 0, 1, size - 1);
-    const endsWithNewline = last[0] === 0x0a;
     for (let chunk = 64 * 1024; ; chunk *= 2) {
       const start = Math.max(0, size - chunk);
       const buf = Buffer.alloc(size - start);
@@ -306,7 +354,7 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
         try {
           const parsed = JSON.parse(line);
           if (isRecord(parsed) && Number.isSafeInteger(parsed.seq) && typeof parsed.hash === "string") {
-            return { seq: parsed.seq as number, hash: parsed.hash, endsWithNewline };
+            return { seq: parsed.seq as number, hash: parsed.hash };
           }
         } catch {
           // Torn line from a crashed writer; keep scanning back.
