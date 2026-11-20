@@ -57,7 +57,7 @@ Sizes are relative effort: S, M or L.
   fixture per category.
 - [x] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing
   fixtures' gate results are unchanged.
-- [ ] **T2.4 (S) Blocked-attempt policy plus gate threshold.** Verify: the
+- [x] **T2.4 (S) Blocked-attempt policy plus gate threshold.** Verify: the
   declined destructive command fixture raises an info flag; CHANGELOG lists
   the behavior change and the config key that restores it.
 - [ ] **T2.5 (M) Ledger rendering** in the report, dashboard and PR comment.

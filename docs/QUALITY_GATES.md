@@ -39,6 +39,7 @@ Default gates fail when:
 
 - no observed verification command is recorded
 - any high-severity risk is present
+- more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
   contradicted, or only inferred from forensic text
 - generated-file churn is above the configured threshold
@@ -132,6 +133,19 @@ with the other risks:
 A failing test that is never re-run before a success claim is the ledger's
 `contradicted` verdict above.
 
+## Blocked Attempts
+
+A destructive or permission-changing command that was denied (by a permission
+rule or the user) or declined (by the agent runtime's approval policy) never
+ran. It raises a low `blocked-attempt` flag instead of `destructive-command`
+(high) or `permission-change` (medium). One blocked attempt is information:
+the guardrail worked. Repeated attempts fail the `max-blocked-attempts` gate
+once they exceed `gates.maxBlockedAttempts`.
+
+Commands that ran are unchanged: an executed `rm -rf` is still a high
+`destructive-command`. To count blocked commands as if they had run, as v3.2
+did, set `risk.treatBlockedAsExecuted` to `true`.
+
 ## Configuration
 
 Configure gates in `agentops.config.json`:
@@ -143,6 +157,7 @@ Configure gates in `agentops.config.json`:
     "requireVerification": true,
     "requiredVerificationCommands": ["test", "lint"],
     "maxHighSeverityRisks": 0,
+    "maxBlockedAttempts": 2,
     "allowUnsupportedFinalClaims": false,
     "maxGeneratedFileChurnLines": 20,
     "generatedFilePatterns": ["generated", "dist", "build"]
