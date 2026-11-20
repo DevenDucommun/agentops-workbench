@@ -262,7 +262,8 @@ function extractFilePaths(line: string): string[] {
 const TURN_MARKER = /^(?:user|human|you|me|system|assistant|claude|codex|agent|final|summary|result)\s*:/i;
 
 function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>): string | null {
-  const markerPattern = /^(?:final|assistant|summary|result)\s*:\s*/i;
+  // Any assistant turn can start the response, named (`Claude:`, `Codex:`) or not; the latest wins.
+  const markerPattern = /^(?:final|assistant|claude|codex|agent|summary|result)\s*:\s*/i;
   let markerIndex = -1;
   lines.forEach((entry, index) => {
     if (markerPattern.test(entry.line)) markerIndex = index;

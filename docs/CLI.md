@@ -214,6 +214,13 @@ agentops audit path/to/session.jsonl
 agentops audit path/to/transcript.txt --out audit.md
 ```
 
+An artifact without an embedded session id gets the id `<file stem>-<32 hex digits
+of its content hash>`, so two different files with the same name stay separate and
+re-importing the same file replaces its earlier import. Upgrade note: re-importing
+such an artifact after upgrading from a version that used the basename-only id
+creates a new 32-hex id and leaves the old basename-only session in the store
+until you remove it.
+
 ### `agentops run`
 
 Runs Codex or Claude Code in machine-readable mode, captures the session stream
@@ -372,7 +379,9 @@ agentops check latest --base origin/main
 ```
 
 A base that git cannot resolve is an error rather than an empty change list.
-It reads local git state only. Untracked files show no churn (git has no tracked
+It reads local git state only. Outside a git repository the diff is empty; inside
+one, a git error fails the command instead of being reported as zero changes.
+Untracked files show no churn (git has no tracked
 base), rename handling is basic, and path comparison is exact. The `v1.x`
 `repo-report` command was removed in `v2.0.0`; the Markdown-only variant is not
 re-exposed on the simple verbs (the `generateMarkdownRepoReport` library function
