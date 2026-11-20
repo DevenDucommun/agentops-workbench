@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Session | forensic-terminal-transcript |
+| Session | forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164 |
 | Adapter | forensic-text |
 | Task | Forensic import from plain-text transcript |
 | Agent | Codex |

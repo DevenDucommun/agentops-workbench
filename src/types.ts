@@ -74,6 +74,8 @@ export type StoredEvent = {
   type: string;
   role: string | null;
   summary: string;
+  /** Full final-response text for claim checks (null for other events and older stores). */
+  text?: string | null;
   rawJson: string;
   rawPayloadHash: string | null;
 };

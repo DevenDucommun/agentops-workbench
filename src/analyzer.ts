@@ -178,7 +178,8 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
-    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalEvent.summary, observedCommands.map((command) => command.command));
+    const finalText = finalClaimTexts(finalEvent);
+    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalText, observedCommands.map((command) => command.command));
     for (const claim of unsupportedEvidenceClaims) {
       flags.push({
         eventId: finalEvent.id,
@@ -187,7 +188,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
         message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
       });
     }
-    if (claimsSuccess(finalEvent.summary) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
+    if (claimsSuccess(finalText) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
       flags.push({
         eventId: finalEvent.id,
         severity: "medium",
@@ -255,25 +256,51 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
   return pattern.test(command);
 }
 
-export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
+/**
+ * The texts whose claims a final response makes: the full response and, unless the
+ * two are identical, the stored summary too, so every claim shown as the Final Outcome
+ * needs evidence. A summary derived from the response is stored as the full response
+ * (see summarizeEvent), so only a producer's own summary adds claims. Older stores
+ * have no `text`, so the summary alone is used.
+ */
+export function finalClaimTexts(event: { text?: string | null; summary: string }): string[] {
+  const text = event.text?.trim() ? event.text : null;
+  if (!text) return [event.summary];
+  // Both are checked. A producer's summary is shown as the Final Outcome, so every claim
+  // in it needs evidence; skipping a summary that "looks like" the body's opening let
+  // unsupported claims through, and checking it at worst flags a claim twice.
+  return normalizeClaimText(event.summary) === normalizeClaimText(text) ? [text] : [text, event.summary];
+}
+
+/** Whitespace-normalized for matching only, so a Markdown soft wrap inside a claim still matches. */
+function normalizeClaimText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function toClaimTexts(value: string | readonly string[]): string[] {
+  return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
+}
+
+export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimEvaluation[] {
+  const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
     const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
       label: rule.label,
-      claimed: rule.claimPattern.test(value),
+      claimed: texts.some((text) => rule.claimPattern.test(text)),
       supported: matchingCommand !== null,
       matchingCommand
     };
   });
 }
 
-export function claimsFinalSuccess(value: string): boolean {
+export function claimsFinalSuccess(value: string | readonly string[]): boolean {
   return claimsSuccess(value);
 }
 
-function findUnsupportedEvidenceClaims(value: string, commands: string[]): EvidenceClaimRule[] {
+function findUnsupportedEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimRule[] {
   const unsupported = new Set(
     evaluateEvidenceClaims(value, commands)
       .filter((claim) => claim.claimed && !claim.supported)
@@ -282,8 +309,8 @@ function findUnsupportedEvidenceClaims(value: string, commands: string[]): Evide
   return evidenceClaimRules.filter((rule) => unsupported.has(rule.category));
 }
 
-function claimsSuccess(value: string): boolean {
-  return /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(value);
+function claimsSuccess(value: string | readonly string[]): boolean {
+  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(text));
 }
 
 function isSensitivePath(path: string, config: AgentOpsConfig): boolean {

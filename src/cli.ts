@@ -8,7 +8,7 @@ import { defaultConfig, formatConfigValidationResult, loadConfig, validateConfig
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateOpenInferenceJsonExport, generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
-import { getGitChanges } from "./git";
+import { getGitChangesOrEmpty } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownReport } from "./report";
@@ -721,14 +721,6 @@ function isAgentOpsIgnored(): boolean {
     stdio: ["ignore", "pipe", "pipe"]
   });
   return result.status === 0;
-}
-
-function getGitChangesOrEmpty() {
-  try {
-    return getGitChanges();
-  } catch {
-    return [];
-  }
 }
 
 function formatIngestResult(store: Store, sessionId: string, eventCount: number, adapterId: string): string {
