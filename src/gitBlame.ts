@@ -1,11 +1,6 @@
 // Git blame and commit helpers for provenance (forensic recorder spec R3.1,
 // R3.2; task T3.1). Parsers plus thin `git` wrappers that never throw: a
-// missing repository, path or commit returns an empty result or null. Where Git
-// defines the behavior (trailers, rename following, log order) it is delegated
-// to git rather than reimplemented.
-
-import { readFileSync } from "node:fs";
-import { posix, resolve } from "node:path";
+// missing repository, path or commit returns an empty result or null. Trailer parsing follows Git’s own rules.
 
 export type BlameLine = {
   /** Full commit SHA. All zeros for uncommitted lines. */
@@ -186,157 +181,6 @@ export function getCommitInfo(repo: string, rev: string): CommitInfo | null {
   };
 }
 
-/**
- * Full SHAs of the commits in the lineage of the file now at `path` in HEAD,
- * newest first in Git's `--date-order` over the whole commit graph (a merge
- * before its parents, otherwise by commit time). `limit: 0` returns no commits.
- *
- * `path` is literal, never a pattern. It is read relative to `repo` the way Git
- * reads a path argument, so `./a`, `a//b` and, from a subdirectory, `../x` name
- * the same file as their normalized spelling; a path outside the work tree has
- * no history. A path with no file at HEAD (never created, or deleted) has none.
- *
- * The walk starts at HEAD and tracks the file's path in each commit. A commit is
- * listed when its file differs (content or mode) from the file in every parent:
- * an ordinary edit, the commit that added or renamed it, or a merge that matches
- * no parent (a conflict resolution, or a clean merge of a rename with an edit).
- * A commit whose file matches a parent is not listed, and the walk follows only
- * the first such parent, as `git log -- <path>` simplifies history. Otherwise
- * every parent that has the file is followed under the same path; for a parent
- * without it, Git's rename detection between that parent and the commit decides
- * whether the file came from another path, which that side then follows.
- *
- * Lineage rule: history stops where the file was created. On each side the walk
- * ends at a parent that lacks the file and is no rename source, so a deleted and
- * recreated path starts fresh, a rename onto a reused name does not inherit the
- * deleted file's commits, and a merge still reaches the ancestors of a parent
- * that kept the file.
- *
- * In a shallow clone a boundary commit (whose parents were not fetched) is not
- * listed and ends the walk, because what it changed cannot be computed. It is
- * listed only when its commit object has no parents, that is a real root.
- */
-export function commitsTouching(repo: string, path: string, options: { limit?: number } = {}): string[] {
-  const { limit } = options;
-  if (limit !== undefined && limit <= 0) return [];
-  const target = treePath(repo, path);
-  if (target === null) return [];
-  const graph = git(repo, ["rev-list", "--date-order", "--parents", "HEAD"]);
-  const shallow = shallowBoundary(repo);
-  if (graph === null || shallow === null) return [];
-  const order: string[] = [];
-  const parents = new Map<string, string[]>();
-  for (const line of graph.split("\n")) {
-    if (line === "") continue;
-    const [sha, ...rest] = line.split(" ");
-    order.push(sha as string);
-    parents.set(sha as string, rest);
-  }
-  const files = new FileLookup(repo, order);
-  const head = order[0];
-  if (head === undefined || files.at(head, target) === null) return [];
-  // Path of the file in each commit still to visit. --date-order puts every
-  // commit after all of its children, so a commit's path is final when reached.
-  const pending = new Map<string, string>([[head, target]]);
-  const follow = (sha: string, file: string) => {
-    if (!pending.has(sha)) pending.set(sha, file);
-  };
-  const touching: string[] = [];
-  for (const sha of order) {
-    const file = pending.get(sha);
-    if (file === undefined) continue;
-    pending.delete(sha);
-    const mine = files.at(sha, file);
-    if (mine === null) continue;
-    const ups = parents.get(sha) ?? [];
-    if (ups.length === 0) {
-      // A root adds the file; a shallow boundary's change is unknown.
-      if (!shallow.has(sha) || rawParents(repo, sha)?.length === 0) touching.push(sha);
-    } else {
-      const theirs = ups.map((up) => files.at(up, file));
-      const same = theirs.indexOf(mine);
-      if (same !== -1) {
-        follow(ups[same] as string, file);
-        continue;
-      }
-      touching.push(sha);
-      for (let i = 0; i < ups.length; i++) {
-        const up = ups[i] as string;
-        if (theirs[i] !== null) {
-          follow(up, file);
-          continue;
-        }
-        const source = renameSource(repo, up, sha, file);
-        if (source !== null) follow(up, source);
-      }
-    }
-    if (limit !== undefined && touching.length >= limit) break;
-  }
-  return touching;
-}
-
-/**
- * The mode and object id of a path in many commits, read in batches through one
- * `git cat-file --batch-check` per batch, in the walk's commit order.
- */
-class FileLookup {
-  private readonly index = new Map<string, number>();
-  private readonly cache = new Map<string, Array<string | null>>();
-
-  constructor(
-    private readonly repo: string,
-    private readonly order: string[]
-  ) {
-    for (let i = 0; i < order.length; i++) this.index.set(order[i] as string, i);
-  }
-
-  /** `mode oid` of `path` in `sha`, or null when it is absent or not a file. */
-  at(sha: string, path: string): string | null {
-    const position = this.index.get(sha);
-    if (position === undefined) return null;
-    let known = this.cache.get(path);
-    if (known === undefined) {
-      known = [];
-      this.cache.set(path, known);
-    }
-    while (known.length <= position) {
-      const batch = this.order.slice(known.length, known.length + Math.max(256, known.length));
-      const input = new TextEncoder().encode(batch.map((commit) => `${commit}:${path}\0`).join(""));
-      const out = git(this.repo, ["cat-file", "--batch-check=%(objecttype) %(objectmode) %(objectname)", "-Z"], input);
-      // A failed batch means "absent" for every commit in it, never an exception.
-      const records = out === null ? [] : out.split("\0");
-      for (let i = 0; i < batch.length; i++) {
-        const [type, mode, oid] = (records[i] ?? "").split(" ");
-        known.push(type !== undefined && type !== "tree" && oid !== undefined && SHA.test(oid) ? `${mode} ${oid}` : null);
-      }
-    }
-    return known[position] ?? null;
-  }
-}
-
-/**
- * `path` as a path from the top of the work tree, read relative to `repo` as Git
- * reads a path argument. Null when it leaves the work tree or names its top.
- */
-function treePath(repo: string, path: string): string | null {
-  const prefix = git(repo, ["rev-parse", "--show-prefix"]);
-  if (prefix === null || path === "" || path.startsWith("/")) return null;
-  const joined = posix.normalize(prefix.replace(/\n$/, "") + path);
-  if (joined === "." || joined === ".." || joined.startsWith("../") || joined.endsWith("/")) return null;
-  return joined;
-}
-
-/** The path `path` in `commit` was renamed from in `parent`, by Git's rename detection. */
-function renameSource(repo: string, parent: string, commit: string, path: string): string | null {
-  const out = git(repo, ["diff-tree", "-r", "-M", "--diff-filter=R", "--name-status", "-z", parent, commit]);
-  if (out === null) return null;
-  const fields = out.split("\0");
-  for (let i = 0; i + 2 < fields.length; i += 3) {
-    if (fields[i + 2] === path) return fields[i + 1] as string;
-  }
-  return null;
-}
-
 /** Parents recorded in the commit object itself, including any a shallow clone hides. */
 function rawParents(repo: string, sha: string): string[] | null {
   const raw = git(repo, ["cat-file", "commit", sha]);
@@ -348,28 +192,14 @@ function rawParents(repo: string, sha: string): string[] | null {
     .map((line) => line.slice(7));
 }
 
-/** Commits at a shallow clone's boundary, whose parents are missing; empty when not shallow. */
-function shallowBoundary(repo: string): Set<string> | null {
-  const out = git(repo, ["rev-parse", "--is-shallow-repository", "--git-path", "shallow"]);
-  if (out === null) return null;
-  const [isShallow, file] = out.split("\n");
-  if (isShallow !== "true" || !file) return new Set();
-  try {
-    const text = readFileSync(resolve(repo, file), "utf8");
-    return new Set(text.split("\n").filter((line) => SHA.test(line)));
-  } catch {
-    return new Set();
-  }
-}
-
 /**
  * Runs git with literal pathspecs, pinning the settings that would change the
  * output these parsers read: UTF-8 log output, root commits shown, no implicit
  * --follow, no signature blocks, no color. Null when git exits nonzero or cannot
  * be started.
  */
-function git(repo: string, args: string[], stdin?: Uint8Array): string | null {
-  return run(["git", "--literal-pathspecs", ...PINNED_CONFIG, "-C", repo, ...args], stdin);
+function git(repo: string, args: string[]): string | null {
+  return run(["git", "--literal-pathspecs", ...PINNED_CONFIG, "-C", repo, ...args]);
 }
 
 const PINNED_CONFIG = [
