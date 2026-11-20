@@ -36,8 +36,15 @@ correct by never letting an inference produce a pass.
 | **Observed** | A single command or tool call with its own recorded outcome, from a structured source | Recorder spool `PostToolUse` / `PostToolUseFailure`; Claude stream `tool_use` matched to its `tool_result` by id; Codex exec `item.completed` with `exit_code`; generic JSONL events that carry `exitCode` or a terminal `status` |
 | **Inferred** | Anything derived from text or from parsing a shell string | Plain-text imports (`$ cmd` lines, `exit code N` prose); commands only mentioned in prose; a compound or wrapped shell string; a tool call with no result |
 
-Existing fields already carry this: `provenance: "inferred"` and
-`confidence` on events. The ledger reads them instead of re-deriving trust.
+A tool call that never received an outcome (a session that ends after the
+request, a crash, a missing `tool_result`) is inferred, not observed.
+
+Adapters already mark text-derived events with `provenance: "inferred"` and
+`confidence`, but the default store does not keep those fields: with
+`privacy.storeRawPayload` off, `raw_json` is empty. The tier is therefore
+decided at ingest and stored as its own column on each command and tool-call
+row (`evidence_tier`: `observed` or `inferred`), and the ledger reads that
+column, never the raw payload.
 
 ### 2. Gate rules
 
@@ -57,6 +64,10 @@ command whose outcome cannot be attributed is at most `unverified`.
   `;`, `&&`, `||`, `|`, `&`, `$(`, backticks or newlines after stripping
   leading `VAR=value` assignments) and its leading words match one of the
   kind's configured patterns (`bun test`, `npm run lint`, `tsc`, …).
+- A matching command that carries a non-executing flag (`--help`, `-h`,
+  `--version`, `-V`, `--dry-run`, `--list`, `--collect-only`, or a flag listed
+  in the kind's configured exclusions) is not a run of that kind: `bun test
+  --help` exits 0 without testing anything.
 - Anything else that mentions a verification command is **inferred**: no
   wrapper unwrapping, no option tables, no compound-command attribution.
 - Users who run tests through wrappers add the exact wrapper form to the
@@ -76,8 +87,9 @@ command whose outcome cannot be attributed is at most `unverified`.
 
 ### 5. The recorder is the primary source
 
-M1 sessions carry observed evidence for every tool call, so they get real
-pass/fail verdicts and rarely reach `unverified`. Text import stays supported
+M1 sessions carry observed evidence for every tool call that completed, so
+they get real pass/fail verdicts and reach `unverified` only for calls without
+an outcome. Text import stays supported
 for history and forensics, documented as the weaker path. Product docs and
 `agentops audit` output say which tier a session's evidence came from.
 
@@ -87,9 +99,10 @@ Natural-language claim detection remains the weakest link. A later task adds
 an optional **claim manifest**: a fenced JSON block at the end of the final
 response listing `{ kind, command }` pairs, requested through repository
 instructions (`CLAUDE.md` / `AGENTS.md`), not through a hook. Hooks may not
-intervene in the session ([spec.md](spec.md) non-goals). When a manifest is
-present, it replaces sentence parsing for that session; without one, rule 4
-applies.
+intervene in the session ([spec.md](spec.md) non-goals). A manifest adds
+claims and names the commands meant to back them; it never removes claims.
+Rule 4 still runs on the prose, so a "Lint passed" sentence missing from a
+test-only manifest is still a claim that needs evidence.
 
 ## Review policy
 
@@ -107,7 +120,7 @@ Reviews of M2 and import changes use these acceptance criteria:
 
 | PR | Keeps | Drops or changes |
 |---|---|---|
-| #140 ledger (T2.1) | Verdict ledger; Claude `tool_result` correlation; results after the final response not counting; `COALESCE(text, summary)` | Removes shell unwrapping (`env -S`, `npx -c`), wrapper option tables, compound-command attribution and negation handling; adds the `unverified` verdict and rule 3 |
+| #140 ledger (T2.1) | Verdict ledger; Claude `tool_result` correlation; results after the final response not counting; `COALESCE(text, summary)` | Removes shell unwrapping (`env -S`, `npx -c`), wrapper option tables, compound-command attribution and negation handling. The `unverified` verdict, the `evidence_tier` column and rule 3 land in T2.7 |
 | #141–#144 (T2.2–T2.5) | Claim kinds, retry/stall rules, rendering | Re-synced onto the simplified #140; device and browser claims follow rule 3 with configured patterns |
 | #148 import fixes | Empty Action input, collision-free fallback ids, NUL-delimited git parsing with byte-safe decoding, `events.text`, git error surfacing (with `LC_ALL=C`) | Plain-text boundary heuristics revert to the reviewed state; rule 4's plain-text detection lands with the trust-model task |
 | #149 | `--base`, command pairing, embedded demo fixtures | Retargeted to `main` after #148 merges instead of carrying #148's changes |
@@ -115,15 +128,16 @@ Reviews of M2 and import changes use these acceptance criteria:
 
 New tasks:
 
-- **T2.6** Implement the evidence tiers, the `unverified` verdict, rule 3 and
-  rule 4, with fixtures for each tier and verdict.
-- **T2.7** Spike: claim manifest format and its acceptance in the ledger.
+- **T2.7** Implement the evidence tiers (`evidence_tier` column set at
+  ingest), the `unverified` verdict, rule 3 and rule 4, with fixtures for each
+  tier and verdict. Lands before the v3.4.0 release (T2.6).
+- **T2.8** Spike: claim manifest format and its acceptance in the ledger.
 
 ## Assumption to verify
 
 This model assumes most sessions that matter go through the recorder. If many
 will always be pasted text or post-hoc Codex logs, `unverified` becomes
-common, and T2.7 moves up. The T1.x dogfood week measures the share of
+common, and T2.8 moves up. The T1.x dogfood week measures the share of
 recorded sessions and the `unverified` rate.
 
 ## Open questions
