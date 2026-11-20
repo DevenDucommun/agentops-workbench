@@ -1,5 +1,6 @@
 import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
+import { type ClaimsLedger, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
   getEvents,
@@ -125,11 +126,11 @@ type DashboardMergeReadiness = {
 };
 
 type DashboardEvidenceRow = {
-  id: "test" | "lint" | "typecheck" | "build" | "final-success";
+  id: "test" | "lint" | "typecheck" | "build" | "callers" | "device" | "browser" | "fix" | "final-success";
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "inferred-evidence" | "missing-evidence" | "not-claimed";
+  status: "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
@@ -295,7 +296,7 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification);
+  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -439,13 +440,15 @@ function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  ledger: ClaimsLedger
 ): DashboardDecision {
   const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
-  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification);
+  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification, ledger);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
+  const contradictedCount = evidence.filter((row) => row.status === "contradicted").length;
   const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
   const reasons: string[] = [];
   let status: DashboardMergeReadiness["status"] = "ready";
@@ -461,6 +464,10 @@ function buildDashboardDecision(
   if (missingEvidenceCount > 0) {
     if (status === "ready") status = "needs-review";
     reasons.push(`${missingEvidenceCount} claimed check${missingEvidenceCount === 1 ? "" : "s"} missing command evidence.`);
+  }
+  if (contradictedCount > 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(`${contradictedCount} claimed check${contradictedCount === 1 ? " is" : "s are"} contradicted by a failing run.`);
   }
   if (inferredEvidenceCount > 0) {
     if (status === "ready") status = "needs-review";
@@ -486,16 +493,28 @@ function buildDashboardDecision(
   };
 }
 
+const LEDGER_ROW_LABELS: Partial<Record<LedgerClaim["id"], string>> = {
+  callers: "No other callers",
+  device: "On-device check",
+  browser: "In-browser check",
+  fix: "Fix verified"
+};
+
 function buildEvidenceRows(
   finalSummary: string,
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  ledger: ClaimsLedger
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
-    const risk = risks.find((entry) => entry.category === claim.category) ?? null;
+    // An observed run decides the claim through the ledger, which knows a failed latest run contradicts it.
+    // Without one, keep the row below: it still shows inferred (forensic) evidence the ledger does not count.
+    const entry = ledger.claims.find((item) => item.id === claim.id);
+    if (entry && entry.verdict !== "unsupported") return ledgerRow(entry, titleCase(claim.label), risks);
+    const risk = risks.find((item) => item.category === claim.category) ?? null;
     return toEvidenceRow({
       id: claim.id,
       label: titleCase(claim.label),
@@ -505,6 +524,10 @@ function buildEvidenceRows(
       risk
     });
   });
+  for (const entry of ledger.claims) {
+    const label = LEDGER_ROW_LABELS[entry.id];
+    if (label) rows.push(ledgerRow(entry, label, risks));
+  }
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
   const finalSuccessClaimed = claimsFinalSuccess(finalSummary) || successRisk !== null;
   rows.push(
@@ -520,15 +543,32 @@ function buildEvidenceRows(
   return rows;
 }
 
+function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): DashboardEvidenceRow {
+  const risk =
+    entry.verdict === "contradicted"
+      ? (risks.find((item) => item.category === "contradicted-claim" && item.message.includes(entry.claimText)) ?? null)
+      : (risks.find((item) => item.category === entry.category) ?? null);
+  return toEvidenceRow({
+    id: entry.id,
+    label,
+    claimed: true,
+    evidenceFound: entry.verdict !== "unsupported",
+    contradicted: entry.verdict === "contradicted",
+    command: entry.cited ? { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode } : null,
+    risk
+  });
+}
+
 function toEvidenceRow(input: {
   id: DashboardEvidenceRow["id"];
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  command: CommandRecord | null;
+  contradicted?: boolean;
+  command: Pick<CommandRecord, "command" | "status" | "exitCode"> | null;
   risk: RiskFlagRecord | null;
 }): DashboardEvidenceRow {
-  const status = evidenceStatus(input.evidenceFound, input.claimed, input.command);
+  const status = input.contradicted ? "contradicted" : evidenceStatus(input.evidenceFound, input.claimed, input.command);
   return {
     id: input.id,
     label: input.label,
@@ -546,7 +586,7 @@ function toEvidenceRow(input: {
 function evidenceStatus(
   evidenceFound: boolean,
   claimed: boolean,
-  command: CommandRecord | null
+  command: Pick<CommandRecord, "status"> | null
 ): DashboardEvidenceRow["status"] {
   if (!evidenceFound) return claimed ? "missing-evidence" : "not-claimed";
   return command?.status === "inferred" ? "inferred-evidence" : "verified";
