@@ -65,7 +65,7 @@ Sizes are relative effort: S, M or L.
 
 ## M3: Provenance (v3.5.0)
 
-- [ ] **T3.1 (S) Git blame/commit helpers.** Verify: porcelain parser unit
+- [x] **T3.1 (S) Git blame/commit helpers.** Verify: porcelain parser unit
   tests.
 - [ ] **T3.2 (M) Line-hash index from recorded edits.** Verify: index test on
   the commit fixture.
