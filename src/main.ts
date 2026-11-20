@@ -1,4 +1,5 @@
-// Process entry for the `agentops` binary and `bun run agentops`.
+// Process entry for the compiled `agentops` binary, `bin/agentops` (the
+// package.json bin) and `bun run agentops`.
 // `agentops hook` is dispatched before the CLI module graph (SQLite store,
 // analyzer, dashboard, MCP) is loaded, so Claude Code hooks stay inside the
 // latency budget measured in spike S1. Everything else loads the full CLI.

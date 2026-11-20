@@ -119,8 +119,13 @@ Sessions stay in the store until you remove it.
 | Delete imported sessions for a repository | remove `<repository>/.agentops/agentops.db` |
 | Remove all recorder state | remove `<state>/` |
 
-No command deletes a single session from the store yet. Remove the store, then
-re-import the spools you want to keep with `agentops audit`.
+No command deletes a single session from the store yet. You can remove the
+store and re-import the spools you want to keep with `agentops audit`, but the
+re-import is partial. It restores each session's events, tool calls, commands,
+file changes and risk flags. It does not restore the session's links to the
+commits it made, so a lookup from a commit back to its session will not find
+those sessions. Only the recorder's own session-end import creates commit
+links.
 
 ## Public Release Checklist
 
