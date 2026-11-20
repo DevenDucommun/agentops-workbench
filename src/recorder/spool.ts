@@ -32,6 +32,7 @@ export type SpoolOptions = {
    * an absolute home path with [REDACTED:local-path].
    */
   repoRoots?: string[];
+  gitCommit?: { sha: string; kind: string };
 };
 
 export type AppendResult =
@@ -93,6 +94,7 @@ export function buildSpoolRecord(original: Record<string, unknown>, options: Spo
     cwd: str(payload.cwd)
   };
 
+  if (options.gitCommit) record.gitCommit = options.gitCommit;
   const exitCode = typeof payload.error === "string" ? /^Exit code (\d+)/.exec(payload.error)?.[1] : undefined;
   if (exitCode !== undefined) record.exitCode = Number(exitCode);
 

@@ -1,6 +1,8 @@
-import { basename, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { redactValue } from "./redaction";
+import { findRepositoryRoots } from "./recorder/enrollment";
 import { buildSpoolRecord, RECORDER_ERROR_TYPE, SPOOL_RECORD_TYPE } from "./recorder/spool";
 import type { ParsedTranscript, RawEvent, SessionRecord } from "./types";
 
@@ -24,8 +26,9 @@ export function detectClaudeHooks(content: string): { matched: boolean; confiden
     try {
       record = JSON.parse(line);
     } catch {
-      return { matched: false, confidence: 0, reason: "first record is not JSON" };
+      continue;
     }
+    if (record?.type === RECORDER_ERROR_TYPE) continue;
     if (record?.type === SPOOL_RECORD_TYPE && typeof record.hookEventName === "string") {
       return { matched: true, confidence: 1, reason: "found forensic recorder spool record" };
     }
@@ -37,29 +40,51 @@ export function detectClaudeHooks(content: string): { matched: boolean; confiden
   return { matched: false, confidence: 0, reason: "empty input" };
 }
 
+/** Use one root for the entire raw recording, including offline captures from another checkout. */
+function rawRecordingRoot(cwds: string[]): string | undefined {
+  if (!cwds.length || !cwds.every(isAbsolute)) return;
+  const contains = (root: string, path: string) => path === root || path.startsWith(root + sep);
+  const localRoot = findRepositoryRoots(process.cwd())?.checkout;
+  if (localRoot && cwds.every((path) => contains(localRoot, path))) return localRoot;
+  let common = cwds[0];
+  for (const cwd of cwds) {
+    while (!contains(common, cwd)) {
+      const parent = dirname(common);
+      if (parent === common) return;
+      common = parent;
+    }
+  }
+  // A drive, volume or user home is not a repository boundary.
+  if (common === dirname(common) || /^\/(?:Users|home|Volumes)(?:\/[^/]+)?$/.test(common)) return;
+  return common;
+}
+
 export function parseClaudeHooksJsonl(sourcePath: string, content: string, config: AgentOpsConfig): ParsedTranscript {
-  const records: Spooled[] = [];
+  const inputRecords: Spooled[] = [];
+  const rawCwds = new Set<string>();
   const lines = content.split(/\r?\n/);
-  const lastNonEmpty = lines.reduce((last, line, i) => (line.trim() ? i : last), -1);
-  lines.forEach((line, index) => {
+  lines.forEach((line) => {
     if (!line.trim()) return;
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(line);
     } catch {
-      // A torn line from a crashed writer stays in the spool (T1.3); skip it, the chain continues past it.
-      // Only an unparseable line that is not the last one, in a file with no spool records yet, is fatal.
-      if (index === lastNonEmpty || records.length > 0) return;
-      throw new Error(`Invalid claude-hooks JSONL record on line ${index + 1}`);
+      // The writer can recover after an interrupted append at any line.
+      return;
     }
     if (parsed?.type === RECORDER_ERROR_TYPE) return;
     if (parsed?.type === SPOOL_RECORD_TYPE) {
-      records.push(parsed as Spooled);
+      inputRecords.push(parsed as Spooled);
     } else if (typeof parsed?.hook_event_name === "string") {
-      const cwd = typeof parsed.cwd === "string" ? [parsed.cwd] : [];
-      records.push(buildSpoolRecord(parsed, { storeRawPayload: config.privacy.storeRawPayload, repoRoots: cwd }) as Spooled);
+      if (typeof parsed.cwd === "string") rawCwds.add(parsed.cwd);
+      inputRecords.push(parsed as Spooled);
     }
   });
+  const root = rawRecordingRoot([...rawCwds]);
+  const repoRoots = root ? checkoutRoots(root) : [];
+  const records = inputRecords.map((record) => record.type === SPOOL_RECORD_TYPE ? record : buildSpoolRecord(record, {
+    storeRawPayload: config.privacy.storeRawPayload, repoRoots
+  }) as Spooled);
   if (records.length === 0) throw new Error("Unsupported claude-hooks shape: expected forensic recorder spool records or Claude Code hook payloads.");
 
   const sessionId = records.map((r) => r.payload?.session_id).find((v): v is string => typeof v === "string") ?? basename(sourcePath).replace(/\.[^.]+$/, "");
@@ -117,7 +142,7 @@ function normalize(r: Spooled, parentByAgent: Map<string, string>): RawEvent {
       case "UserPromptSubmit":
         return { ...base, type: "message", role: "user", content: text(p.prompt), summary: compactText(text(p.prompt) ?? "User prompt") };
       case "Stop":
-        return { ...base, type: "final_response", role: "assistant", content: text(p.last_assistant_message), summary: compactText(text(p.last_assistant_message) ?? "Turn finished") };
+        return { ...base, type: "final_response", role: "assistant", content: text(p.last_assistant_message), summary: text(p.last_assistant_message) ?? "Turn finished" };
       case "SubagentStop":
         return { ...base, type: "message", role: "assistant", content: text(p.last_assistant_message), summary: `Subagent ${text(r.agentType) ?? ""} finished`.replace(/\s+/g, " ") };
       case "PreToolUse":
@@ -153,25 +178,26 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
       status: response?.interrupted === true ? "interrupted" : status,
       exitCode: typeof r.exitCode === "number" ? r.exitCode : failed ? undefined : 0,
       output: stdout,
-      gitCommit: typeof commit?.sha === "string" ? { sha: commit.sha, kind: commit.kind, branch: commit.branch } : undefined,
+      gitCommit: !failed && response?.interrupted !== true ? (r.gitCommit ?? commit) : undefined,
       summary: command ?? "Bash"
     };
   }
+  const path = [r.path, input?.file_path, input?.notebook_path, input?.path].find((value): value is string => typeof value === "string");
   if (FILE_EDIT_TOOLS.has(name)) {
     return {
       ...base,
-      type: response?.type === "create" ? "file_write" : "file_edit",
+      type: failed ? "tool_call" : response?.type === "create" ? "file_write" : "file_edit",
       toolName: name,
-      path: typeof r.path === "string" ? r.path : undefined,
+      path,
       operation: response?.type === "create" ? "create" : name.toLowerCase(),
       linesAdded: typeof r.linesAdded === "number" ? r.linesAdded : undefined,
       linesRemoved: typeof r.linesRemoved === "number" ? r.linesRemoved : undefined,
       status,
-      summary: typeof r.path === "string" ? r.path : name
+      summary: path ?? name
     };
   }
   if (FILE_READ_TOOLS.has(name)) {
-    return { ...base, type: "file_read", toolName: name, path: typeof r.path === "string" ? r.path : undefined, status, summary: typeof r.path === "string" ? r.path : name };
+    return { ...base, type: "file_read", toolName: name, path, status, summary: path ?? name };
   }
   const subagent = name === "Agent" && typeof response?.agentId === "string" ? response.agentId : undefined;
   const description = typeof input?.description === "string" ? input.description : undefined;
@@ -194,5 +220,15 @@ function lifecycleSummary(r: Spooled): string {
       return `Subagent ${typeof r.agentType === "string" ? r.agentType : ""} started`.replace(/\s+/g, " ").trim();
     default:
       return typeof r.hookEventName === "string" ? r.hookEventName : "Hook event";
+  }
+}
+
+function checkoutRoots(cwd: string): string[] {
+  const checkout = findRepositoryRoots(cwd)?.checkout;
+  if (!checkout) return [cwd];
+  try {
+    return [...new Set([checkout, resolve(cwd, relative(realpathSync(cwd), checkout))])];
+  } catch {
+    return [checkout];
   }
 }
