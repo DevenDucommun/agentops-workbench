@@ -1,6 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { defaultStateDir, enrolledRepository } from "./recorder/enrollment";
+import { defaultStateDir, enrolledRepository, findRepositoryRoots } from "./recorder/enrollment";
 import { Database } from "bun:sqlite";
 import type {
   CommandRecord,
@@ -24,10 +24,14 @@ export type Store = {
   path: string;
 };
 
-function defaultStorePath(): string {
+export function defaultStorePath(cwd = process.cwd()): string {
   if (process.env.AGENTOPS_DB !== undefined) return process.env.AGENTOPS_DB;
-  const cwd = process.cwd();
-  return join(enrolledRepository(cwd, defaultStateDir()) ?? cwd, ".agentops", "agentops.db");
+  const local = join(".agentops", "agentops.db");
+  const enrolled = enrolledRepository(cwd, defaultStateDir());
+  if (enrolled) return join(enrolled, local);
+  if (existsSync(resolve(cwd, local))) return local;
+  const main = findRepositoryRoots(cwd)?.main;
+  return main && existsSync(join(main, local)) ? join(main, local) : local;
 }
 
 export function openStore(path = defaultStorePath()): Store {

@@ -288,8 +288,8 @@ describe("recorder review regressions", () => {
 describe("recorder review regressions, round 3", () => {
   test("push capture resolves the refspec source and skips pushes with no single commit", () => {
     const cases: Array<[string, string | undefined]> = [
-      ["git push", "HEAD"],
-      ["git push origin", "HEAD"],
+      ["git push", undefined],
+      ["git push origin", undefined],
       ["git push -u origin HEAD", "HEAD"],
       ["git push origin HEAD:refs/heads/current", "HEAD"],
       ["git push origin other", "other"],

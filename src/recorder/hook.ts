@@ -50,10 +50,12 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
 function observedPush(payload: Record<string, unknown>, cwd: string): { sha: string; kind: string } | undefined {
   if (payload.hook_event_name !== "PostToolUse" || payload.tool_name !== "Bash") return;
   const input = payload.tool_input as { command?: unknown } | undefined;
-  const response = payload.tool_response as { interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
+  const response = payload.tool_response as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; exitCode?: number; exit_code?: number } | undefined;
   if (!response || response.interrupted || (response.exitCode ?? response.exit_code ?? 0) !== 0 || payload.error) return;
   if (typeof input?.command !== "string") return;
-  const source = pushSource(input.command);
+  if (!input.command.includes("push")) return;
+  const output = [response.stdout, response.stderr].filter((v) => typeof v === "string").join("\n");
+  const source = pushSource(input.command, output);
   if (!source) return;
   try {
     const result = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--verify", "--quiet", "--end-of-options", `${source}^{commit}`], { stdout: "pipe", stderr: "ignore" });
@@ -71,19 +73,21 @@ const PUSH_NO_COMMIT = new Set(["--dry-run", "--all", "--branches", "--mirror", 
 /**
  * The local revision a push command sends, or undefined when it cannot be known
  * from the command alone. Accepts `git push` as the last step of an `&&` chain with
- * no directory change; with no refspec the current HEAD is pushed, with one refspec
+ * no directory change; with no refspec Git’s output identifies the configured source, with one refspec
  * its source side is. Dry runs, deletions, several refspecs and anything with
  * quoting or other shell syntax give no link.
  */
-export function pushSource(command: string): string | undefined {
+export function pushSource(command: string, output = ""): string | undefined {
   const segments = command.split("&&").map((part) => part.trim());
   if (segments.some((part) => !part || /[;&|`$<>\n"'\\()]/.test(part))) return;
   if (segments.slice(0, -1).some((part) => /^(?:cd|pushd|popd)(?:\s|$)/.test(part))) return;
   const tokens = (segments.at(-1) ?? "").split(/\s+/);
   if (tokens[0] !== "git" || tokens[1] !== "push") return;
   const positionals: string[] = [];
+  let remoteInOption = false;
   for (let i = 2; i < tokens.length; i++) {
     const token = tokens[i] as string;
+    if (token === "--repo" || token.startsWith("--repo=")) remoteInOption = true;
     if (PUSH_VALUE_OPTIONS.has(token)) {
       i++;
       continue;
@@ -98,8 +102,12 @@ export function pushSource(command: string): string | undefined {
     }
     positionals.push(token);
   }
-  const refspecs = positionals.slice(1);
-  if (refspecs.length === 0) return "HEAD";
+  const refspecs = remoteInOption ? positionals : positionals.slice(1);
+  if (refspecs.length === 0) {
+    const updates = output.split(/\r?\n/).filter((line) => line.includes(" -> "));
+    const sources = updates.map((line) => /\s([A-Za-z0-9_][A-Za-z0-9_./-]*) -> \S+\s*$/.exec(line)?.[1]);
+    return sources.length && sources.every((source) => source && source === sources[0]) ? sources[0] : undefined;
+  }
   if (refspecs.length > 1) return;
   const src = (refspecs[0] as string).replace(/^\+/, "").split(":")[0] ?? "";
   return src && !src.startsWith("-") ? src : undefined;

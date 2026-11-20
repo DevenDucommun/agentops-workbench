@@ -50,7 +50,6 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
     analyzeSession(store, sessionId, config);
 
     const rowByEventId = new Map(getEventChain(store, sessionId).filter((row) => row.eventUid).map((row) => [row.eventUid as string, row.id]));
-    const commits: SessionCommit[] = [];
     for (const event of transcript.events) {
       const commit = event.gitCommit as { sha?: unknown; kind?: unknown; branch?: unknown } | undefined;
       if (typeof commit?.sha !== "string" || !/^[0-9a-f]{7,64}$/i.test(commit.sha)) continue;
@@ -64,9 +63,8 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
         eventId: (typeof event.eventId === "string" ? rowByEventId.get(event.eventId) : undefined) ?? null
       };
       linkSessionCommit(store, link);
-      commits.push(link);
     }
-    return { sessionId, eventCount, commits };
+    return { sessionId, eventCount, commits: getSessionCommits(store, sessionId) };
   })();
 }
 
