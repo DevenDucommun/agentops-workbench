@@ -162,7 +162,9 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
       line = JSON.stringify(linked);
       truncated = true;
     }
-    const prefix = tail && !tail.endsWithNewline ? "\n" : "";
+    // Torn bytes from a crashed writer may end the file even when no earlier line
+    // is a valid record; start a new line so this record stays readable.
+    const prefix = endsMidLine(path) ? "\n" : "";
     const fd = openSync(path, "a", 0o600);
     try {
       writeSync(fd, `${prefix}${line}\n`);
@@ -280,8 +282,27 @@ function writtenContent(input: Record<string, unknown> | undefined, response: Re
 
 // --- tail recovery -----------------------------------------------------------
 
+/** True when the file is non-empty and its last byte is not a newline. */
+function endsMidLine(path: string): boolean {
+  let fd: number;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Last chained record in the file (scanning back past torn or foreign lines). */
-function readTail(path: string): { seq: number; hash: string; endsWithNewline: boolean } | null {
+function readTail(path: string): { seq: number; hash: string } | null {
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -291,9 +312,6 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
   try {
     const size = fstatSync(fd).size;
     if (size === 0) return null;
-    const last = Buffer.alloc(1);
-    readSync(fd, last, 0, 1, size - 1);
-    const endsWithNewline = last[0] === 0x0a;
     for (let chunk = 64 * 1024; ; chunk *= 2) {
       const start = Math.max(0, size - chunk);
       const buf = Buffer.alloc(size - start);
@@ -306,7 +324,7 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
         try {
           const parsed = JSON.parse(line);
           if (isRecord(parsed) && Number.isSafeInteger(parsed.seq) && typeof parsed.hash === "string") {
-            return { seq: parsed.seq as number, hash: parsed.hash, endsWithNewline };
+            return { seq: parsed.seq as number, hash: parsed.hash };
           }
         } catch {
           // Torn line from a crashed writer; keep scanning back.
