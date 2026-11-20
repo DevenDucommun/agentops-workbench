@@ -1,6 +1,7 @@
-import { basename, extname, resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
+import { fallbackSessionId } from "./parser";
 import { redactValue } from "./redaction";
 import type { ParsedTranscript, RawEvent } from "./types";
 
@@ -76,7 +77,7 @@ export function parseForensicTextTranscript(
   }
 
   const resolvedPath = resolve(sourcePath);
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "forensic-session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "forensic-session");
   const events: RawEvent[] = [
     forensicNote(
       "Forensic plain-text import: evidence is lower-fidelity than provider JSONL. Commands from shell prompts are observed; commands and file changes from narrative text are inferred."
