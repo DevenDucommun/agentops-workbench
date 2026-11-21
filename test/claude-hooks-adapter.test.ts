@@ -407,3 +407,22 @@ test("porcelain output identifies the configured source ref of an actual push", 
   git(repo, "commit", "--allow-empty", "-qm", "second");
   expect(detect(push())).toBe("refs/heads/trunk");
 });
+
+test("spools without a session id that share a file name stay separate, and replay stays idempotent", () => {
+  const store = openStore(join(realpathSync(mkdtempSync(join(tmpdir(), "agentops-noid-"))), "a.db"));
+  // A record capped for size can lose payload.session_id.
+  const capped = (prompt: string) => {
+    const record = buildSpoolRecord({ session_id: "s", cwd: "/workspace", hook_event_name: "UserPromptSubmit", prompt }, {}) as { payload?: Record<string, unknown> };
+    delete record.payload?.session_id;
+    return `${JSON.stringify(record)}\n`;
+  };
+  const first = capped("first capture");
+  const second = capped("second capture");
+  const ingest = (content: string) => ingestTranscript(store, parseClaudeHooksJsonl("capture.jsonl", content, defaultConfig), defaultConfig).sessionId;
+  const a = ingest(first);
+  const b = ingest(second);
+  expect(a).not.toBe(b);
+  expect(ingest(first)).toBe(a);
+  expect(store.db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 2 });
+  store.db.close();
+});

@@ -14,7 +14,7 @@ import type {
   UsageInput,
   UsageSummary
 } from "./types";
-import { extractCommand, extractPath, summarizeEvent } from "./parser";
+import { extractCommand, extractPath, finalResponseText, summarizeEvent } from "./parser";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { sha256 } from "./redaction";
@@ -162,6 +162,9 @@ export function ingestTranscript(
   config: AgentOpsConfig = defaultConfig
 ): { sessionId: string; eventCount: number } {
   const { db } = store;
+  // events.text is added when a store is first written, never when it is opened, so a
+  // read of a store from an earlier version never writes (read-only or locked stores).
+  addColumnIfMissing(db, "events", "text", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -177,11 +180,11 @@ export function ingestTranscript(
   `);
   const insertEvent = db.query(`
     INSERT INTO events (
-      session_id, idx, type, role, summary, raw_payload_hash, raw_json,
+      session_id, idx, type, role, summary, text, raw_payload_hash, raw_json,
       event_uid, seq, prev_hash, event_hash, cwd, git_head, tool_use_id, parent_tool_use_id, agent_id, content_hash
     )
     VALUES (
-      $sessionId, $idx, $type, $role, $summary, $rawPayloadHash, $rawJson,
+      $sessionId, $idx, $type, $role, $summary, $text, $rawPayloadHash, $rawJson,
       $eventUid, $seq, $prevHash, $eventHash, $cwd, $gitHead, $toolUseId, $parentToolUseId, $agentId, $contentHash
     )
     RETURNING id
@@ -237,6 +240,7 @@ export function ingestTranscript(
         $type: type,
         $role: typeof event.role === "string" ? event.role : null,
         $summary: summarizeEvent(event),
+        $text: finalResponseText(event),
         $rawPayloadHash: config.privacy.hashRawPayload ? sha256(rawJson) : null,
         $rawJson: config.privacy.storeRawPayload ? rawJson : "",
         ...eventChainParams(event)
@@ -376,9 +380,11 @@ export function getUsageSummary(store: Store, sessionId: string): UsageSummary {
 }
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
+  // A read-only store written by an earlier version has no text column; read it as NULL.
+  const text = hasColumn(store.db, "events", "text") ? "text" : "NULL AS text";
   return store.db
     .query(
-      "SELECT id, idx, type, role, summary, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
+      `SELECT id, idx, type, role, summary, ${text}, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx`
     )
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
@@ -549,11 +555,13 @@ export function findSessionsForCommit(store: Store, sha: string): SessionCommit[
     .all({ $sha: needle, $prefix: `${needle}%` }) as SessionCommit[];
 }
 
-function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+function hasColumn(db: Database, table: string, column: string): boolean {
   const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  if (!columns.some((row) => row.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
+  return columns.some((row) => row.name === column);
+}
+
+function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function deriveUsageSummary(sessionUsage: UsageInput | undefined, events: RawEvent[]): UsageSummary {
