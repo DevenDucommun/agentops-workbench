@@ -30,6 +30,8 @@ export function getGitChanges(cwd = process.cwd(), options: { base?: string } = 
     const numstatOutput = git(["diff", "--numstat", "-z", ...head, "--"], cwd);
     return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
   }
+  // A base that looks like an option (`--octopus`) would be read by git as one.
+  if (options.base.startsWith("-")) throw new Error(`Invalid --base ref: ${options.base}`);
   const mergeBase = git(["merge-base", options.base, "HEAD"], cwd).trim();
   const committed = parseGitNameStatusZ(git(["diff", "--name-status", "-z", "-M", mergeBase, "--"], cwd));
   const untracked = parseGitStatusZ(statusOutput).filter((change) => change.status === "??");
@@ -209,7 +211,9 @@ const GIT_MAX_BUFFER = 1024 * 1024 * 1024;
 
 function gitRaw(args: string[], cwd: string): string {
   // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
-  const output = execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+  // diff.relative=false keeps diffs repository-wide when run from a subdirectory,
+  // whatever the user's config, so a report never drops changes outside it.
+  const output = execFileSync("git", ["-c", "core.quotePath=false", "-c", "diff.relative=false", ...args], {
     cwd,
     // English diagnostics, so "not a git repository" is recognized in any locale.
     env: { ...process.env, LC_ALL: "C" },

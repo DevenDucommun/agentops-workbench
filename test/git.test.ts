@@ -95,3 +95,20 @@ test("keeps non-ASCII paths literal whatever the user's quotePath setting", () =
 
   expect(getGitChanges(dir).map((change) => change.path).sort()).toEqual(["new/deep/café.ts", "new/deep/example.ts"]);
 });
+
+test("--base compares the whole repository from a subdirectory, even with diff.relative=true", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-git-rel-")));
+  const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], { cwd: dir });
+  git("init", "-q", "-b", "trunk");
+  mkdirSync(join(dir, "sub"));
+  writeFileSync(join(dir, "top.ts"), "export const a = 1;\n");
+  writeFileSync(join(dir, "sub", "keep.ts"), "export {};\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  git("checkout", "-q", "-b", "feature");
+  writeFileSync(join(dir, "top.ts"), "export const a = 2;\n");
+  git("commit", "-q", "-am", "edit");
+  git("config", "diff.relative", "true");
+  expect(getGitChanges(join(dir, "sub"), { base: "trunk" }).map((change) => change.path)).toEqual(["top.ts"]);
+  expect(() => getGitChanges(dir, { base: "--octopus" })).toThrow(/Invalid --base/);
+});

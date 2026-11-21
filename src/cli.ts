@@ -27,6 +27,12 @@ type CliResult = {
 
 export async function runCli(argv: string[]): Promise<CliResult> {
   const [command, ...args] = argv;
+  // `--base` without a ref (last argument, or followed by another option) is an
+  // error for every command, never a silent comparison against nothing.
+  if (args.includes("--base")) {
+    const value = readOption(args, "--base");
+    if (!value || value.startsWith("-")) return { stderr: "--base needs a git ref, for example --base origin/main\n", exitCode: 1 };
+  }
   try {
     if (!command) {
       return runStatus([]);

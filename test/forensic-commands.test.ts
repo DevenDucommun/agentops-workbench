@@ -36,3 +36,12 @@ test("a command only mentioned in prose is recorded once", () => {
   const text = ["I will run `bun test` next.", "Then `bun test` again.", "Done."].join("\n");
   expect(commands(text).map((entry) => entry.status)).toEqual(["inferred"]);
 });
+
+test("--base without a ref, or followed by an option, is an error rather than an empty comparison", async () => {
+  const { runCli } = await import("../src/cli");
+  for (const args of [["check", "latest", "--base"], ["check", "latest", "--base", "--octopus"]]) {
+    const result = await runCli(args);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr ?? "").toContain("--base needs a git ref");
+  }
+});
