@@ -99,23 +99,41 @@ export function parseTrailers(message: string, cwd = process.cwd()): Array<{ key
     const end = entry.indexOf("\n");
     if (end > 0) settings.push("-c", `${entry.slice(0, end)}=${entry.slice(end + 1)}`);
   }
-  const store = mkdtempSync(join(tmpdir(), "agentops-trailers-"));
+  let store: string;
   try {
-    if (run(["git", "init", "--bare", "-q", store]) === null) return [];
-    const inStore = ["git", "--git-dir", store, ...PINNED_CONFIG, ...settings];
-    const tree = run([...inStore, "hash-object", "-t", "tree", "-w", "--stdin"], new Uint8Array())?.trim();
+    store = mkdtempSync(join(tmpdir(), "agentops-trailers-"));
+  } catch {
+    return [];
+  }
+  try {
+    // Every repository location is pinned to the throwaway store, so inherited
+    // GIT_DIR, GIT_OBJECT_DIRECTORY or alternates never route a write elsewhere.
+    const isolated = {
+      GIT_DIR: store,
+      GIT_OBJECT_DIRECTORY: join(store, "objects"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: "",
+      GIT_WORK_TREE: undefined,
+      GIT_INDEX_FILE: undefined
+    };
+    if (run(["git", "init", "--bare", "-q", store], undefined, isolated) === null) return [];
+    const inStore = ["git", ...PINNED_CONFIG, ...settings];
+    const tree = run([...inStore, "hash-object", "-t", "tree", "-w", "--stdin"], new Uint8Array(), isolated)?.trim();
     if (!tree || !SHA.test(tree)) return [];
     const body = `tree ${tree}\nauthor agentops <agentops> 0 +0000\ncommitter agentops <agentops> 0 +0000\n\n${message}`;
-    const commit = run([...inStore, "hash-object", "-t", "commit", "-w", "--stdin"], new TextEncoder().encode(body))?.trim();
+    const commit = run([...inStore, "hash-object", "-t", "commit", "-w", "--stdin"], new TextEncoder().encode(body), isolated)?.trim();
     if (!commit || !SHA.test(commit)) return [];
-    const out = run([...inStore, "show", "-s", "--encoding=UTF-8", "--format=%(trailers:only,unfold,separator=%x00,key_value_separator=%x00)", commit]);
+    const out = run([...inStore, "show", "-s", "--encoding=UTF-8", "--format=%(trailers:only,unfold,separator=%x00,key_value_separator=%x00)", commit], undefined, isolated);
     if (out === null) return [];
     const fields = out.replace(/\n$/, "").split("\0");
     const trailers: Array<{ key: string; value: string }> = [];
     for (let i = 0; i + 1 < fields.length; i += 2) trailers.push({ key: fields[i] as string, value: fields[i + 1] as string });
     return trailers;
   } finally {
-    rmSync(store, { recursive: true, force: true });
+    try {
+      rmSync(store, { recursive: true, force: true });
+    } catch {
+      // A leftover temporary directory never fails the parse.
+    }
   }
 }
 
@@ -168,7 +186,13 @@ export function blameFile(repo: string, path: string, options: { rev?: string | 
   const args = ["blame", "--porcelain"];
   if (options.lines) args.push("-L", `${options.lines[0]},${options.lines[1]}`);
   const rev = options.rev === undefined ? "HEAD" : options.rev;
-  if (rev !== null) args.push(rev);
+  if (rev !== null) {
+    // Resolve the revision first: an unresolvable one (or one that looks like an
+    // option, such as --root) returns [] instead of reaching blame as a flag.
+    const commit = git(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`])?.trim();
+    if (!commit || !SHA.test(commit)) return [];
+    args.push(commit);
+  }
   args.push("--");
   const out = hasNonUtf8Bytes(path) ? gitWithBytePath(repo, args, path) : git(repo, [...args, path]);
   return out === null ? [] : parseBlamePorcelain(out);
@@ -273,9 +297,15 @@ const PINNED_CONFIG = [
   "color.ui=false"
 ];
 
-function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string>): string | null {
+/** Runs a command; `env` entries override the inherited environment, and `undefined` removes a variable. */
+function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string | undefined>): string | null {
   try {
-    const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: env ? { ...process.env, ...env } : undefined });
+    let merged: Record<string, string> | undefined;
+    if (env) {
+      merged = {};
+      for (const [key, value] of Object.entries({ ...process.env, ...env })) if (value !== undefined) merged[key] = value;
+    }
+    const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: merged });
     return proc.exitCode === 0 ? proc.stdout.toString() : null;
   } catch {
     return null;

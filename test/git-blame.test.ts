@@ -495,3 +495,44 @@ describe("review 6001159711: byte-exact blame paths and Git-structured trailers"
     expect(parseTrailers(message, dir)).toEqual(getCommitInfo(dir, "HEAD")?.trailers ?? []);
   });
 });
+
+describe("review 6001325620: blame revisions, isolated trailer parsing, temp-directory failure", () => {
+  test("blameFile returns [] for a revision that looks like an option or does not resolve", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-r9-")));
+    const sh = (script: string) => Bun.spawnSync(["bash", "-c", script], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    sh("git init -q && git config user.name synthetic && git config user.email synthetic && git config commit.gpgsign false && printf 'one\\n' > f && git add f && git commit -q -m one && printf 'edited\\n' > f");
+    expect(blameFile(dir, "f", { rev: "--root" })).toEqual([]);
+    expect(blameFile(dir, "f", { rev: "no-such-rev" })).toEqual([]);
+    expect(blameFile(dir, "f")[0]?.content).toBe("one");
+  });
+
+  test("parseTrailers never writes into the caller's repository, even with GIT_DIR or GIT_OBJECT_DIRECTORY set", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-trailers-iso-")));
+    Bun.spawnSync(["git", "init", "-q", dir]);
+    const objects = () => Bun.spawnSync(["git", "-C", dir, "count-objects", "-v"], { stdout: "pipe" }).stdout.toString();
+    const before = objects();
+    const saved = { dir: process.env.GIT_DIR, obj: process.env.GIT_OBJECT_DIRECTORY };
+    process.env.GIT_DIR = join(dir, ".git");
+    process.env.GIT_OBJECT_DIRECTORY = join(dir, ".git", "objects");
+    try {
+      expect(parseTrailers("subject\n\nAgentOps-Session: s-1\n", dir)).toEqual([{ key: "AgentOps-Session", value: "s-1" }]);
+    } finally {
+      if (saved.dir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved.dir;
+      if (saved.obj === undefined) delete process.env.GIT_OBJECT_DIRECTORY;
+      else process.env.GIT_OBJECT_DIRECTORY = saved.obj;
+    }
+    expect(objects()).toBe(before);
+  });
+
+  test("parseTrailers returns [] when no temporary directory can be created", () => {
+    const saved = process.env.TMPDIR;
+    process.env.TMPDIR = join(tmpdir(), "agentops-no-such-dir", "nested");
+    try {
+      expect(() => parseTrailers("subject\n\nAgentOps-Session: s-1\n")).not.toThrow();
+    } finally {
+      if (saved === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = saved;
+    }
+  });
+});
