@@ -55,9 +55,11 @@ forensic questions after the work is done:
   (subagents), and `contentHash` for file writes and edits. The chain fields
   are written from day one, even though verification ships in M4.
 - **R1.6** At session end the spool is ingested through a new `claude-hooks`
-  adapter, analyzed and stored. With `recorder.verdict: true`, the hook prints
-  a one-line gate summary. It is informational only and never blocks the
-  session.
+  adapter, analyzed and stored. With `recorder.verdict: true`, the Stop hook
+  also shows a one-line gate summary at the end of each turn, as its
+  `systemMessage`. Claude Code discards SessionEnd hook output, so the summary
+  cannot be shown at session end. It is informational only and never blocks
+  the session.
 - **R1.7** Enrollment is opt-in for each repo (`agentops recorder enable` /
   `disable` / `status`). Repos that are not enrolled record nothing.
 - **R1.8** Successful `git commit` and `git push` tool calls record the
