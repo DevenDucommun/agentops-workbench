@@ -218,7 +218,7 @@ Example:
 
 ## Future Config Areas
 
-- adapter specific settings
+- adapter-specific settings
 - report templates
 - OpenTelemetry export settings
 - dashboard preferences
