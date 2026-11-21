@@ -90,10 +90,10 @@ Evidence is asymmetric, so no rule can hide a failure:
   (`sh -c '...'`, `npx tsc`) never support a claim. A repository that uses
   other forms lists them in `evidence.supportCommands` (see
   [CONFIGURATION.md](CONFIGURATION.md)); a kind listed there replaces its
-  built-in list. Configured entries must be simple commands with no shell
-  syntax or negation, environment assignment, or help, version or dry-run flag
-  (including `make -n`, `-q`, `-t`, `-p`);
-  `agentops check --config` reports any that are not, and they never match.
+  built-in list. Configured entries are trusted as written; only shell syntax, `!` negation and
+  the non-executing flags `-h`, `--help`, `-V`, `--version`, `--dry-run`,
+  `--list` and `--collect-only` are refused, and `agentops check --config`
+  reports them; they never match.
 
 A run counts only once its result is recorded before the final response: a
 still-running command, a Claude Code tool call without a `tool_result`, or a

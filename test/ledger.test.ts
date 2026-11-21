@@ -826,14 +826,14 @@ describe("review 6001092236: configured failures, recorded outcomes, shell ident
     }
   });
 
-  test("configured dry runs, assignments and short circuits never support, and the config check reports them", () => {
-    for (const unsafe of ["make -n test", "make test --dry-run", "MAKEFLAGS=n make test", "true || bun test", "bun test; true"]) {
+  test("configured short circuits, negation and rule 3's non-executing flags never support, and the config check reports them", () => {
+    for (const unsafe of ["make test --dry-run", "bun test --help", "true || bun test", "bun test; true", "! bun test"]) {
       expect(isSafeSupportCommand(unsafe)).toBe(false);
       const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: [unsafe] } } };
       expect(ledgerFor([header, v1({ type: "command", command: unsafe, exitCode: 0 }), final], config).verdict).toBe("unsupported");
     }
     const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
-    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["make -n test"] } } }));
+    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["bun test --help"] } } }));
     expect(validateConfigFile(join(dir, "agentops.config.json")).errors.join(" ")).toContain("supportCommands.test");
   });
 
@@ -859,15 +859,12 @@ describe("review 6001207975: Claude outcomes at their result, precise non-execut
     expect(claim.cited?.outcome).toBe("failed");
   });
 
-  test("make print-only flags and shell negation are unsafe; ordinary flags such as go test -count=1 are fine", () => {
-    for (const unsafe of ["make -q test", "make -t test", "make -p test", "make --question test", "make -kq test", "! bun test", "bun test --help"]) {
-      expect(isSafeSupportCommand(unsafe)).toBe(false);
-    }
-    for (const safe of ["go test -count=1 ./...", "make -j4 test", "make -k test", "pytest -x", "npm run test"]) {
+  test("configured commands are trusted as written apart from rule 3's flags: owner forms such as make test -Cunit and go test -count=1 are valid", () => {
+    for (const safe of ["go test -count=1 ./...", "make test -Cunit", "make -j4 test", "pytest -x", "CI=1 bun test"]) {
       expect(isSafeSupportCommand(safe)).toBe(true);
     }
     const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
-    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["go test -count=1 ./..."] } } }));
+    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["go test -count=1 ./...", "make test -Cunit"] } } }));
     expect(validateConfigFile(join(dir, "agentops.config.json")).errors).toEqual([]);
   });
 });

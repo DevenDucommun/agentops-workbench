@@ -161,30 +161,24 @@ function normalizeCommand(command: string): string | null {
 }
 
 /**
- * Whether a configured support command can actually run the check: a simple
- * command with no shell syntax, no leading environment assignment (`MAKEFLAGS=n`
- * makes make a dry run) and no help, version or dry-run flag. Unsafe entries
- * never match and `agentops check --config` reports them.
+ * Whether a configured support command is acceptable (evidence trust model,
+ * rule 3). Configured commands are the repository owner's statement of what
+ * runs its checks and are trusted as written, environment assignments
+ * included. Only structure the ledger can verify is refused: shell syntax or
+ * `!` negation (the outcome would not be the command's), and the non-executing
+ * flags rule 3 names (`-h`, `--help`, `-V`, `--version`, `--dry-run`, `--list`,
+ * `--collect-only`) as whole words. Program-specific dry-run spellings
+ * (`make -n`, `go test -n`) are the owner's to leave out of the list.
  */
 export function isSafeSupportCommand(candidate: string): boolean {
   const normalized = normalizeCommand(candidate);
   if (!normalized || SHELL_SYNTAX.test(normalized)) return false;
   const words = normalized.split(" ");
-  if (ASSIGNMENT.test(words[0] ?? "") || words.includes("!")) return false;
-  if (words.some((word) => SUPPORT_NON_EXECUTING.has(word))) return false;
-  const program = (words[0] ?? "").slice((words[0] ?? "").lastIndexOf("/") + 1);
-  if (program === "make" || program === "gmake") {
-    // make prints, questions or touches instead of running recipes with -n, -q, -t or -p,
-    // alone or in a cluster such as -kn, or their long forms.
-    return !words.slice(1).some((word) => MAKE_NON_EXECUTING.has(word) || /^-[A-Za-z]*[nqtp][A-Za-z]*$/.test(word));
-  }
-  return true;
+  return !words.includes("!") && !words.some((word) => SUPPORT_NON_EXECUTING.has(word));
 }
 
-/** Flags that print help, a version or a plan instead of running the check, for any program. */
+/** The non-executing flags rule 3 names, matched as whole words. */
 const SUPPORT_NON_EXECUTING = new Set(["-h", "--help", "-V", "--version", "--dry-run", "--list", "--collect-only"]);
-/** make's long forms of -n, -q, -t and -p. */
-const MAKE_NON_EXECUTING = new Set(["--just-print", "--recon", "--question", "--touch", "--print-data-base"]);
 
 /**
  * Whether `command` mentions this rule's kind anywhere. A failed run that

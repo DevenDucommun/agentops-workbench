@@ -190,12 +190,12 @@ suite:
 }
 ```
 
-Entries must be simple commands: no shell syntax (`;`, `&&`, `|`, `$(...)`,
-quotes) or `!` negation, no leading environment assignment, no help, version or
-dry-run flag (`-h`, `--help`, `-V`, `--version`, `--dry-run`, `--list`,
-`--collect-only`), and for `make` none of `-n`, `-q`, `-t` or `-p` (alone or in
-a cluster) or their long forms. Other flags are fine: `go test -count=1 ./...`
-is a valid entry. A failed run of a configured command
+Entries are trusted as written, environment assignments and program-specific
+flags included: the list is the repository's statement of what runs its checks,
+so leave out forms that do not actually run them (`make -n test`). The config
+check refuses only what the ledger can verify is not a run: shell syntax (`;`,
+`&&`, `|`, `$(...)`, quotes), `!` negation, and the flags `-h`, `--help`, `-V`,
+`--version`, `--dry-run`, `--list` and `--collect-only`. A failed run of a configured command
 contradicts the claim, as does any failed run that mentions the kind. See [QUALITY_GATES.md](QUALITY_GATES.md) for the ledger rules.
 
 ## Suppression Matching

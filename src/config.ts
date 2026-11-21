@@ -201,7 +201,7 @@ function validateConfigShape(value: unknown): string[] {
               const entries = Array.isArray(support[key]) ? (support[key] as unknown[]) : [];
               for (const entry of entries) {
                 if (typeof entry === "string" && entry.trim() && !isSafeSupportCommand(entry)) {
-                  errors.push(`evidence.supportCommands.${key} entry "${entry}" must be a simple command with no shell syntax, environment assignment, or help, version or dry-run flag.`);
+                  errors.push(`evidence.supportCommands.${key} entry "${entry}" must have no shell syntax or ! negation and none of -h, --help, -V, --version, --dry-run, --list or --collect-only.`);
                 }
               }
             }
