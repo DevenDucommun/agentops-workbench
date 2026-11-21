@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync } from "node:fs";
-import { basename, join, relative, sep } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { defaultStateDir, enrolledRoots } from "./enrollment";
 import { appendHookPayload, writeRecorderError } from "./spool";
 
@@ -11,7 +11,7 @@ import { appendHookPayload, writeRecorderError } from "./spool";
 // latency budget).
 
 export type HookOutcome =
-  | { recorded: true; seq: number; repository: string; spoolFile: string; hookEventName: string }
+  | { recorded: true; seq: number; repository: string; checkout: string; spoolFile: string; hookEventName: string }
   | { recorded: false; reason: "malformed-input" | "not-enrolled" | "append-failed"; detail?: string };
 
 export type HookOptions = { stateDir?: string; env?: NodeJS.ProcessEnv };
@@ -40,7 +40,9 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
     repoRoots: repositoryRoots(roots.checkout, cwd),
     gitCommit: observedPush(payload, cwd)
   });
-  if (result.ok) return { recorded: true, seq: result.seq, repository, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
+  if (result.ok) {
+    return { recorded: true, seq: result.seq, repository, checkout: roots.checkout, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
+  }
   return { recorded: false, reason: "append-failed", detail: result.detail };
 }
 
@@ -166,16 +168,31 @@ export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: stri
  * `systemMessage` shown to the user. It never sets `decision`, so it never
  * blocks the stop. Off by default; any failure returns null (no output).
  */
-export async function verdictAfterStop(outcome: HookOutcome, stateDir: string): Promise<string | null> {
-  if (!outcome.recorded || outcome.hookEventName !== "Stop" || repoConfigFlag(outcome.repository, "recorder", "verdict") !== true) return null;
+export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  // The verdict answers what `agentops check` in the session's checkout would say:
+  // that checkout's config (a linked worktree has its own), and the store
+  // `agentops check` reads there (AGENTOPS_DB when set).
+  if (!outcome.recorded || outcome.hookEventName !== "Stop" || repoConfigFlag(outcome.checkout, "recorder", "verdict") !== true) return null;
   try {
     const { turnVerdict } = await import("./ingest");
-    return JSON.stringify({ systemMessage: turnVerdict(outcome.spoolFile, { repoRoot: outcome.repository }) });
+    const dbPath = env.AGENTOPS_DB ? resolve(outcome.checkout, env.AGENTOPS_DB) : undefined;
+    return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath }));
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
     writeRecorderError(join(stateDir, "spool"), sid, "verdict-failed", error instanceof Error ? error.message : String(error));
     return null;
   }
+}
+
+/** The Stop hook's JSON line, at most 300 characters including JSON escaping. */
+export function verdictJson(message: string, limit = 300): string {
+  let text = message;
+  let json = JSON.stringify({ systemMessage: text });
+  while (json.length > limit && text.length > 0) {
+    text = text.slice(0, Math.max(0, text.length - (json.length - limit)));
+    json = JSON.stringify({ systemMessage: text });
+  }
+  return json;
 }
 
 /** `privacy.storeRawPayload` from the repository's agentops.config.json; false when absent or unreadable. */

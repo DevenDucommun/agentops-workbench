@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { enrollRepository } from "../src/recorder/enrollment";
-import { handleHook, verdictAfterStop } from "../src/recorder/hook";
+import { handleHook, verdictAfterStop, verdictJson } from "../src/recorder/hook";
 
 // T1.6: optional turn-end verdict. Off by default; when on, a recorded Stop
 // returns exactly one JSON line with a systemMessage and no decision field.
@@ -119,5 +119,39 @@ describe("process entry", () => {
   test("verdict off: no output at all, exit 0", () => {
     const { repo, stateDir } = setup();
     expect(run(stop(repo), stateDir)).toEqual({ code: 0, out: "", err: "" });
+  });
+});
+
+describe("review 6001087386: the verdict matches agentops check in the session's checkout", () => {
+  test("with AGENTOPS_DB set, the verdict ingests into and reads the configured store", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const out = await verdictAfterStop(recordUntilStop("clean-session", repo, stateDir), stateDir, { AGENTOPS_DB: "custom/agentops.db" });
+    expect(out).not.toBeNull();
+    expect(existsSync(join(repo, "custom", "agentops.db"))).toBe(true);
+    expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(false);
+  });
+
+  test("in a linked worktree, the worktree's own config decides and gates the verdict", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], { cwd: repo });
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    const worktree = join(repo, "..", "wt");
+    git("worktree", "add", "-q", worktree);
+
+    writeFileSync(join(worktree, "agentops.config.json"), JSON.stringify({ recorder: { verdict: false } }));
+    expect(await verdictAfterStop(recordUntilStop("clean-session", worktree, stateDir), stateDir, {})).toBeNull();
+
+    writeFileSync(join(worktree, "agentops.config.json"), JSON.stringify({ recorder: { verdict: true }, gates: { requiredVerificationCommands: ["make lint"] } }));
+    const out = await verdictAfterStop(recordUntilStop("clean-session", worktree, stateDir), stateDir, {});
+    expect(JSON.parse(out ?? "{}").systemMessage).toStartWith("agentops: needs review:");
+  });
+
+  test("the whole JSON line stays within 300 characters, escapes included", () => {
+    const message = `agentops: needs review: ${'requires "make lint" '.repeat(30)}`;
+    const line = verdictJson(message);
+    expect(line.length).toBeLessThanOrEqual(300);
+    expect(Object.keys(JSON.parse(line))).toEqual(["systemMessage"]);
+    expect(verdictJson("short")).toBe('{"systemMessage":"short"}');
   });
 });
