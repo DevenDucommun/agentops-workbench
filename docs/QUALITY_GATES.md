@@ -72,11 +72,16 @@ Evidence is asymmetric, so no rule can hide a failure:
 
 - **Against a claim:** any failed run whose command mentions the kind anywhere
   (`bun test`, `go test -run X`, `cd app && bun test`, `bun test > log`, a
-  search for the words) counts as a failing run, whatever its shape.
-- **For a claim:** only a passing shell execution (Claude Code `Bash`, Codex
-  `command_execution`, or a generic event with no tool name or a shell tool
-  name: `Bash`, `shell`, `exec_command`, `local_shell`) of one of the kind's
-  configured commands, word for word, counts. The built-in lists include
+  search for the words), or is one of the kind's configured commands
+  (`bun run ci` when configured for tests), counts as a failing run, whatever
+  its shape.
+- **For a claim:** only a passing shell execution of one of the kind's
+  configured commands, word for word, counts. A shell execution is a generic
+  `command` event, or a tool call named exactly `Bash`, `shell`,
+  `exec_command`, `local_shell` (or Codex's `functions.<name>` form), or with
+  no tool name. MCP tools whose name merely ends in a shell word, file writes
+  and other tools never count. Commands must be plain printable ASCII: a
+  non-breaking space or tab never matches. The built-in lists include
   `bun test`, `npm test`, `npm run test`, `pytest`, `make test`,
   `bun run lint`, `tsc --noEmit`, `bun run build` and their package-manager
   equivalents. Extra arguments (`bun test a.test.ts`, `pytest -q`),
@@ -85,12 +90,15 @@ Evidence is asymmetric, so no rule can hide a failure:
   (`sh -c '...'`, `npx tsc`) never support a claim. A repository that uses
   other forms lists them in `evidence.supportCommands` (see
   [CONFIGURATION.md](CONFIGURATION.md)); a kind listed there replaces its
-  built-in list.
+  built-in list. Configured entries must be simple commands with no shell
+  syntax, environment assignment, or help, version or dry-run flag;
+  `agentops check --config` reports any that are not, and they never match.
 
 A run counts only once its result is recorded before the final response: a
 still-running command, a Claude Code tool call without a `tool_result`, or a
 result recorded after the final response is not evidence. Runs are ordered by
-when their outcome was recorded. For Claude Code, a `tool_result` belongs to
+when their outcome was recorded: on their own row when they carry an exit code
+or failed status, otherwise at their linked result. For Claude Code, a `tool_result` belongs to
 the most recent call with that id before it, and a call's outcome is its first
 result, so reused ids never share outcomes.
 

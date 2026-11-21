@@ -148,9 +148,30 @@ export const DEFAULT_SUPPORT_COMMANDS: Record<EvidenceClaimId, string[]> = {
  * repository adds the exact forms it uses to `evidence.supportCommands`.
  */
 export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
+  const normalized = normalizeCommand(command);
+  if (normalized === null) return false;
   const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
-  const normalized = command.trim().replace(/ +/g, " ");
-  return configured.some((candidate) => candidate.trim().replace(/ +/g, " ") === normalized);
+  return configured.some((candidate) => isSafeSupportCommand(candidate) && normalizeCommand(candidate) === normalized);
+}
+
+/** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */
+function normalizeCommand(command: string): string | null {
+  if (!PLAIN_ASCII.test(command)) return null;
+  return command.replace(/ +/g, " ").replace(/^ | $/g, "");
+}
+
+/**
+ * Whether a configured support command can actually run the check: a simple
+ * command with no shell syntax, no leading environment assignment (`MAKEFLAGS=n`
+ * makes make a dry run) and no help, version or dry-run flag. Unsafe entries
+ * never match and `agentops check --config` reports them.
+ */
+export function isSafeSupportCommand(candidate: string): boolean {
+  const normalized = normalizeCommand(candidate);
+  if (!normalized || SHELL_SYNTAX.test(normalized)) return false;
+  const words = normalized.split(" ");
+  if (ASSIGNMENT.test(words[0] ?? "")) return false;
+  return !words.some((word) => NON_EXECUTING_FLAGS.has(word) || (MAYBE_NON_EXECUTING.test(word) && /[hVn]/.test(word)));
 }
 
 /**
@@ -165,10 +186,21 @@ export function mentionsRuleCommand(rule: Pick<EvidenceClaimRule, "commandPatter
 /** Tools that execute shell commands: Claude `Bash`, Codex `shell`, and generic exec tools. */
 const SHELL_TOOLS = new Set(["Bash", "shell", "exec_command", "local_shell"]);
 
-/** Whether a stored tool name is a shell execution (`functions.exec_command` counts by its last segment). */
+/**
+ * Whether a stored tool name is a shell execution. Names match exactly, plus
+ * Codex's `functions.<tool>` form; an MCP tool or any other name that merely
+ * ends in a shell word (`docs.shell`, `mcp__x__shell`) is not one.
+ */
 export function isShellTool(toolName: string | null | undefined): boolean {
   if (!toolName) return true;
-  return SHELL_TOOLS.has(toolName.slice(toolName.lastIndexOf(".") + 1));
+  return SHELL_TOOLS.has(toolName.startsWith("functions.") ? toolName.slice("functions.".length) : toolName);
+}
+
+/** Whether a command row came from a shell execution: a `command` event, or a `tool_call` of a shell tool. */
+function isShellExecution(eventType: string | undefined, toolName: string | undefined): boolean {
+  if (eventType === undefined) return isShellTool(toolName);
+  if (eventType === "command") return true;
+  return eventType === "tool_call" && isShellTool(toolName);
 }
 
 const NOT_EXECUTED_STATUSES = new Set(["inferred", "denied", "declined"]);
@@ -219,6 +251,8 @@ export type LedgerInput = {
    * a claim; when absent, every command is treated as a shell execution.
    */
   toolNames?: Map<number, string>;
+  /** Command event row ID -> stored event type. Only `command` events and shell `tool_call`s can support a claim. */
+  eventTypes?: Map<number, string>;
   /**
    * Whether a linked result's outcome was written onto the call at ingest
    * (Claude Code stream sessions). Elsewhere a command's own status without an
@@ -251,29 +285,41 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     if (command.eventId === null) return SUCCESS_STATUSES.has(status);
     return Boolean(input.linkedStatusIsOutcome) && input.resultRowIds?.has(command.eventId) === true && SUCCESS_STATUSES.has(status);
   };
+  // A run with its own exit code or failed status recorded its outcome on its own
+  // row; only a run whose outcome is its linked result (Claude Code) is placed at
+  // that result. A later, separate result never hides or reorders an outcome
+  // that was already recorded.
+  const ownOutcomeOnRow = (command: CommandRecord) =>
+    typeof command.exitCode === "number" || FAILED_STATUSES.has((command.status ?? "").toLowerCase());
+  const outcomeRow = (command: CommandRecord): number | null => {
+    if (command.eventId === null) return null;
+    if (ownOutcomeOnRow(command)) return command.eventId;
+    return input.resultRowIds?.get(command.eventId) ?? command.eventId;
+  };
+  // Only runs whose outcome was recorded before the final response can back it:
+  // never-run and still-running commands, and runs whose result came later, are
+  // skipped. Commands without an event row keep their place in insertion order.
   const runs = input.commands.filter((command) => {
     const status = (command.status ?? "").toLowerCase();
     if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
-    if (command.eventId === null) return true;
-    const resultRowId = input.resultRowIds?.get(command.eventId);
-    return command.eventId < finalEvent.rowId && (resultRowId === undefined || resultRowId < finalEvent.rowId);
+    const at = outcomeRow(command);
+    return at === null || at < finalEvent.rowId;
   });
   // Runs are ordered by when their outcome was recorded, so with overlapping
   // calls the latest run is the one whose result arrived last. When two runs'
   // outcomes cannot be told apart, a failure sorts after a pass, so an
   // ambiguous order never hides a failure.
-  const recordedAt = (command: CommandRecord) =>
-    command.eventId === null ? null : (input.resultRowIds?.get(command.eventId) ?? command.eventId);
   const failedLast = (command: CommandRecord) => (commandOutcome(command) === "failed" ? 1 : 0);
   const ordered = runs
-    .map((command, index) => ({ command, index, at: recordedAt(command) }))
+    .map((command, index) => ({ command, index, at: outcomeRow(command) }))
     .sort((a, b) =>
       a.at === null || b.at === null
         ? a.index - b.index
         : a.at - b.at || failedLast(a.command) - failedLast(b.command) || a.index - b.index
     )
     .map((entry) => entry.command);
-  const fromShell = (command: CommandRecord) => command.eventId === null || isShellTool(input.toolNames?.get(command.eventId));
+  const fromShell = (command: CommandRecord) =>
+    command.eventId === null || isShellExecution(input.eventTypes?.get(command.eventId), input.toolNames?.get(command.eventId));
 
   // Claims are read from the full final response and the summary together.
   const text = [...new Set([finalEvent.text, finalEvent.summary ?? ""])].join(" ");
@@ -285,7 +331,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed"
-          ? mentionsRuleCommand(rule, command.command)
+          ? mentionsRuleCommand(rule, command.command) || isSupportCommand(rule, command.command, input.config)
           : fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
       .map((command): LedgerEvidence => ({
@@ -347,7 +393,13 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
     config,
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     resultRowIds,
-    toolNames: new Map(tools.map((row) => [row.eventId, row.toolName]))
+    toolNames: new Map(tools.map((row) => [row.eventId, row.toolName])),
+    eventTypes: new Map(
+      (store.db.query("SELECT id, type FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ id: number; type: string }>).map((row) => [
+        row.id,
+        row.type
+      ])
+    )
   });
 }
 

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { isSafeSupportCommand } from "./ledger";
 
 export type AgentOpsConfig = {
   schemaVersion: "agentops.config.v1";
@@ -195,7 +196,15 @@ function validateConfigShape(value: unknown): string[] {
         } else {
           for (const key of Object.keys(support)) {
             if (!["test", "lint", "typecheck", "build"].includes(key)) errors.push(`evidence.supportCommands.${key} is not a claim kind (test, lint, typecheck, build).`);
-            else requireStringArray(support, `evidence.supportCommands.${key}`, key, errors);
+            else {
+              requireStringArray(support, `evidence.supportCommands.${key}`, key, errors);
+              const entries = Array.isArray(support[key]) ? (support[key] as unknown[]) : [];
+              for (const entry of entries) {
+                if (typeof entry === "string" && entry.trim() && !isSafeSupportCommand(entry)) {
+                  errors.push(`evidence.supportCommands.${key} entry "${entry}" must be a simple command with no shell syntax, environment assignment, or help, version or dry-run flag.`);
+                }
+              }
+            }
           }
         }
       }

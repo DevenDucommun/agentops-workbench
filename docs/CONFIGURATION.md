@@ -190,8 +190,10 @@ suite:
 }
 ```
 
-Failed runs that mention a kind still contradict its claim whatever their
-form. See [QUALITY_GATES.md](QUALITY_GATES.md) for the ledger rules.
+Entries must be simple commands: no shell syntax (`;`, `&&`, `|`, `$(...)`,
+quotes), no leading environment assignment, and no help, version or dry-run
+flag (`make -n test` is rejected). A failed run of a configured command
+contradicts the claim, as does any failed run that mentions the kind. See [QUALITY_GATES.md](QUALITY_GATES.md) for the ledger rules.
 
 ## Suppression Matching
 
@@ -216,7 +218,7 @@ Example:
 
 ## Future Config Areas
 
-- adapter-specific settings
+- adapter specific settings
 - report templates
 - OpenTelemetry export settings
 - dashboard preferences

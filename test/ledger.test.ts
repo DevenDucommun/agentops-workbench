@@ -1,13 +1,13 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
-import { defaultConfig } from "../src/config";
+import { defaultConfig, validateConfigFile } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
 import { parseCodexExecJsonl } from "../src/codexExec";
-import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger, hasRecordedOutcome } from "../src/ledger";
+import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger, hasRecordedOutcome, isSafeSupportCommand } from "../src/ledger";
 import { parseJsonlTranscript } from "../src/parser";
 import { getCommands, getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
@@ -778,5 +778,68 @@ describe("trust model rules 1 and 3 on generic imports", () => {
       expect(claim.verdict).toBe("contradicted");
       expect(claim.cited?.command).toBe("bun test");
     }
+  });
+});
+
+describe("review 6001092236: configured failures, recorded outcomes, shell identity, safe commands", () => {
+  const v1 = (event: Record<string, unknown>) => ({ schemaVersion: "agentops.event.v1", ...event });
+  const ledgerFor = (events: unknown[], config = defaultConfig) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript("r.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    return claim;
+  };
+  const header = v1({ type: "session", id: "ledger-r7" });
+  const final = v1({ type: "final_response", role: "assistant", content: "Tests passed." });
+  const ciConfig = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+
+  test("a configured command that passes and then fails contradicts the claim", () => {
+    const claim = ledgerFor(
+      [header, v1({ type: "command", command: "bun run ci", exitCode: 0 }), v1({ type: "command", command: "bun run ci", exitCode: 1 }), final],
+      ciConfig
+    );
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.exitCode).toBe(1);
+  });
+
+  test("a later separate result never hides a failure whose exit code was already recorded", () => {
+    const claim = ledgerFor([
+      header,
+      v1({ type: "command", command: "bun test", exitCode: 0 }),
+      v1({ type: "tool_call", toolName: "Bash", toolUseId: "t9", command: "bun test", exitCode: 1, status: "failed" }),
+      final,
+      v1({ type: "tool_result", toolUseId: "t9", status: "failed", output: "late" })
+    ]);
+    expect(claim.verdict).toBe("contradicted");
+  });
+
+  test("an MCP lookup or a file write carrying exit 0 never replaces a failed test", () => {
+    for (const retry of [
+      v1({ type: "tool_call", toolName: "docs.shell", command: "bun test", exitCode: 0, status: "completed" }),
+      v1({ type: "tool_call", toolName: "mcp__docs__shell", command: "bun test", exitCode: 0, status: "completed" }),
+      v1({ type: "file_write", path: "notes.md", command: "bun test", exitCode: 0, status: "completed" })
+    ]) {
+      const claim = ledgerFor([header, v1({ type: "command", command: "bun test", exitCode: 1 }), retry, final]);
+      expect(claim.verdict).toBe("contradicted");
+    }
+  });
+
+  test("configured dry runs, assignments and short circuits never support, and the config check reports them", () => {
+    for (const unsafe of ["make -n test", "make test --dry-run", "MAKEFLAGS=n make test", "true || bun test", "bun test; true"]) {
+      expect(isSafeSupportCommand(unsafe)).toBe(false);
+      const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: [unsafe] } } };
+      expect(ledgerFor([header, v1({ type: "command", command: unsafe, exitCode: 0 }), final], config).verdict).toBe("unsupported");
+    }
+    const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
+    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["make -n test"] } } }));
+    expect(validateConfigFile(join(dir, "agentops.config.json")).errors.join(" ")).toContain("supportCommands.test");
+  });
+
+  test("a command with a non-breaking space never matches a configured command", () => {
+    const nbsp = String.fromCharCode(0xa0);
+    const claim = ledgerFor([header, v1({ type: "command", command: `bun test${nbsp}`, exitCode: 0 }), final]);
+    expect(claim.verdict).toBe("unsupported");
   });
 });
