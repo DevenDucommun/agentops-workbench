@@ -158,3 +158,13 @@ describe("review 6001087386: the verdict matches agentops check in the session's
     expect(verdictJson("short")).toBe('{"systemMessage":"short"}');
   });
 });
+
+test("a relative AGENTOPS_DB resolves against the session's working directory, as agentops check does there", async () => {
+  const { repo, stateDir } = setup({ recorder: { verdict: true } });
+  const sub = join(repo, "packages", "app");
+  mkdirSync(sub, { recursive: true });
+  const out = await verdictAfterStop(recordUntilStop("clean-session", sub, stateDir), stateDir, { AGENTOPS_DB: "local.db" });
+  expect(out).not.toBeNull();
+  expect(existsSync(join(sub, "local.db"))).toBe(true);
+  expect(existsSync(join(repo, "local.db"))).toBe(false);
+});

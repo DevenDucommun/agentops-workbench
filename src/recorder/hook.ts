@@ -11,7 +11,7 @@ import { appendHookPayload, writeRecorderError } from "./spool";
 // latency budget).
 
 export type HookOutcome =
-  | { recorded: true; seq: number; repository: string; checkout: string; spoolFile: string; hookEventName: string }
+  | { recorded: true; seq: number; repository: string; checkout: string; cwd: string; spoolFile: string; hookEventName: string }
   | { recorded: false; reason: "malformed-input" | "not-enrolled" | "append-failed"; detail?: string };
 
 export type HookOptions = { stateDir?: string; env?: NodeJS.ProcessEnv };
@@ -41,7 +41,7 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
     gitCommit: observedPush(payload, cwd)
   });
   if (result.ok) {
-    return { recorded: true, seq: result.seq, repository, checkout: roots.checkout, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
+    return { recorded: true, seq: result.seq, repository, checkout: roots.checkout, cwd, spoolFile: result.path, hookEventName: String(payload.hook_event_name ?? "") };
   }
   return { recorded: false, reason: "append-failed", detail: result.detail };
 }
@@ -171,12 +171,14 @@ export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: stri
 export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   // The verdict answers what `agentops check` in the session's checkout would say:
   // that checkout's config (a linked worktree has its own), and the store
-  // `agentops check` reads there: AGENTOPS_DB when set, otherwise the enrolled
-  // repository's shared store, which a linked worktree shares with the main checkout.
+  // `agentops check` reads there: AGENTOPS_DB when set (a relative path resolves
+  // against the session's working directory, as it does for a command run there),
+  // otherwise the enrolled repository's shared store, which a linked worktree
+  // shares with the main checkout.
   if (!outcome.recorded || outcome.hookEventName !== "Stop" || repoConfigFlag(outcome.checkout, "recorder", "verdict") !== true) return null;
   try {
     const { turnVerdict } = await import("./ingest");
-    const dbPath = env.AGENTOPS_DB ? resolve(outcome.checkout, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
+    const dbPath = env.AGENTOPS_DB ? resolve(outcome.cwd || outcome.checkout, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
     return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath }));
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
