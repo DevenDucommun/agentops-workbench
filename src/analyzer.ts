@@ -257,22 +257,19 @@ export function isVerificationCommand(command: string, config: AgentOpsConfig = 
 }
 
 /**
- * The texts whose claims a final response makes: the full response and, when the
- * producer supplied a separate summary that is not just a clip of that response, the
- * summary too, so every claim shown as the Final Outcome needs evidence. Older stores
+ * The texts whose claims a final response makes: the full response and, unless the
+ * two are identical, the stored summary too, so every claim shown as the Final Outcome
+ * needs evidence. A summary derived from the response is stored as the full response
+ * (see summarizeEvent), so only a producer's own summary adds claims. Older stores
  * have no `text`, so the summary alone is used.
  */
 export function finalClaimTexts(event: { text?: string | null; summary: string }): string[] {
   const text = event.text?.trim() ? event.text : null;
   if (!text) return [event.summary];
-  // Skip the summary only when it repeats the body, or is the body's opening clipped
-  // for display (ending in "..."). Any other summary is checked too, even when its
-  // words begin the body ("Build complete" vs "Build completeness is unknown").
-  const body = normalizeClaimText(text);
-  const summary = normalizeClaimText(event.summary);
-  const clipped = summary.endsWith("...") ? summary.slice(0, -3) : null;
-  const repeatsBody = summary === body || (clipped !== null && clipped.length > 0 && body.startsWith(clipped));
-  return summary && !repeatsBody ? [text, event.summary] : [text];
+  // Both are checked. A producer's summary is shown as the Final Outcome, so every claim
+  // in it needs evidence; skipping a summary that "looks like" the body's opening let
+  // unsupported claims through, and checking it at worst flags a claim twice.
+  return normalizeClaimText(event.summary) === normalizeClaimText(text) ? [text] : [text, event.summary];
 }
 
 /** Whitespace-normalized for matching only, so a Markdown soft wrap inside a claim still matches. */

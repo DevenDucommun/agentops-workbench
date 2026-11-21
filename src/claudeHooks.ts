@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { AgentOpsConfig } from "./config";
+import { fallbackSessionId } from "./parser";
 import { redactValue } from "./redaction";
 import { findRepositoryRoots } from "./recorder/enrollment";
 import { buildSpoolRecord, RECORDER_ERROR_TYPE, SPOOL_RECORD_TYPE } from "./recorder/spool";
@@ -87,7 +88,12 @@ export function parseClaudeHooksJsonl(sourcePath: string, content: string, confi
   }) as Spooled);
   if (records.length === 0) throw new Error("Unsupported claude-hooks shape: expected forensic recorder spool records or Claude Code hook payloads.");
 
-  const sessionId = records.map((r) => r.payload?.session_id).find((v): v is string => typeof v === "string") ?? basename(sourcePath).replace(/\.[^.]+$/, "");
+  // A record capped for size can lose payload.session_id. Without any id, the
+  // fallback hashes the content as the other adapters do, so two captures that
+  // share a file name stay separate sessions and replaying one stays idempotent.
+  const sessionId =
+    records.map((r) => r.payload?.session_id).find((v): v is string => typeof v === "string") ??
+    fallbackSessionId(sourcePath, content, "claude-hooks-session");
   // Agent tool results name the subagent they ran; events inside it point back at that call.
   const parentByAgent = new Map<string, string>();
   for (const r of records) {

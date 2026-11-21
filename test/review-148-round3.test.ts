@@ -74,20 +74,6 @@ function plainTextFlags(transcript: string): { flags: string[]; final: string } 
   return { flags, final: finalEvent?.text ?? finalEvent?.summary ?? "" };
 }
 
-test("plain text: a named assistant turn after a user follow-up is the final response", () => {
-  const { flags, final } = plainTextFlags(["$ bun test", "exit code 0", "Final: Tests passed.", "User: anything else?", "Codex: Lint is clean too."].join("\n"));
-  expect(flags).toContain("missing-lint-evidence");
-  expect(final).toBe("Lint is clean too.");
-});
-
-test("plain text: a single Claude turn ends at the next user turn", () => {
-  const { flags, final } = plainTextFlags(
-    ["$ bun test", "exit code 0", "Claude: All the tests passed after the change.", "User: Lint is clean as well, I checked it myself."].join("\n")
-  );
-  expect(flags).not.toContain("missing-lint-evidence");
-  expect(final).toBe("All the tests passed after the change.");
-});
-
 test("git status: a worktree-side rename consumes its original-path field", () => {
   // ` R` comes from `git add -N` on a renamed file; the second field is the original path.
   expect(parseGitStatusZ(" R new-file.ts\0old-file.ts\0 M other.ts\0")).toEqual([

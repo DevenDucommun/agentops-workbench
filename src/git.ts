@@ -20,6 +20,8 @@ export class NotAGitRepositoryError extends Error {}
  */
 export function getGitChanges(cwd = process.cwd(), options: { base?: string } = {}): GitChange[] {
   if (!isInsideWorkTree(cwd)) throw new NotAGitRepositoryError(`Not inside a git work tree: ${cwd}`);
+  // NUL-delimited output keeps every path literal: no quoting, and no ambiguity with
+  // names that contain " -> ", " => ", tabs, newlines or control characters.
   const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
   if (!options.base) {
     // Before the first commit there is no HEAD: compare the work tree with the empty
@@ -56,7 +58,8 @@ function isInsideWorkTree(cwd: string): boolean {
   } catch (error) {
     const { code, stderr } = error as { code?: string; stderr?: string | Buffer };
     if (code === "ENOENT") return false;
-    if (/not a git repository/i.test(String(stderr ?? ""))) return false;
+    // Only Git's own diagnostic line counts, not the phrase inside another message.
+    if (/^fatal: not a git repository\b/m.test(String(stderr ?? ""))) return false;
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Unable to read git state: ${message}`);
   }
@@ -206,12 +209,65 @@ const GIT_MAX_BUFFER = 1024 * 1024 * 1024;
 
 function gitRaw(args: string[], cwd: string): string {
   // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
-  return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+  const output = execFileSync("git", ["-c", "core.quotePath=false", ...args], {
     cwd,
-    encoding: "utf8",
+    // English diagnostics, so "not a git repository" is recognized in any locale.
+    env: { ...process.env, LC_ALL: "C" },
     maxBuffer: GIT_MAX_BUFFER,
     stdio: ["ignore", "pipe", "pipe"]
   });
+  return decodeGitOutput(output);
+}
+
+/**
+ * A Git path for display. Bytes that were not valid UTF-8 (lone surrogates from
+ * decodeGitOutput) are shown as \xNN and a literal backslash as \\, so every distinct
+ * path prints distinctly. Valid characters, including astral ones such as emoji, are
+ * left alone: the `u` flag matches only lone surrogates, never half of a valid pair.
+ */
+export function displayGitPath(path: string): string {
+  return path.replace(/\\|[\uDC80-\uDCFF]/gu, (match) => (match === "\\" ? "\\\\" : `\\x${(match.charCodeAt(0) - 0xdc00).toString(16)}`));
+}
+
+/** True when the path holds bytes that were not valid UTF-8 (lone surrogates from decodeGitOutput). */
+export function hasInvalidPathBytes(path: string): boolean {
+  return /[\uDC80-\uDCFF]/u.test(path);
+}
+
+/** The original bytes of a decoded Git path, as lowercase hex. */
+export function gitPathBytesHex(path: string): string {
+  const bytes: number[] = [];
+  for (const char of path) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 0xdc80 && code <= 0xdcff && char.length === 1) bytes.push(code - 0xdc00);
+    else bytes.push(...Buffer.from(char, "utf8"));
+  }
+  return Buffer.from(bytes).toString("hex");
+}
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * Decodes Git output field by field (NUL-delimited), keeping a leading U+FEFF. A field
+ * that is not valid UTF-8 (a path stored with Latin-1 bytes, say) maps each byte at or
+ * above 0x80 to a lone surrogate (U+DC80-U+DCFF), as Python's "surrogateescape" does.
+ * Valid UTF-8 never decodes to a lone surrogate, so two different byte paths can never
+ * collapse into one name.
+ */
+export function decodeGitOutput(output: Buffer): string {
+  const fields: string[] = [];
+  let start = 0;
+  for (let i = 0; i <= output.length; i++) {
+    if (i < output.length && output[i] !== 0) continue;
+    const field = output.subarray(start, i);
+    try {
+      fields.push(strictUtf8.decode(field));
+    } catch {
+      fields.push([...field].map((byte) => String.fromCharCode(byte < 0x80 ? byte : 0xdc00 + byte)).join(""));
+    }
+    start = i + 1;
+  }
+  return fields.join("\0");
 }
 
 function parseNumstatCount(value: string | undefined): number | null {

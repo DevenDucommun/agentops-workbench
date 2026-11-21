@@ -122,7 +122,6 @@ export function migrate(db: Database): void {
   addColumnIfMissing(db, "sessions", "cost_amount", "REAL");
   addColumnIfMissing(db, "sessions", "cost_currency", "TEXT");
   addColumnIfMissing(db, "events", "raw_payload_hash", "TEXT");
-  addColumnIfMissing(db, "events", "text", "TEXT");
 
   // Forensic recorder (spec R1.5, R1.8, R4.3): chain and provenance fields,
   // the session chain head, and commit links. All nullable, so legacy rows and
@@ -163,6 +162,9 @@ export function ingestTranscript(
   config: AgentOpsConfig = defaultConfig
 ): { sessionId: string; eventCount: number } {
   const { db } = store;
+  // events.text is added when a store is first written, never when it is opened, so a
+  // read of a store from an earlier version never writes (read-only or locked stores).
+  addColumnIfMissing(db, "events", "text", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -378,9 +380,11 @@ export function getUsageSummary(store: Store, sessionId: string): UsageSummary {
 }
 
 export function getEvents(store: Store, sessionId: string): StoredEvent[] {
+  // A read-only store written by an earlier version has no text column; read it as NULL.
+  const text = hasColumn(store.db, "events", "text") ? "text" : "NULL AS text";
   return store.db
     .query(
-      "SELECT id, idx, type, role, summary, text, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx"
+      `SELECT id, idx, type, role, summary, ${text}, raw_json as rawJson, raw_payload_hash as rawPayloadHash FROM events WHERE session_id = $sessionId ORDER BY idx`
     )
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
@@ -551,11 +555,13 @@ export function findSessionsForCommit(store: Store, sha: string): SessionCommit[
     .all({ $sha: needle, $prefix: `${needle}%` }) as SessionCommit[];
 }
 
-function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+function hasColumn(db: Database, table: string, column: string): boolean {
   const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  if (!columns.some((row) => row.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
+  return columns.some((row) => row.name === column);
+}
+
+function addColumnIfMissing(db: Database, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function deriveUsageSummary(sessionUsage: UsageInput | undefined, events: RawEvent[]): UsageSummary {

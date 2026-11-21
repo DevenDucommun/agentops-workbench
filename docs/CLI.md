@@ -216,7 +216,13 @@ agentops audit path/to/transcript.txt --out audit.md
 
 An artifact without an embedded session id gets the id `<file stem>-<32 hex digits
 of its content hash>`, so two different files with the same name stay separate and
-re-importing the same file replaces its earlier import. Upgrade note: re-importing
+re-importing the same file replaces its earlier import. Session ids are redacted like
+any other stored text, so when that id would look like a credential (`task-<hex>`
+contains `sk-<hex>`), the separator becomes `_` or `~` instead (`task_<hex>`); when
+the file stem itself would be redacted (an email address in the name), the id is
+the adapter's default stem plus a hash over the file name and the content (for
+example `forensic-session-<hex>` for a plain-text import). `agentops sessions`
+lists the ids actually stored. Upgrade note: re-importing
 such an artifact after upgrading from a version that used the basename-only id
 creates a new 32-hex id and leaves the old basename-only session in the store
 until you remove it.
