@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { defaultStateDir, enrolledRoots } from "./enrollment";
 import { appendHookPayload, writeRecorderError } from "./spool";
@@ -169,20 +169,36 @@ export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: stri
  * blocks the stop. Off by default; any failure returns null (no output).
  */
 export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  // The verdict answers what `agentops check` in the session's checkout would say:
-  // that checkout's config (a linked worktree has its own), and the store
-  // `agentops check` reads there: AGENTOPS_DB when set (a relative path resolves
-  // against the session's working directory, as it does for a command run there),
-  // otherwise the enrolled repository's shared store, which a linked worktree
-  // shares with the main checkout.
-  if (!outcome.recorded || outcome.hookEventName !== "Stop" || repoConfigFlag(outcome.checkout, "recorder", "verdict") !== true) return null;
+  if (!outcome.recorded || outcome.hookEventName !== "Stop") return null;
+  // The verdict is what `agentops check` would report if run in the session's
+  // working directory (its real path, as a process there sees it):
+  // - config: that directory's agentops.config.json, exactly as check reads it
+  //   (defaults when it has none);
+  // - store: AGENTOPS_DB resolved against that directory when set, otherwise the
+  //   enrolled repository's shared store, which a linked worktree shares;
+  // - enabled: by `recorder.verdict` in that directory's config, or, when it has
+  //   no config file, in the checkout root's.
+  const cwd = realDirectory(outcome.cwd) ?? outcome.checkout;
+  const configPath = join(cwd, "agentops.config.json");
+  const enabled = existsSync(configPath) ? repoConfigFlag(cwd, "recorder", "verdict") : repoConfigFlag(outcome.checkout, "recorder", "verdict");
+  if (enabled !== true) return null;
   try {
     const { turnVerdict } = await import("./ingest");
-    const dbPath = env.AGENTOPS_DB ? resolve(outcome.cwd || outcome.checkout, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
-    return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath }));
+    const dbPath = env.AGENTOPS_DB ? resolve(cwd, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
+    return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath, configPath }));
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
     writeRecorderError(join(stateDir, "spool"), sid, "verdict-failed", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+/** The real path of a directory, or null when it does not exist. */
+function realDirectory(path: string): string | null {
+  if (!path) return null;
+  try {
+    return realpathSync(path);
+  } catch {
     return null;
   }
 }

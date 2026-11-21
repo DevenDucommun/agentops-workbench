@@ -168,3 +168,27 @@ test("a relative AGENTOPS_DB resolves against the session's working directory, a
   expect(existsSync(join(sub, "local.db"))).toBe(true);
   expect(existsSync(join(repo, "local.db"))).toBe(false);
 });
+
+describe("review 6001288692: the verdict equals agentops check run in the session's directory", () => {
+  test("a package directory's own config gates the verdict, as check reads it there", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const pkg = join(repo, "packages", "app");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "agentops.config.json"), JSON.stringify({ recorder: { verdict: true }, gates: { requiredVerificationCommands: ["make lint"] } }));
+    const out = await verdictAfterStop(recordUntilStop("clean-session", pkg, stateDir), stateDir, {});
+    expect(JSON.parse(out ?? "{}").systemMessage).toStartWith("agentops: needs review:");
+  });
+
+  test("a relative AGENTOPS_DB resolves against the real directory behind a symlinked working directory", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const real = join(repo, "pkgs", "real");
+    mkdirSync(real, { recursive: true });
+    const link = join(repo, "linked");
+    Bun.spawnSync(["ln", "-s", join("pkgs", "real"), link]);
+    const out = await verdictAfterStop(recordUntilStop("clean-session", link, stateDir), stateDir, { AGENTOPS_DB: "../data/session.db" });
+    expect(out).not.toBeNull();
+    // A process in the linked directory resolves ../ from its real path, pkgs/real.
+    expect(existsSync(join(repo, "pkgs", "data", "session.db"))).toBe(true);
+    expect(existsSync(join(repo, "data", "session.db"))).toBe(false);
+  });
+});

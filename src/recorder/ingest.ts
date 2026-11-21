@@ -18,6 +18,8 @@ export type SpoolIngestOptions = {
   /** Store path; defaults to `<repoRoot>/.agentops/agentops.db`, which `look` reads from the repo root. */
   dbPath?: string;
   config?: AgentOpsConfig;
+  /** Config file for the turn verdict; defaults to `<repoRoot>/agentops.config.json`. */
+  configPath?: string;
 };
 
 export type SpoolIngestResult = { sessionId: string; eventCount: number; commits: SessionCommit[] };
@@ -80,7 +82,7 @@ export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): str
   // pass that `agentops check` rejects. Say the config is invalid instead.
   let config = options.config;
   if (!config) {
-    const validation = validateConfigFile(join(options.repoRoot, "agentops.config.json"));
+    const validation = validateConfigFile(options.configPath ?? join(options.repoRoot, "agentops.config.json"));
     if (validation.errors.length) {
       const line = `agentops: needs review: invalid agentops.config.json: ${validation.errors.join("; ")} (run agentops check)`;
       return line.replace(/\s+/g, " ").slice(0, 300);
