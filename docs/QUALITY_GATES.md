@@ -91,7 +91,8 @@ Evidence is asymmetric, so no rule can hide a failure:
   other forms lists them in `evidence.supportCommands` (see
   [CONFIGURATION.md](CONFIGURATION.md)); a kind listed there replaces its
   built-in list. Configured entries must be simple commands with no shell
-  syntax, environment assignment, or help, version or dry-run flag;
+  syntax or negation, environment assignment, or help, version or dry-run flag
+  (including `make -n`, `-q`, `-t`, `-p`);
   `agentops check --config` reports any that are not, and they never match.
 
 A run counts only once its result is recorded before the final response: a

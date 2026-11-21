@@ -191,8 +191,11 @@ suite:
 ```
 
 Entries must be simple commands: no shell syntax (`;`, `&&`, `|`, `$(...)`,
-quotes), no leading environment assignment, and no help, version or dry-run
-flag (`make -n test` is rejected). A failed run of a configured command
+quotes) or `!` negation, no leading environment assignment, no help, version or
+dry-run flag (`-h`, `--help`, `-V`, `--version`, `--dry-run`, `--list`,
+`--collect-only`), and for `make` none of `-n`, `-q`, `-t` or `-p` (alone or in
+a cluster) or their long forms. Other flags are fine: `go test -count=1 ./...`
+is a valid entry. A failed run of a configured command
 contradicts the claim, as does any failed run that mentions the kind. See [QUALITY_GATES.md](QUALITY_GATES.md) for the ledger rules.
 
 ## Suppression Matching

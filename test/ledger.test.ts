@@ -843,3 +843,31 @@ describe("review 6001092236: configured failures, recorded outcomes, shell ident
     expect(claim.verdict).toBe("unsupported");
   });
 });
+
+describe("review 6001207975: Claude outcomes at their result, precise non-executing checks", () => {
+  test("a Claude failure whose result arrives after another call's pass is the cited run", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const both = { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Bash", input: { command: "bun test" } }, { type: "tool_use", id: "b", name: "Bash", input: { command: "bun test" } }] } };
+    const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: "out" }] } });
+    const stream = [{ type: "system", subtype: "init", session_id: "r9" }, both, result("b", false), result("a", true), { type: "result", subtype: "success", session_id: "r9", result: "Tests passed." }]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.outcome).toBe("failed");
+  });
+
+  test("make print-only flags and shell negation are unsafe; ordinary flags such as go test -count=1 are fine", () => {
+    for (const unsafe of ["make -q test", "make -t test", "make -p test", "make --question test", "make -kq test", "! bun test", "bun test --help"]) {
+      expect(isSafeSupportCommand(unsafe)).toBe(false);
+    }
+    for (const safe of ["go test -count=1 ./...", "make -j4 test", "make -k test", "pytest -x", "npm run test"]) {
+      expect(isSafeSupportCommand(safe)).toBe(true);
+    }
+    const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
+    writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["go test -count=1 ./..."] } } }));
+    expect(validateConfigFile(join(dir, "agentops.config.json")).errors).toEqual([]);
+  });
+});

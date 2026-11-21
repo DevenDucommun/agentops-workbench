@@ -170,9 +170,21 @@ export function isSafeSupportCommand(candidate: string): boolean {
   const normalized = normalizeCommand(candidate);
   if (!normalized || SHELL_SYNTAX.test(normalized)) return false;
   const words = normalized.split(" ");
-  if (ASSIGNMENT.test(words[0] ?? "")) return false;
-  return !words.some((word) => NON_EXECUTING_FLAGS.has(word) || (MAYBE_NON_EXECUTING.test(word) && /[hVn]/.test(word)));
+  if (ASSIGNMENT.test(words[0] ?? "") || words.includes("!")) return false;
+  if (words.some((word) => SUPPORT_NON_EXECUTING.has(word))) return false;
+  const program = (words[0] ?? "").slice((words[0] ?? "").lastIndexOf("/") + 1);
+  if (program === "make" || program === "gmake") {
+    // make prints, questions or touches instead of running recipes with -n, -q, -t or -p,
+    // alone or in a cluster such as -kn, or their long forms.
+    return !words.slice(1).some((word) => MAKE_NON_EXECUTING.has(word) || /^-[A-Za-z]*[nqtp][A-Za-z]*$/.test(word));
+  }
+  return true;
 }
+
+/** Flags that print help, a version or a plan instead of running the check, for any program. */
+const SUPPORT_NON_EXECUTING = new Set(["-h", "--help", "-V", "--version", "--dry-run", "--list", "--collect-only"]);
+/** make's long forms of -n, -q, -t and -p. */
+const MAKE_NON_EXECUTING = new Set(["--just-print", "--recon", "--question", "--touch", "--print-data-base"]);
 
 /**
  * Whether `command` mentions this rule's kind anywhere. A failed run that
@@ -289,8 +301,12 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   // row; only a run whose outcome is its linked result (Claude Code) is placed at
   // that result. A later, separate result never hides or reorders an outcome
   // that was already recorded.
+  // In a Claude Code stream session the status was written from the linked
+  // tool_result, so its outcome (pass or fail) is placed at that result.
+  const outcomeFromLinkedResult = (command: CommandRecord) =>
+    Boolean(input.linkedStatusIsOutcome) && command.eventId !== null && input.resultRowIds?.has(command.eventId) === true;
   const ownOutcomeOnRow = (command: CommandRecord) =>
-    typeof command.exitCode === "number" || FAILED_STATUSES.has((command.status ?? "").toLowerCase());
+    typeof command.exitCode === "number" || (FAILED_STATUSES.has((command.status ?? "").toLowerCase()) && !outcomeFromLinkedResult(command));
   const outcomeRow = (command: CommandRecord): number | null => {
     if (command.eventId === null) return null;
     if (ownOutcomeOnRow(command)) return command.eventId;
