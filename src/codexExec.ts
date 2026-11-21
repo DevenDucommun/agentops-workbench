@@ -1,6 +1,7 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
+import { fallbackSessionId } from "./parser";
 import { redactValue } from "./redaction";
 import type { ParsedTranscript, RawEvent, SessionRecord, UsageInput } from "./types";
 
@@ -64,7 +65,7 @@ export function parseCodexExecJsonl(sourcePath: string, input: string, config: A
   validateCodexRecords(records);
 
   const threadId = records.find((record) => record.type === "thread.started" && typeof record.thread_id === "string")?.thread_id;
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "codex-exec-session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "codex-exec-session");
 
   const events = records.flatMap((record) => normalizeRecord(record));
   markLastAssistantMessageAsFinal(events);

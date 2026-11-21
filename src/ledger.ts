@@ -307,7 +307,9 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
   const final = store.db
     // Claims are read from both the full final response (events.text, when the
     // store saved one) and the summary, which may be a producer's explicit one.
-    .query("SELECT id, event_uid AS eventUid, text, summary FROM events WHERE session_id = $sid AND type = 'final_response' ORDER BY idx DESC LIMIT 1")
+    .query(
+      `SELECT id, event_uid AS eventUid, ${hasEventText(store) ? "text" : "NULL AS text"}, summary FROM events WHERE session_id = $sid AND type = 'final_response' ORDER BY idx DESC LIMIT 1`
+    )
     .get({ $sid: sessionId }) as { id: number; eventUid: string | null; text: string | null; summary: string | null } | null;
   const uids = store.db.query("SELECT id, event_uid AS eventUid FROM events WHERE session_id = $sid AND event_uid IS NOT NULL").all({ $sid: sessionId }) as Array<{
     id: number;
@@ -366,4 +368,9 @@ function reasonFor(label: string, cited: LedgerEvidence | null, runs: number): s
   return cited.outcome === "passed"
     ? `Latest ${label} run passed: ${cited.command}${exit}${earlier}.`
     : `Latest ${label} run failed and was not re-run successfully: ${cited.command}${exit}${earlier}.`;
+}
+
+/** Stores from earlier versions gain events.text on their first write; until then a read treats it as absent. */
+function hasEventText(store: Store): boolean {
+  return (store.db.query("PRAGMA table_info(events)").all() as Array<{ name: string }>).some((column) => column.name === "text");
 }

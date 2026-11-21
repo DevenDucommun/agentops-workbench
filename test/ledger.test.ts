@@ -538,11 +538,15 @@ describe("the ledger reads the full final response when the store has it", () =>
     return claims;
   };
 
-  test("the store has a nullable events.text column", () => {
+  test("the ledger reads a store without events.text, and the first write adds the column", () => {
     const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
-    const columns = (store.db.query("PRAGMA table_info(events)").all() as Array<{ name: string }>).map((c) => c.name);
+    const columns = () => (store.db.query("PRAGMA table_info(events)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(columns()).not.toContain("text");
+    expect(getClaimsLedger(store, "missing").claims).toEqual([]);
+    const transcript = parseJsonlTranscript("t.jsonl", JSON.stringify({ schemaVersion: "agentops.event.v1", type: "session", id: "with-text" }));
+    ingestTranscript(store, transcript, defaultConfig);
+    expect(columns()).toContain("text");
     store.db.close();
-    expect(columns).toContain("text");
   });
 
   test("a claim beyond the 120-character summary is found in the full text", () => {

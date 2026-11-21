@@ -194,7 +194,7 @@ test("detects and parses forensic plain-text terminal transcripts", () => {
   expect(adapter.id).toBe("forensic-text");
   expect(detection?.reason).toContain("2 observed commands");
   expect(detection?.reason).toContain("file mention");
-  expect(transcript.session.id).toBe("forensic-terminal-transcript");
+  expect(transcript.session.id).toBe("forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164");
   expect(transcript.session.source).toBe("forensic-text");
   expect(transcript.session.sourceAdapter).toBe("forensic-text");
   expect(transcript.events.some((event) => event.type === "tool_call" && event.command === 'rg -n "health|routes" src test')).toBe(true);

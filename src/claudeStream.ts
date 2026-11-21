@@ -1,6 +1,7 @@
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
+import { fallbackSessionId } from "./parser";
 import { redactValue } from "./redaction";
 import type { ParsedTranscript, RawEvent, SessionRecord, UsageInput } from "./types";
 
@@ -64,7 +65,7 @@ export function parseClaudeCodeStreamJsonl(sourcePath: string, input: string, co
   validateClaudeRecords(records);
 
   const sessionId = records.find((record) => typeof record.session_id === "string")?.session_id;
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "claude-code-stream-session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "claude-code-stream-session");
   const model = sessionModel(records);
 
   // permission_denials (on the final result) name the tool_use ids that never ran.
