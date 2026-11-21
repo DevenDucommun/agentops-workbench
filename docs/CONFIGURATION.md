@@ -173,6 +173,26 @@ Recommendation: default for MVP.
 - explicit suppressions only
 - no network calls
 
+## Claim Support Commands
+
+`evidence.supportCommands` lists, per claim kind (`test`, `lint`, `typecheck`,
+`build`), the exact commands that can support a final-response claim in the
+claims ledger. A passing run supports a claim only when its command equals one
+of these, word for word. A kind listed here replaces its built-in list; kinds
+left out keep theirs. For example, a repository whose CI script runs the test
+suite:
+
+```json
+{
+  "evidence": {
+    "supportCommands": { "test": ["bun test", "bun run ci"] }
+  }
+}
+```
+
+Failed runs that mention a kind still contradict its claim whatever their
+form. See [QUALITY_GATES.md](QUALITY_GATES.md) for the ledger rules.
+
 ## Suppression Matching
 
 Suppressions are intentionally narrow. A suppression can match by:

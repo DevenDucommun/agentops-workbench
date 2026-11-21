@@ -1,6 +1,7 @@
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
 import { getCommands } from "./store";
+import { type AgentOpsConfig, defaultConfig } from "./config";
 
 // Claims ledger (forensic recorder spec R2.1, R2.2). Every verification claim
 // in the final response gets a verdict backed by the commands that ran before
@@ -132,6 +133,26 @@ export function runsRuleCommand(rule: Pick<EvidenceClaimRule, "commandPattern">,
   return anchored.test(words.join(" "));
 }
 
+/** Built-in commands that can support each claim kind, matched word for word (rule 3). */
+export const DEFAULT_SUPPORT_COMMANDS: Record<EvidenceClaimId, string[]> = {
+  test: ["bun test", "bun run test", "npm test", "npm run test", "pnpm test", "pnpm run test", "yarn test", "yarn run test", "pytest", "cargo test", "go test ./...", "make test", "gmake test", "mvn test", "gradle test"],
+  lint: ["bun run lint", "npm run lint", "pnpm run lint", "pnpm lint", "yarn lint", "yarn run lint", "eslint .", "make lint", "gmake lint"],
+  typecheck: ["tsc --noEmit", "bun run typecheck", "npm run typecheck", "pnpm run typecheck", "pnpm typecheck", "yarn typecheck", "yarn run typecheck", "make typecheck", "gmake typecheck"],
+  build: ["bun run build", "npm run build", "pnpm run build", "pnpm build", "yarn build", "yarn run build", "cargo build", "go build ./...", "make build", "gmake build", "mvn package", "gradle build"]
+};
+
+/**
+ * Whether `command` is one of the kind's configured commands, word for word
+ * (evidence trust model, rule 3). Extra arguments, environment assignments,
+ * wrappers and shell syntax all make the run unable to support the claim; a
+ * repository adds the exact forms it uses to `evidence.supportCommands`.
+ */
+export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
+  const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
+  const normalized = command.trim().replace(/ +/g, " ");
+  return configured.some((candidate) => candidate.trim().replace(/ +/g, " ") === normalized);
+}
+
 /**
  * Whether `command` mentions this rule's kind anywhere. A failed run that
  * mentions the kind contradicts a claim whatever its shape (quoted, wrapped,
@@ -198,6 +219,14 @@ export type LedgerInput = {
    * a claim; when absent, every command is treated as a shell execution.
    */
   toolNames?: Map<number, string>;
+  /**
+   * Whether a linked result's outcome was written onto the call at ingest
+   * (Claude Code stream sessions). Elsewhere a command's own status without an
+   * exit code is not an outcome.
+   */
+  linkedStatusIsOutcome?: boolean;
+  /** Supplies `evidence.supportCommands`; defaults apply when absent. */
+  config?: AgentOpsConfig;
 };
 
 /** Pure ledger construction over already-loaded session data. */
@@ -209,9 +238,22 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   // Only runs that finished before the final response can back it: never-run
   // and still-running commands, and runs whose result came later, are skipped.
   // Commands without an event row keep their place in insertion order.
+  // A run counts only with its own recorded outcome (evidence trust model,
+  // rule 1): an exit code, an explicit failed status, or, in a Claude Code
+  // stream session, the result linked to the call by tool_use_id. A status such
+  // as "completed" with none of these is not evidence, so a tool call that only
+  // mentions a command (an MCP lookup, a file write) or a call from a store
+  // that never recorded its result is never cited. A failure always counts.
+  const hasOwnOutcome = (command: CommandRecord) => {
+    if (typeof command.exitCode === "number") return true;
+    const status = (command.status ?? "").toLowerCase();
+    if (FAILED_STATUSES.has(status)) return true;
+    if (command.eventId === null) return SUCCESS_STATUSES.has(status);
+    return Boolean(input.linkedStatusIsOutcome) && input.resultRowIds?.has(command.eventId) === true && SUCCESS_STATUSES.has(status);
+  };
   const runs = input.commands.filter((command) => {
     const status = (command.status ?? "").toLowerCase();
-    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasRecordedOutcome(command)) return false;
+    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
     if (command.eventId === null) return true;
     const resultRowId = input.resultRowIds?.get(command.eventId);
     return command.eventId < finalEvent.rowId && (resultRowId === undefined || resultRowId < finalEvent.rowId);
@@ -238,10 +280,13 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   for (const rule of evidenceClaimRules) {
     if (!claimsRule(rule, text)) continue;
     // Evidence is asymmetric: any failed run that mentions the kind counts
-    // against the claim; only a passing shell run of the strict shape counts for it.
+    // against the claim; only a passing shell run of a configured command,
+    // word for word (rule 3), counts for it.
     const evidence = ordered
       .filter((command) =>
-        commandOutcome(command) === "failed" ? mentionsRuleCommand(rule, command.command) : fromShell(command) && runsRuleCommand(rule, command.command)
+        commandOutcome(command) === "failed"
+          ? mentionsRuleCommand(rule, command.command)
+          : fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
       .map((command): LedgerEvidence => ({
         eventRowId: command.eventId,
@@ -258,7 +303,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
 }
 
 /** Ledger for a stored session's latest final response. */
-export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
+export function getClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): ClaimsLedger {
   const final = store.db
     // Claims are read from both the full final response (events.text, when the
     // store saved one) and the summary, which may be a producer's explicit one.
@@ -286,23 +331,8 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
        GROUP BY call.id`
     )
     .all({ $sid: sessionId }) as Array<{ callRowId: number; resultRowId: number }>;
-  // Stores written by earlier versions recorded Claude tool calls without
-  // tool_use_id and stored every Bash call as completed: the outcome lives only
-  // in result rows that cannot be matched to a call. Such a call (no exit code,
-  // no id, in a session with unmatched result rows) has no attributable
-  // outcome, so it is never cited: unknown is never a pass.
-  const unattributable = new Set(
-    (
-      store.db
-        .query(
-          `SELECT call.id AS id FROM events call
-           WHERE call.session_id = $sid AND call.type = 'tool_call' AND call.tool_use_id IS NULL
-             AND EXISTS (SELECT 1 FROM events r WHERE r.session_id = call.session_id AND r.type = 'tool_result' AND r.tool_use_id IS NULL)`
-        )
-        .all({ $sid: sessionId }) as Array<{ id: number }>
-    ).map((row) => row.id)
-  );
   const resultRowIds = new Map(results.map((row) => [row.callRowId, row.resultRowId]));
+  const adapter = store.db.query("SELECT source_adapter AS sourceAdapter FROM sessions WHERE id = $sid").get({ $sid: sessionId }) as { sourceAdapter: string | null } | null;
   const tools = store.db.query("SELECT event_id AS eventId, tool_name AS toolName FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL").all({ $sid: sessionId }) as Array<{
     eventId: number;
     toolName: string;
@@ -310,12 +340,9 @@ export function getClaimsLedger(store: Store, sessionId: string): ClaimsLedger {
   return buildClaimsLedger({
     sessionId,
     finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
-    // Only a stored success is unattributable: earlier versions wrote every such
-    // call as completed, so an explicit failure status is real evidence and stays.
-    commands: getCommands(store, sessionId).filter(
-      (command) =>
-        !(command.eventId !== null && command.exitCode === null && unattributable.has(command.eventId) && commandOutcome(command) === "passed")
-    ),
+    commands: getCommands(store, sessionId),
+    linkedStatusIsOutcome: adapter?.sourceAdapter === "claude-code-stream-json",
+    config,
     eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
     resultRowIds,
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName]))

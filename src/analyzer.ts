@@ -142,7 +142,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
-    const ledger = getClaimsLedger(store, sessionId);
+    const ledger = getClaimsLedger(store, sessionId, config);
     for (const claim of ledger.claims) {
       if (claim.verdict === "unsupported") {
         flags.push({

@@ -56,37 +56,43 @@ from the runs recorded before it:
 | `contradicted` | The latest relevant run failed | `contradicted-claim` |
 | `unsupported` | No relevant run was observed | `missing-<kind>-evidence` |
 
-A run fails when it reports a non-zero exit code or a failed status. Denied,
-declined and inferred commands never count as runs. The verdict cites the run
-it rests on by `eventId`, or by stored event row for sessions recorded without
-event IDs. A claim that fails, then passes on a re-run, is supported.
+A run counts only with its own recorded outcome: an exit code, an explicit
+failed status (`failed`, `error`, `timed_out`, `cancelled`, `interrupted`,
+`killed`, `aborted`), or, for Claude Code stream sessions, the `tool_result`
+linked to the call. A status such as `completed` with none of these is not
+evidence, so a tool call that only carries a command (an MCP lookup, a file
+write), a generic command without an exit code, and Claude Code calls from
+stores written before results were linked never count. A run fails when it
+reports a non-zero exit code or a failed status. Denied, declined, inferred
+and still-running commands never count. The verdict cites the run it rests on
+by `eventId`, or by stored event row for sessions recorded without event IDs.
+A claim that fails, then passes on a re-run, is supported.
 
 Evidence is asymmetric, so no rule can hide a failure:
 
 - **Against a claim:** any failed run whose command mentions the kind anywhere
   (`bun test`, `go test -run X`, `cd app && bun test`, `bun test > log`, a
   search for the words) counts as a failing run, whatever its shape.
-- **For a claim:** only a passing run with a strict shape counts. It must come
-  from a shell execution (Claude Code `Bash`, Codex `command_execution`, or a
-  generic event with no tool name or a shell tool name: `Bash`, `shell`,
-  `exec_command`, `local_shell`). The command must be plain printable ASCII
-  with none of `; & | < > $` backtick, quotes, `\`, `#`, tabs or newlines. The
-  kind's command (`bun test`, `npm run lint`, `tsc`, ...) must be at the
-  program position, after optional leading `VAR=value` assignments, followed
-  by a space or the end (`npm run test:label` does not count). No single-dash
-  argument may contain `h`, `V` or `n` (`-h`, `-V`, `-kn`, `-run` all
-  disqualify), and none of `--help`, `--version`, `--dry-run`, `--list`,
-  `--collect-only` may appear. Wrapped commands (`sh -c '...'`, `env -u X ...`,
-  `npx tsc`, `timeout 20 ...`) never support a claim. A passing run that does
-  not have this shape is ignored.
+- **For a claim:** only a passing shell execution (Claude Code `Bash`, Codex
+  `command_execution`, or a generic event with no tool name or a shell tool
+  name: `Bash`, `shell`, `exec_command`, `local_shell`) of one of the kind's
+  configured commands, word for word, counts. The built-in lists include
+  `bun test`, `npm test`, `npm run test`, `pytest`, `make test`,
+  `bun run lint`, `tsc --noEmit`, `bun run build` and their package-manager
+  equivalents. Extra arguments (`bun test a.test.ts`, `pytest -q`),
+  environment assignments (`CI=1 bun test`, `MAKEFLAGS=n make test`), dry runs
+  (`make test --just-print`), other scripts (`npm run TEST`) and wrappers
+  (`sh -c '...'`, `npx tsc`) never support a claim. A repository that uses
+  other forms lists them in `evidence.supportCommands` (see
+  [CONFIGURATION.md](CONFIGURATION.md)); a kind listed there replaces its
+  built-in list.
 
 A run counts only once its result is recorded before the final response: a
 still-running command, a Claude Code tool call without a `tool_result`, or a
-result recorded after the final response is not evidence. For Claude Code, a
-`tool_result` belongs to the most recent call with that id before it, and a
-call's outcome is its first result, so reused ids never share outcomes. Only
-the Bash tool produces commands; a `command` argument passed to another tool
-is not a run.
+result recorded after the final response is not evidence. Runs are ordered by
+when their outcome was recorded. For Claude Code, a `tool_result` belongs to
+the most recent call with that id before it, and a call's outcome is its first
+result, so reused ids never share outcomes.
 
 Claim detection is response-level and errs toward finding claims. A kind is
 claimed when its subject (for example "test" or "lint") and any of its success

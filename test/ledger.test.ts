@@ -263,10 +263,23 @@ describe("A and B: asymmetric evidence", () => {
     return [claim?.verdict, claim?.cited?.command ?? null];
   };
 
-  test("B: only a plain simple command at the program position supports", () => {
-    for (const command of ["bun test", "CI=1 bun test", "bun test --coverage", "bun run test", "pytest -q", "make test -k", "npm run test -- --watch=false"]) {
+  test("B: only a configured command, word for word, supports (rule 3)", () => {
+    for (const command of ["bun test", "bun run test", "npm test", "pytest", "make test", "  bun   test  "]) {
       expect(cite("Tests passed.", [command, 0])).toEqual(["supported", command]);
     }
+    // Extra arguments, environment assignments, a different script or a dry run do not.
+    for (const command of ["CI=1 bun test", "bun test a.test.ts", "bun test --coverage", "pytest -q", "make test --just-print", "MAKEFLAGS=n make test", "npm run TEST", "npm run test -- --watch=false"]) {
+      expect(cite("Tests passed.", [command, 0])).toEqual(["unsupported", null]);
+    }
+  });
+
+  test("B: evidence.supportCommands replaces a kind's built-in list", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    const ledger = (command: string) =>
+      buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 99, eventId: null, text: "Tests passed." }, commands: [run(1, command, 0)], eventIds: new Map(), config }).claims[0]
+        ?.verdict;
+    expect(ledger("bun run ci")).toBe("supported");
+    expect(ledger("bun test")).toBe("unsupported");
   });
 
   test("B: passing runs that are not the strict shape never support", () => {
@@ -716,5 +729,50 @@ describe("regressions against the base: outcome-less retries and stores written 
     const [claim] = getClaimsLedger(store, sessionId).claims;
     store.db.close();
     expect(claim.verdict).toBe("contradicted");
+  });
+});
+
+describe("trust model rules 1 and 3 on generic imports", () => {
+  const ledgerFor = (events: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const transcript = parseJsonlTranscript("rules.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    return claim;
+  };
+  const v1 = (event: Record<string, unknown>) => ({ schemaVersion: "agentops.event.v1", ...event });
+  const header = v1({ type: "session", id: "ledger-rules" });
+  const failedTest = v1({ type: "tool_call", toolName: "Bash", command: "bun test", exitCode: 1, status: "failed" });
+  const final = v1({ type: "final_response", role: "assistant", content: "Tests passed." });
+  const read = [v1({ type: "tool_call", toolName: "Read", input: { path: "a.ts" }, status: "completed" }), v1({ type: "tool_result", status: "completed", output: "contents" })];
+
+  test("an unrelated tool result never discards a passing retry with its own exit code", () => {
+    const claim = ledgerFor([header, failedTest, ...read, v1({ type: "tool_call", toolName: "Bash", command: "bun test", exitCode: 0, status: "completed" }), final]);
+    expect(claim.verdict).toBe("supported");
+  });
+
+  test("a retry whose linked result failed is never cited as a pass", () => {
+    const claim = ledgerFor([
+      header,
+      failedTest,
+      v1({ type: "tool_call", toolName: "Bash", toolUseId: "t2", command: "bun test", status: "completed" }),
+      v1({ type: "tool_result", toolUseId: "t2", status: "failed", output: "1 fail" }),
+      final
+    ]);
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.exitCode).toBe(1);
+  });
+
+  test("an MCP call, a file write or a dry run after a failed test never supports", () => {
+    for (const retry of [
+      v1({ type: "tool_call", toolName: "mcp__docs__reference.shell", input: { command: "bun test" }, status: "completed" }),
+      v1({ type: "file_write", path: "notes.md", command: "bun test", status: "completed" }),
+      v1({ type: "tool_call", toolName: "Bash", command: "make test --just-print", exitCode: 0, status: "completed" })
+    ]) {
+      const claim = ledgerFor([header, failedTest, retry, final]);
+      expect(claim.verdict).toBe("contradicted");
+      expect(claim.cited?.command).toBe("bun test");
+    }
   });
 });
