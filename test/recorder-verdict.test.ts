@@ -145,6 +145,9 @@ describe("review 6001087386: the verdict matches agentops check in the session's
     writeFileSync(join(worktree, "agentops.config.json"), JSON.stringify({ recorder: { verdict: true }, gates: { requiredVerificationCommands: ["make lint"] } }));
     const out = await verdictAfterStop(recordUntilStop("clean-session", worktree, stateDir), stateDir, {});
     expect(JSON.parse(out ?? "{}").systemMessage).toStartWith("agentops: needs review:");
+    // The session lands in the shared store that `agentops look` and `check` read, not a worktree-local one.
+    expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(true);
+    expect(existsSync(join(worktree, ".agentops", "agentops.db"))).toBe(false);
   });
 
   test("the whole JSON line stays within 300 characters, escapes included", () => {

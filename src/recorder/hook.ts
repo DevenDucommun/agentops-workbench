@@ -171,11 +171,12 @@ export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: stri
 export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   // The verdict answers what `agentops check` in the session's checkout would say:
   // that checkout's config (a linked worktree has its own), and the store
-  // `agentops check` reads there (AGENTOPS_DB when set).
+  // `agentops check` reads there: AGENTOPS_DB when set, otherwise the enrolled
+  // repository's shared store, which a linked worktree shares with the main checkout.
   if (!outcome.recorded || outcome.hookEventName !== "Stop" || repoConfigFlag(outcome.checkout, "recorder", "verdict") !== true) return null;
   try {
     const { turnVerdict } = await import("./ingest");
-    const dbPath = env.AGENTOPS_DB ? resolve(outcome.checkout, env.AGENTOPS_DB) : undefined;
+    const dbPath = env.AGENTOPS_DB ? resolve(outcome.checkout, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
     return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath }));
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
