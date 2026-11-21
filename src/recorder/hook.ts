@@ -184,7 +184,10 @@ export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, e
   if (enabled !== true) return null;
   try {
     const { turnVerdict } = await import("./ingest");
-    const dbPath = env.AGENTOPS_DB ? resolve(cwd, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
+    // Set means set, as for the CLI: an empty AGENTOPS_DB resolves to the directory
+    // itself, which cannot be opened as a store, so the verdict fails silently
+    // (verdict-failed) exactly where `agentops check` fails, never a pass.
+    const dbPath = env.AGENTOPS_DB !== undefined ? resolve(cwd, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
     return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath, configPath }));
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");

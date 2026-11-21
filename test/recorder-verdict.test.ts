@@ -192,3 +192,9 @@ describe("review 6001288692: the verdict equals agentops check run in the sessio
     expect(existsSync(join(repo, "data", "session.db"))).toBe(false);
   });
 });
+
+test("an explicitly empty AGENTOPS_DB never yields a verdict, as agentops check cannot open a store there either", async () => {
+  const { repo, stateDir } = setup({ recorder: { verdict: true } });
+  expect(await verdictAfterStop(recordUntilStop("clean-session", repo, stateDir), stateDir, { AGENTOPS_DB: "" })).toBeNull();
+  expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(false);
+});
