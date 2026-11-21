@@ -463,3 +463,35 @@ console.log(JSON.stringify([blameFile(${JSON.stringify(dir)}, "math.js"), getCom
     });
   });
 });
+
+describe("review 6001159711: byte-exact blame paths and Git-structured trailers", () => {
+  const scratch = () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-blame-r8-")));
+    const sh = (script: string) => Bun.spawnSync(["bash", "-c", script], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    sh("git init -q && git config user.name synthetic && git config user.email synthetic && git config commit.gpgsign false");
+    return { dir, sh };
+  };
+
+  test("blameFile opens the exact file for each non-UTF-8 path that getCommitInfo returns", () => {
+    const { dir, sh } = scratch();
+    // Names end in bytes FE, FF and EF BF BD (the UTF-8 encoding of U+FFFD); staged through the index,
+    // so no filesystem has to accept the invalid names.
+    sh(
+      "a=$(printf 'fe\\n' | git hash-object -w --stdin); b=$(printf 'ff\\n' | git hash-object -w --stdin); c=$(printf 'replacement\\n' | git hash-object -w --stdin); " +
+        "{ printf '100644 %s\\tfile-\\376\\000' $a; printf '100644 %s\\tfile-\\377\\000' $b; printf '100644 %s\\tfile-\\357\\277\\275\\000' $c; } | git update-index -z --add --index-info && git commit -q -m add"
+    );
+    const info = getCommitInfo(dir, "HEAD");
+    expect(info?.files).toHaveLength(3);
+    const contents = (info?.files ?? []).map((path) => blameFile(dir, path).map((line) => line.content).join("\n")).sort();
+    expect(contents).toEqual(["fe", "ff", "replacement"]);
+  });
+
+  test("parseTrailers matches Git when one configured key is a prefix of another", () => {
+    const { dir, sh } = scratch();
+    sh("git config trailer.separators ':#=' && git config trailer.bug.key 'Bug #' && git config trailer.ticket.key 'Bug #4'");
+    const message = "subject\n\nbug=4: 99\n";
+    expect(parseTrailers(message, dir)).toEqual([{ key: "Bug #", value: "4: 99" }]);
+    sh(`git commit -q --allow-empty -F - <<'MSG'\n${message}MSG`);
+    expect(parseTrailers(message, dir)).toEqual(getCommitInfo(dir, "HEAD")?.trailers ?? []);
+  });
+});

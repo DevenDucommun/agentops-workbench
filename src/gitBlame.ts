@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 // Git blame and commit helpers for provenance (forensic recorder spec R3.1,
 // R3.2; task T3.1). Parsers plus thin `git` wrappers that never throw: a
 // missing repository, path or commit returns an empty result or null. Trailer parsing follows Git’s own rules.
@@ -82,42 +86,37 @@ export function parseBlamePorcelain(output: string): BlameLine[] {
 }
 
 /**
- * `Key: value` trailers of a commit message, as Git itself finds them: the message
- * goes through `git interpret-trailers --parse --no-divider`, which reports what
- * `git log --format=%(trailers:only,unfold)` reports for the same message. Empty
- * when git is unavailable.
+ * `Key: value` trailers of a commit message, exactly as Git reports them for a
+ * commit with that message (`%(trailers:only,unfold)`, as getCommitInfo reads
+ * them): the message is written as a commit to a throwaway object store and Git
+ * returns structured key/value pairs, so a configured key that is a prefix of
+ * another (`Bug #` and `Bug #4`) is never split by guesswork. The trailer
+ * settings of the repository at `cwd` apply. Empty when git is unavailable.
  */
-export function parseTrailers(message: string): Array<{ key: string; value: string }> {
-  const out = run(["git", "interpret-trailers", "--parse", "--no-divider"], new TextEncoder().encode(message));
-  if (!out) return [];
-  // Git can print a configured canonical key verbatim, including its separator
-  // (e.g. "Bug #42" for key "Bug #"). Its configured spelling is part of the key.
-  const config = run(["git", "config", "--null", "--get-regexp", "^trailer\\.(separators|.+\\.key)$"]) ?? "";
-  let separators = ":";
-  const keys: string[] = [];
-  for (const entry of config.split("\0").filter(Boolean)) {
+export function parseTrailers(message: string, cwd = process.cwd()): Array<{ key: string; value: string }> {
+  const settings: string[] = [];
+  for (const entry of (run(["git", "-C", cwd, "config", "--null", "--get-regexp", "^trailer\\."]) ?? "").split("\0").filter(Boolean)) {
     const end = entry.indexOf("\n");
-    const value = entry.slice(end + 1);
-    if (entry.slice(0, end) === "trailer.separators") separators = value;
-    else if (value.length) keys.push(value);
+    if (end > 0) settings.push("-c", `${entry.slice(0, end)}=${entry.slice(end + 1)}`);
   }
-  const separator = separators[0] ?? ":";
-  const configured = keys.sort((a, b) => b.length - a.length).map((key) => {
-    // A key ending in a separator supplies its own formatting, including spaces.
-    const last = key.replace(/[ \t]+$/, "").slice(-1);
-    return { key, prefix: last && separators.includes(last) ? key : key + separator + " " };
-  });
-  const trailers: Array<{ key: string; value: string }> = [];
-  for (const line of out.split("\n")) {
-    const match = configured.find(({ prefix }) => line.startsWith(prefix));
-    if (match) {
-      trailers.push({ key: match.key, value: line.slice(match.prefix.length) });
-    } else {
-      const split = line.indexOf(separator);
-      if (split > 0) trailers.push({ key: line.slice(0, split), value: line.slice(split + 1).replace(/^ /, "") });
-    }
+  const store = mkdtempSync(join(tmpdir(), "agentops-trailers-"));
+  try {
+    if (run(["git", "init", "--bare", "-q", store]) === null) return [];
+    const inStore = ["git", "--git-dir", store, ...PINNED_CONFIG, ...settings];
+    const tree = run([...inStore, "hash-object", "-t", "tree", "-w", "--stdin"], new Uint8Array())?.trim();
+    if (!tree || !SHA.test(tree)) return [];
+    const body = `tree ${tree}\nauthor agentops <agentops> 0 +0000\ncommitter agentops <agentops> 0 +0000\n\n${message}`;
+    const commit = run([...inStore, "hash-object", "-t", "commit", "-w", "--stdin"], new TextEncoder().encode(body))?.trim();
+    if (!commit || !SHA.test(commit)) return [];
+    const out = run([...inStore, "show", "-s", "--encoding=UTF-8", "--format=%(trailers:only,unfold,separator=%x00,key_value_separator=%x00)", commit]);
+    if (out === null) return [];
+    const fields = out.replace(/\n$/, "").split("\0");
+    const trailers: Array<{ key: string; value: string }> = [];
+    for (let i = 0; i + 1 < fields.length; i += 2) trailers.push({ key: fields[i] as string, value: fields[i + 1] as string });
+    return trailers;
+  } finally {
+    rmSync(store, { recursive: true, force: true });
   }
-  return trailers;
 }
 
 /**
@@ -170,8 +169,8 @@ export function blameFile(repo: string, path: string, options: { rev?: string | 
   if (options.lines) args.push("-L", `${options.lines[0]},${options.lines[1]}`);
   const rev = options.rev === undefined ? "HEAD" : options.rev;
   if (rev !== null) args.push(rev);
-  args.push("--", path);
-  const out = git(repo, args);
+  args.push("--");
+  const out = hasNonUtf8Bytes(path) ? gitWithBytePath(repo, args, path) : git(repo, [...args, path]);
   return out === null ? [] : parseBlamePorcelain(out);
 }
 
@@ -231,6 +230,34 @@ function git(repo: string, args: string[]): string | null {
   return run(["git", "--literal-pathspecs", ...PINNED_CONFIG, "-C", repo, ...args]);
 }
 
+/** Whether a path holds bytes that were not valid UTF-8 (lone surrogates U+DC80-U+DCFF, as unquoteGitPath produces). */
+function hasNonUtf8Bytes(path: string): boolean {
+  return /[\uDC80-\uDCFF]/u.test(path);
+}
+
+/** The path's original bytes: lone surrogates map back to their byte, everything else is UTF-8. */
+function pathBytes(path: string): number[] {
+  const bytes: number[] = [];
+  for (const char of path) {
+    const code = char.codePointAt(0) ?? 0;
+    if (char.length === 1 && code >= 0xdc80 && code <= 0xdcff) bytes.push(code - 0xdc00);
+    else bytes.push(...new TextEncoder().encode(char));
+  }
+  return bytes;
+}
+
+/**
+ * Runs git with a final path argument made of the path's exact bytes. A process
+ * argument from JavaScript is always UTF-8, which would turn a non-UTF-8 byte
+ * into U+FFFD and select a different file, so the shell builds the argument
+ * from octal escapes instead (the trailing X keeps a final newline intact).
+ */
+function gitWithBytePath(repo: string, args: string[], path: string): string | null {
+  const escaped = pathBytes(path).map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`).join("");
+  const script = 'p=$(printf "%bX" "$AGENTOPS_GIT_PATH"); exec "$@" "${p%X}"';
+  return run(["sh", "-c", script, "sh", "git", "--literal-pathspecs", ...PINNED_CONFIG, "-C", repo, ...args], undefined, { AGENTOPS_GIT_PATH: escaped });
+}
+
 const PINNED_CONFIG = [
   "-c",
   "core.quotePath=true",
@@ -246,9 +273,9 @@ const PINNED_CONFIG = [
   "color.ui=false"
 ];
 
-function run(argv: string[], stdin?: Uint8Array): string | null {
+function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string>): string | null {
   try {
-    const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: env ? { ...process.env, ...env } : undefined });
     return proc.exitCode === 0 ? proc.stdout.toString() : null;
   } catch {
     return null;
