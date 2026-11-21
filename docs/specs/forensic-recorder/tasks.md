@@ -65,8 +65,9 @@ Sizes are relative effort: S, M or L.
 
 ## M3: Provenance (v3.5.0)
 
-- [ ] **T3.1 (S) Git blame/commit helpers.** Verify: porcelain parser unit
-  tests.
+- [x] **T3.1 (S) Git blame/commit helpers.** Verify: porcelain parser unit
+  tests, commit metadata and trailers, and missing-Git behavior. Path-history
+  traversal is tracked in [#152](https://github.com/DevenDucommun/agentops-workbench/issues/152).
 - [ ] **T3.2 (M) Line-hash index from recorded edits.** Verify: index test on
   the commit fixture.
 - [ ] **T3.3 (M) `agentops blame`, `commits`, `session --commit`, plus MCP
