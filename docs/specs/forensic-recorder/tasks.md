@@ -48,7 +48,7 @@ Sizes are relative effort: S, M or L.
 
 ## M2: Evidence ledger (v3.4.0)
 
-- [ ] **T2.1 (M) Ledger model with supported/unsupported/contradicted and
+- [x] **T2.1 (M) Ledger model with supported/unsupported/contradicted and
   event citations.** Verify: AC7 fixtures (pass, fail then claim, no run then
   claim, fail then pass then claim).
 - [ ] **T2.2 (M) New claim categories** (callers/usages, on-device or

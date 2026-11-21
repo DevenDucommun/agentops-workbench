@@ -32,6 +32,7 @@ const unsupportedClaimCategories = new Set([
   "missing-lint-evidence",
   "missing-typecheck-evidence",
   "missing-build-evidence",
+  "contradicted-claim",
   "inferred-verification-evidence"
 ]);
 

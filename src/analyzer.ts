@@ -1,6 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, runsRuleCommand } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
@@ -10,15 +11,7 @@ type RiskFlag = {
   message: string;
 };
 
-type EvidenceClaimRule = {
-  id: EvidenceClaimId;
-  category: string;
-  claimPattern: RegExp;
-  commandPattern: RegExp;
-  label: string;
-};
-
-export type EvidenceClaimId = "test" | "lint" | "typecheck" | "build";
+export type { EvidenceClaimId } from "./ledger";
 
 export type EvidenceClaimEvaluation = {
   id: EvidenceClaimId;
@@ -34,36 +27,6 @@ const permissionCommandPattern = /\b(chmod|chown|setfacl)\b/i;
 const secretPattern = /\b(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----)\b/;
 const credentialRedactionPattern = /\[REDACTED:(aws-access-key|openai-style-key|github-token|slack-token|private-key)\]/;
 const privacyRedactionPattern = /\[REDACTED:(email|local-path)\]/;
-const evidenceClaimRules: EvidenceClaimRule[] = [
-  {
-    id: "test",
-    category: "missing-test-evidence",
-    label: "test",
-    claimPattern: /\b(test|tests|test suite|unit tests|integration tests)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|green)\b[\s\S]{0,80}\b(test|tests|test suite)\b/i,
-    commandPattern: /\b(pytest|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|cargo\s+test|go\s+test|make\s+test|gmake\s+test|mvn\s+test|gradle\s+test)\b/i
-  },
-  {
-    id: "lint",
-    category: "missing-lint-evidence",
-    label: "lint",
-    claimPattern: /\b(lint|linting|eslint)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(lint|linting|eslint)\b/i,
-    commandPattern: /\b(eslint|bun\s+(?:run\s+)?lint|npm\s+(?:run\s+)?lint|pnpm\s+(?:run\s+)?lint|yarn\s+(?:run\s+)?lint|make\s+lint|gmake\s+lint)\b/i
-  },
-  {
-    id: "typecheck",
-    category: "missing-typecheck-evidence",
-    label: "typecheck",
-    claimPattern: /\b(typecheck|type check|type-check|type checking|tsc)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(typecheck|type check|type-check|type checking|tsc)\b/i,
-    commandPattern: /\b(tsc|bun\s+(?:run\s+)?(?:typecheck|type-check)|npm\s+(?:run\s+)?(?:typecheck|type-check)|pnpm\s+(?:run\s+)?(?:typecheck|type-check)|yarn\s+(?:run\s+)?(?:typecheck|type-check)|make\s+(?:typecheck|type-check)|gmake\s+(?:typecheck|type-check))\b/i
-  },
-  {
-    id: "build",
-    category: "missing-build-evidence",
-    label: "build",
-    claimPattern: /\b(build|built|compile|compiled|compilation)\b[\s\S]{0,80}\b(pass(?:ed|es)?|passing|clean|green|succeed(?:ed)?|successful|verified|complete(?:d)?)\b|\b(pass(?:ed|es)?|passing|clean|green)\b[\s\S]{0,80}\b(build|compile|compilation)\b/i,
-    commandPattern: /\b(bun\s+(?:run\s+)?build|npm\s+(?:run\s+)?build|pnpm\s+(?:run\s+)?build|yarn\s+(?:run\s+)?build|cargo\s+build|go\s+build|make\s+build|gmake\s+build|mvn\s+(?:package|compile)|gradle\s+build)\b/i
-  }
-];
 
 export function analyzeSession(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): void {
   const db = store.db;
@@ -178,17 +141,28 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
-    const finalText = finalClaimTexts(finalEvent);
-    const unsupportedEvidenceClaims = findUnsupportedEvidenceClaims(finalText, observedCommands.map((command) => command.command));
-    for (const claim of unsupportedEvidenceClaims) {
-      flags.push({
-        eventId: finalEvent.id,
-        severity: "medium",
-        category: claim.category,
-        message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
-      });
+    // Verification claims get a ledger verdict (spec R2.1, R2.2).
+    const ledger = getClaimsLedger(store, sessionId, config);
+    for (const claim of ledger.claims) {
+      if (claim.verdict === "unsupported") {
+        flags.push({
+          eventId: finalEvent.id,
+          severity: "medium",
+          category: claim.category,
+          message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
+        });
+      } else if (claim.verdict === "contradicted" && claim.cited) {
+        const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
+        flags.push({
+          eventId: finalEvent.id,
+          severity: "medium",
+          category: "contradicted-claim",
+          message: `Final response claims ${claim.label} success, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
+        });
+      }
     }
-    if (claimsSuccess(finalText) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
+    const unsupportedEvidenceClaims = ledger.claims.filter((claim) => claim.verdict !== "supported");
+    if (claimsSuccess(finalClaimTexts(finalEvent)) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
       flags.push({
         eventId: finalEvent.id,
         severity: "medium",
@@ -284,12 +258,12 @@ function toClaimTexts(value: string | readonly string[]): string[] {
 export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    const matchingCommand = commands.find((command) => rule.commandPattern.test(command)) ?? null;
+    const matchingCommand = commands.find((command) => runsRuleCommand(rule, command)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
       label: rule.label,
-      claimed: texts.some((text) => rule.claimPattern.test(text)),
+      claimed: texts.some((text) => claimsRule(rule, text)),
       supported: matchingCommand !== null,
       matchingCommand
     };
@@ -298,15 +272,6 @@ export function evaluateEvidenceClaims(value: string | readonly string[], comman
 
 export function claimsFinalSuccess(value: string | readonly string[]): boolean {
   return claimsSuccess(value);
-}
-
-function findUnsupportedEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimRule[] {
-  const unsupported = new Set(
-    evaluateEvidenceClaims(value, commands)
-      .filter((claim) => claim.claimed && !claim.supported)
-      .map((claim) => claim.category)
-  );
-  return evidenceClaimRules.filter((rule) => unsupported.has(rule.category));
 }
 
 function claimsSuccess(value: string | readonly string[]): boolean {
