@@ -893,9 +893,7 @@ describe("review 6009611011: background runs and dashboard parity", () => {
     expect(claim.cited?.outcome).toBe("failed");
   });
 
-  test("the dashboard counts a configured support command that passed as evidence", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
-    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config).find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "bun run ci" });
+  test("the dashboard's loose rows ignore configured commands; the ledger supports them", () => {
     expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"]).find((row) => row.id === "test")?.supported).toBe(false);
   });
 });
@@ -990,11 +988,7 @@ describe("review on 1ab87cb: interrupted background runs; unfinished configured 
     expect(statuses).toEqual(["interrupted"]);
   });
 
-  test("dashboard evidence: a configured command that did not pass is not evidence; loose matches stay as on main", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
-    // Started, failed, or unanswered: not in the passing list, so not evidence.
-    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
-    // A command that mentions the kind matches loosely, with or without config, as on main.
+  test("dashboard evidence: loose matches stay as on main", () => {
     for (const command of ["make test -Cunit", "go test -count=1 ./..."]) {
       expect(evaluateEvidenceClaims(["Tests passed."], [command]).find((row) => row.id === "test")?.supported).toBe(true);
     }
@@ -1026,5 +1020,22 @@ describe("review 6010176414: the dashboard counts a configured command only when
 
   test("a configured command that exited 0 is verified", () => {
     expect(testRow({ status: "completed", exitCode: 0 })).toBe("verified");
+  });
+
+  test("review 6010230959: a killed run is not verified; a retry cites the passing run", () => {
+    expect(testRow({ status: "killed", exitCode: 0 })).not.toBe("verified");
+    expect(testRow({ status: "failed", exitCode: 137 })).not.toBe("verified");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "dash-retry" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("dash.jsonl", lines.map((line) => JSON.stringify(line)).join("\n")), config);
+    analyzeSession(store, sessionId, config);
+    const row = getDashboardSession(store, sessionId, config)?.decision.evidence.find((item) => item.id === "test");
+    store.db.close();
+    expect(row).toMatchObject({ status: "verified", command: "bun run ci", commandExitCode: 0 });
   });
 });

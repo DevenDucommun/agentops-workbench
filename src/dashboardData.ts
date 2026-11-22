@@ -1,4 +1,5 @@
 import { claimsFinalSuccess, evaluateEvidenceClaims, finalClaimTexts, isVerificationCommand } from "./analyzer";
+import { type ClaimsLedger, getClaimsLedger } from "./ledger";
 import type { AgentOpsConfig } from "./config";
 import {
   getCommands,
@@ -295,7 +296,7 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification, config);
+  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -440,11 +441,11 @@ function buildDashboardDecision(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  config: AgentOpsConfig
+  ledger: ClaimsLedger
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, config);
+  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, ledger);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
@@ -493,18 +494,26 @@ function buildEvidenceRows(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  config: AgentOpsConfig
+  ledger: ClaimsLedger
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  // Commands that passed: their own exit code 0 with no failed, interrupted or
-  // unfinished status. A bare "completed" or a missing result is not a pass.
-  const notPassed = new Set(["failed", "error", "interrupted", "timed_out", "timeout", "cancelled", "canceled", "no_result", "started", "in_progress", "running", "pending", "queued", "inferred", "denied", "declined"]);
-  const passing = commands
-    .filter((command) => command.exitCode === 0 && !notPassed.has((command.status ?? "").toLowerCase()))
-    .map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalTexts, commandStrings, config, passing).map((claim) => {
-    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
+    // No command mentions the kind, but the ledger supports the claim (a
+    // configured support command such as `bun run ci`): show the ledger's
+    // verdict and the run it cites, never another run of the same command.
+    const entry = claim.matchingCommand === null ? ledger.claims.find((item) => item.id === claim.id && item.verdict === "supported") : undefined;
+    if (entry?.cited) {
+      return toEvidenceRow({
+        id: claim.id,
+        label: titleCase(claim.label),
+        claimed: true,
+        evidenceFound: true,
+        command: { id: 0, eventId: entry.cited.eventRowId, command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode, output: null },
+        risk
+      });
+    }
+    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     return toEvidenceRow({
       id: claim.id,
       label: titleCase(claim.label),

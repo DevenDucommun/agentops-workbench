@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, isSupportCommand, mentionsRuleCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
@@ -328,20 +328,15 @@ export function isBlockedCommandStatus(status: string | null | undefined): boole
   return status === "denied" || status === "declined";
 }
 
-export function evaluateEvidenceClaims(
-  value: string | readonly string[],
-  commands: string[],
-  config: AgentOpsConfig = defaultConfig,
-  passingCommands: readonly string[] = commands
-): EvidenceClaimEvaluation[] {
+/**
+ * The dashboard's per-kind evidence rows, matched as on v3.2: any command that
+ * mentions the kind. The dashboard adds the ledger's supported verdicts on top
+ * (configured support commands); strict support rules live in the ledger.
+ */
+export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    // The dashboard's evidence rows keep their original, loose match (any command
-    // that mentions the kind); the ledger is where strict support rules apply. A
-    // configured support command that does not mention the kind (bun run ci) counts
-    // here only when it passed, so a failed one is never shown as verified.
-    const matchingCommand =
-      commands.find((command) => mentionsRuleCommand(rule, command)) ?? passingCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
+    const matchingCommand = commands.find((command) => mentionsRuleCommand(rule, command)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
