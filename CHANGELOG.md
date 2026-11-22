@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Blocked risky commands (T2.4): a destructive or permission-changing command
+  that was denied or declined never ran, so it raises a low `blocked-attempt`
+  flag instead of a high `destructive-command` (or medium `permission-change`)
+  flag. `gates.maxBlockedAttempts` (default 2) fails the gate on repeated
+  attempts. Gate outcomes can change: the bundled
+  `codex-exec-current-session` fixture, whose only high risk was a declined
+  command, now passes. Set `risk.treatBlockedAsExecuted: true` to restore the
+  previous behavior.
+
 ## v3.2.0 - 2026-11-02
 
 Additive: GitHub Action for PR gating, current-CLI adapter refresh, and a

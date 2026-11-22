@@ -168,3 +168,48 @@ describe("review 6010235387: invocation identity, start-row output, check-time p
     expect(atCheck.status).toBe(reaudited.status);
   });
 });
+
+describe("review 6010332003: id-less pairing, check-time policy both ways, suppressions", () => {
+  const generic = (lines: unknown[], config: AgentOpsConfig = defaultConfig) => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-blocked-"));
+    const path = join(dir, "generic.jsonl");
+    writeFileSync(path, [{ schemaVersion: "agentops.event.v1", type: "session", id: "blocked-generic" }, ...lines].map((line) => JSON.stringify(line)).join("\n"));
+    return audit(path, config);
+  };
+  const cmd = (status: string) => ({ schemaVersion: "agentops.event.v1", type: "command", command: "rm -rf ./out", status });
+
+  test("without invocation ids, a later decline does not clear an earlier interrupted run", () => {
+    const { check } = generic([cmd("in_progress"), cmd("declined")]);
+    expect(check("max-high-risks")?.observed).toBe(1);
+  });
+
+  const storeWith = (auditConfig: AgentOpsConfig) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
+    const path = join(ROOT, "fixtures/blocked/declined-destructive.jsonl");
+    const content = readFileSync(path, "utf8");
+    const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, auditConfig);
+    const { sessionId } = ingestTranscript(store, transcript, auditConfig);
+    analyzeSession(store, sessionId, auditConfig);
+    return { store, sessionId };
+  };
+  const legacy = withConfig({ risk: { treatBlockedAsExecuted: true } });
+
+  test("audited under legacy, checked under defaults: same as re-auditing under defaults", () => {
+    const { store, sessionId } = storeWith(legacy);
+    const atCheck = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+    analyzeSession(store, sessionId, defaultConfig);
+    const reaudited = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+    store.db.close();
+    const pick = (gate: typeof atCheck) => gate.checks.filter((c) => c.id === "max-high-risks" || c.id === "max-blocked-attempts").map((c) => [c.id, c.observed]);
+    expect(pick(atCheck)).toEqual(pick(reaudited));
+    expect(atCheck.status).toBe(reaudited.status);
+  });
+
+  test("a suppression in the check config still covers a blocked command under legacy policy", () => {
+    const suppressed = { ...legacy, suppressions: [{ category: "destructive-command", reason: "accepted" }] };
+    const { store, sessionId } = storeWith(suppressed);
+    const gate = evaluateQualityGate(store, sessionId, suppressed, { gitChanges: [] });
+    store.db.close();
+    expect(gate.checks.find((c) => c.id === "max-high-risks")?.observed).toBe(0);
+  });
+});

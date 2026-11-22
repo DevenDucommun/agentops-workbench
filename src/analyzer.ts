@@ -270,26 +270,25 @@ const START_ROW_STATUSES = new Set(["started", "in_progress", "running"]);
 
 /**
  * Row ids of start rows (started, in progress, no exit code) that a later row
- * of the same command completes, paired first in, first out. A start with no
- * later outcome (an interrupted run) is not paired: it may have run.
+ * of the same invocation completes. A start with no later outcome (an
+ * interrupted run), or without an invocation id, is not paired: it may have run.
  */
 export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<number, string> = new Map()): Set<number> {
   const open = new Map<string, number[]>();
   const paired = new Set<number>();
   const ordered = [...commands].sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0) || a.id - b.id);
-  // Rows that name their invocation pair only with the same invocation; rows
-  // without one pair by command text, first in, first out.
-  const key = (command: CommandRecord) => {
-    const invocation = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
-    return invocation === undefined ? `text:${command.command}` : `id:${invocation}`;
-  };
+  // Only rows that name the same invocation pair. Rows without an invocation id
+  // are never paired: matching by command text could pair an interrupted run
+  // with a later, unrelated decline and clear its risk.
   for (const command of ordered) {
+    const invocation = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
+    if (invocation === undefined) continue;
     const isStart = START_ROW_STATUSES.has((command.status ?? "").toLowerCase()) && command.exitCode === null;
     if (isStart) {
-      open.set(key(command), [...(open.get(key(command)) ?? []), command.id]);
+      open.set(invocation, [...(open.get(invocation) ?? []), command.id]);
       continue;
     }
-    const start = open.get(key(command))?.shift();
+    const start = open.get(invocation)?.shift();
     if (start !== undefined) paired.add(start);
   }
   return paired;
@@ -301,19 +300,23 @@ export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<
  * one per denied or declined destructive or permission-changing command.
  */
 /**
- * Under risk.treatBlockedAsExecuted, denied or declined destructive commands are
- * high risks. Counted from the commands so a store audited under the default
- * policy still counts them when the policy is switched on at check time; rows
- * that already carry a stored high destructive flag are not counted twice.
+ * High-severity risks for the gate, with blocked commands judged under the
+ * check's policy rather than the audit's: stored high flags on denied or
+ * declined destructive commands are dropped, and under
+ * risk.treatBlockedAsExecuted each such command counts once as a high
+ * destructive-command risk unless a suppression in this config covers it.
+ * Switching the policy between audit and check therefore gives the same result
+ * as re-auditing.
  */
-export function blockedHighRisksNotStored(commands: CommandRecord[], flaggedEventIds: Set<number>, config: AgentOpsConfig = defaultConfig): number {
-  if (!config.risk.treatBlockedAsExecuted) return 0;
-  return commands.filter(
-    (command) =>
-      isBlockedCommandStatus(command.status) &&
-      destructiveCommandPattern.test(command.command) &&
-      !(command.eventId !== null && flaggedEventIds.has(command.eventId))
-  ).length;
+export function gateHighRiskCount(commands: CommandRecord[], risks: Array<{ eventId: number | null; severity: string; category: string }>, config: AgentOpsConfig = defaultConfig): number {
+  const blocked = commands.filter((command) => isBlockedCommandStatus(command.status) && destructiveCommandPattern.test(command.command));
+  const blockedEvents = new Set(blocked.map((command) => command.eventId).filter((id): id is number => id !== null));
+  const stored = risks.filter((risk) => risk.severity === "high" && !(risk.category === "destructive-command" && risk.eventId !== null && blockedEvents.has(risk.eventId))).length;
+  if (!config.risk.treatBlockedAsExecuted) return stored;
+  const live = blocked
+    .map((command): RiskFlag => ({ eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` }))
+    .filter((flag) => !isSuppressed(flag, config.suppressions));
+  return stored + live.length;
 }
 
 export function countBlockedAttempts(commands: CommandRecord[], config: AgentOpsConfig = defaultConfig): number {
