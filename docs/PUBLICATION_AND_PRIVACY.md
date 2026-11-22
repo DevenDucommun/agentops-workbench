@@ -75,7 +75,11 @@ redaction review.
 
 ### What Is Kept
 
-Records are redacted (secrets, emails, local paths) before they are written.
+Records are redacted (secrets, emails, and paths under `/Users/`, `/home/` or `/Volumes/`)
+before they are written; paths inside the recorded repository are made
+relative. Other absolute paths (such as `/opt/...`) are kept as written. A
+single hook record larger than 1 MiB is not stored as text: the oversized
+field, including a very long prompt, is kept as its length and sha256 only.
 
 | Kept as text, after redaction | Kept as length + sha256 only |
 | --- | --- |
@@ -124,7 +128,7 @@ Sessions stay in the store until you remove it.
 | Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
-| Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store of every repository that was enrolled (each repository has its own store; check `<state>/recorder/enrolled.json` for the list before removing it). A shared `AGENTOPS_STATE_DIR` may hold other files, so remove only those two folders |
+| Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store of every repository you recorded. `<state>/recorder/enrolled.json` lists only repositories still enabled (disabling one removes it from the list), so include disabled ones too. Repositories that point `AGENTOPS_DB` at the same file share one store, and deleting it removes all of their sessions. A shared `AGENTOPS_STATE_DIR` may hold other files, so remove only those two folders |
 
 No command deletes a single session from the store yet. The store can hold
 every imported session, including other tools' imports, so removing it removes
