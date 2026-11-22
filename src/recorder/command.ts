@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, statSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
 import { forgottenPath, spoolGeneration, spoolPath, unforget, withSpoolLock } from "./spool";
@@ -96,7 +96,7 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
       const generation = spoolExists ? spoolGeneration(readFileSync(spool, "utf8")) : null;
       if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
       try {
-        if (existsSync(store)) {
+        if (storeExists(store)) {
           const db = new Database(store);
           try {
             db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
@@ -151,6 +151,21 @@ const FORGET_LOCK_TIMEOUT_MS = 2000;
  * lock forget holds as abandoned.
  */
 const FORGET_STORE_BUSY_TIMEOUT_MS = 2500;
+
+/**
+ * Whether the store exists. Only a missing file means there is none; a store
+ * that cannot be reached (a directory without permission) is an error, so
+ * forget stops before removing the spool instead of reporting success.
+ */
+function storeExists(path: string): boolean {
+  try {
+    statSync(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
 
 /** File names in a directory, exactly as stored. A missing directory has none; any other error propagates. */
 function existingExactly(dir: string): Set<string> {

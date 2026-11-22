@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
@@ -270,4 +270,33 @@ test("review on e397286: a session-end import against a busy store fails fast an
   holder.close();
   expect(elapsed).toBeLessThan(1000);
   expect(readFileSync(spool.replace(/\.jsonl$/, ".errors.jsonl"), "utf8")).toContain("ingest-failed");
+});
+
+test("review 6010434366: an unreachable store stops forget before the spool is removed", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const storeDir = join(repo, ".agentops");
+  chmodSync(storeDir, 0o000);
+  let out: Awaited<ReturnType<typeof runRecorderCommand>>;
+  try {
+    out = await runRecorderCommand(["forget", COMMIT], { cwd: repo, env });
+  } finally {
+    chmodSync(storeDir, 0o700);
+  }
+  expect(out.exitCode).toBe(1);
+  expect(existsSync(spoolPath(join(stateDir, "spool"), COMMIT) as string)).toBe(true);
+});
+
+test("review 6010434366: an audit that read the spool through a symlink imports nothing after forget", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const snapshot = readFileSync(spool, "utf8");
+  const link = join(repo, "linked-spool.jsonl");
+  symlinkSync(spool, link);
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).exitCode).toBe(0);
+  writeFileSync(spool, snapshot);
+  const audit = Bun.spawnSync([process.execPath, join(import.meta.dir, "..", "src", "main.ts"), "audit", link, "--quiet"], { cwd: repo, env: { ...process.env, ...env } });
+  expect(audit.exitCode).not.toBe(0);
+  const db = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
+  db.db.close();
 });

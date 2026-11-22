@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { eventHash, eventIdFor } from "../eventChain";
@@ -240,7 +240,15 @@ export function spoolGeneration(content: string): string | null {
  * the spool never carries the session id.
  */
 export function forgottenPath(spoolFile: string): string {
-  return join(dirname(spoolFile), `forgotten-${sha256(basename(spoolFile)).slice(0, 32)}`);
+  // The folder's real path, so forget and an import that reached the spool
+  // through a symlinked state folder agree on one marker.
+  let dir = dirname(spoolFile);
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // Missing folder: keep the path as given.
+  }
+  return join(dir, `forgotten-${sha256(basename(spoolFile)).slice(0, 32)}`);
 }
 
 /** Removes one generation from a spool's forgotten marker (a forget that failed before deleting anything). */
