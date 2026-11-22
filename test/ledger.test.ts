@@ -941,3 +941,36 @@ describe("review 6009703786: background acknowledgements are still running in bo
     expect(claim.verdict).toBe("contradicted");
   });
 });
+
+describe("review on e289e55: failures stay failures; background detection uses Claude Code's metadata only", () => {
+  test("recorder: a background run that reports failure (PostToolUseFailure) is a failure", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const base = { session_id: "rec-bgfail", cwd: "/workspace" };
+    const lines = [
+      { ...base, hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "bun test" }, tool_response: { stdout: "1 pass" } },
+      { ...base, hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id: "t2", tool_input: { command: "bun test", run_in_background: true }, error: "exit 1" },
+      { ...base, hook_event_name: "Stop", last_assistant_message: "Tests passed." }
+    ];
+    const transcript = parseClaudeHooksJsonl("rec.jsonl", lines.map((line) => JSON.stringify(line)).join("\n"), defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+  });
+
+  test("stream: a foreground test that prints the background phrase is an ordinary completed run", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const stream = [
+      { type: "system", subtype: "init", session_id: "phrase" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "a", name: "Bash", input: { command: "make test" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", is_error: false, content: "Command running in background with ID: 7\nok" }] } },
+      { type: "result", subtype: "success", session_id: "phrase", result: "Tests passed." }
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("supported");
+  });
+});

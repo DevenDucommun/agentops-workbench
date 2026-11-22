@@ -372,12 +372,13 @@ type ToolResults = Map<ClaudeContentBlock, boolean | "background">;
  * backgrounded by the user). Its real outcome arrives later, outside this call.
  */
 function isBackgroundAcknowledgement(record: ClaudeStreamRecord, block: ClaudeContentBlock): boolean {
+  // Only Claude Code's own metadata counts: a foreground command can print any text,
+  // and a reported failure stays a failure.
+  if (block.is_error) return false;
   const meta = record.tool_use_result;
-  if (meta && typeof meta === "object") {
-    const m = meta as Record<string, unknown>;
-    if (typeof m.backgroundTaskId === "string" || m.backgroundedByUser === true || m.assistantAutoBackgrounded === true) return true;
-  }
-  return /^\s*Command running in background with ID:/i.test(stringifyOutput(block.content) ?? "");
+  if (!meta || typeof meta !== "object") return false;
+  const m = meta as Record<string, unknown>;
+  return typeof m.backgroundTaskId === "string" || m.backgroundedByUser === true || m.assistantAutoBackgrounded === true;
 }
 
 function toolResults(records: ClaudeStreamRecord[]): ToolResults {
@@ -401,8 +402,10 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
 function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
   // A background run's tool_result only acknowledges the launch; its outcome is
   // not in the stream, so it is still running as far as the ledger can tell.
-  if (block.input?.run_in_background === true) return "started";
   const failed = results.get(block);
+  // A reported failure is a failure even for a background run.
+  if (failed === true) return "failed";
+  if (block.input?.run_in_background === true) return "started";
   if (failed === undefined) return "no_result";
   if (failed === "background") return "started";
   return failed ? "failed" : "completed";
