@@ -1,8 +1,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
-import { forgottenPath, spoolGeneration, spoolPath, withSpoolLock } from "./spool";
-import { redactString } from "../redaction";
+import { forgottenPath, spoolGeneration, spoolPath, unforget, withSpoolLock } from "./spool";
 
 // `agentops recorder enable|disable|status|forget` (spec R1.7). Dispatched from
 // src/main.ts like `hook`, so it works in the release binary and `bun run
@@ -79,11 +78,9 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
   // the same moment would otherwise recreate the spool mid-chain after it was
   // deleted. A held lock is never reclaimed, however old (a slow writer may still
   // be running); forget waits briefly, then gives up and deletes nothing.
-  // The stored session id is the hook's id after redaction (spool records are
-  // redacted before they are written), so an id that looks like a secret is
-  // stored in its redacted form; both are removed.
-  const ids = [...new Set([sessionId, redactString(sessionId)])];
-  const locked = withSpoolLock(
+  let locked: ReturnType<typeof withSpoolLock<string[]>>;
+  try {
+  locked = withSpoolLock(
     spoolDir,
     sessionId,
     () => {
@@ -96,22 +93,26 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
       // Record the generation being removed before the rows go: an import of it
       // that is already running checks this inside its write transaction, so it
       // either commits before the delete below or stores nothing.
-      if (spoolExists) {
-        const generation = spoolGeneration(readFileSync(spool, "utf8"));
-        if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
-      }
-      if (existsSync(store)) {
-        const db = new Database(store);
-        try {
-          db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
-          db.exec("PRAGMA foreign_keys = ON");
-          for (const id of ids) {
-            const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: id });
-            if (result.changes > 0) removed.push(`session ${id} from ${store}`);
+      const generation = spoolExists ? spoolGeneration(readFileSync(spool, "utf8")) : null;
+      if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
+      try {
+        if (existsSync(store)) {
+          const db = new Database(store);
+          try {
+            db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
+            db.exec("PRAGMA foreign_keys = ON");
+            // Exact id only. A redacted id is shared by every id of its kind, so it
+            // never identifies one session.
+            const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId });
+            if (result.changes > 0) removed.push(`session ${sessionId} from ${store}`);
+          } finally {
+            db.close();
           }
-        } finally {
-          db.close();
         }
+      } catch (error) {
+        // Nothing was deleted: later imports of this spool must still happen.
+        if (generation !== null) unforget(spool, generation);
+        throw error;
       }
       for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl")]) {
         if (!present.has(basename(file))) continue;
@@ -122,12 +123,17 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
     },
     { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS, staleLockMs: Number.POSITIVE_INFINITY }
   );
+  } catch (error) {
+    // Listing, reading and the store delete fail before anything is removed; run
+    // forget again once the cause is fixed to finish.
+    return { stdout: "", stderr: `Could not forget session ${sessionId}: ${error instanceof Error ? error.message : String(error)}. Run it again once this is fixed.\n`, exitCode: 1 };
+  }
   if (!locked.ok) {
     const busy = locked.reason === "lock-timeout";
     return {
       stdout: "",
       stderr: busy
-        ? `Session ${sessionId} is being recorded or imported right now (its spool is locked). Nothing was removed; try again when the session has ended. If no session is running, a crashed hook left ${spoolPath(spoolDir, sessionId)}.lock behind; delete it and retry.\n`
+        ? `Session ${sessionId} is being recorded right now (its spool is locked). Nothing was removed; try again when the session has ended. If no session is running, a crashed hook left ${spoolPath(spoolDir, sessionId)}.lock behind; delete it and retry.\n`
         : `Could not lock session ${sessionId}: ${locked.detail}. Nothing was removed.\n`,
       exitCode: 1
     };
@@ -139,15 +145,20 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
 
 /** How long forget waits for a hook to finish appending before giving up. */
 const FORGET_LOCK_TIMEOUT_MS = 2000;
-/** How long forget waits for a running import to commit before giving up. */
-const FORGET_STORE_BUSY_TIMEOUT_MS = 30_000;
+/**
+ * How long forget waits for a running import to commit before giving up. Kept
+ * well under the hooks' five-second stale-lock limit, so a hook never treats the
+ * lock forget holds as abandoned.
+ */
+const FORGET_STORE_BUSY_TIMEOUT_MS = 2500;
 
-/** File names in a directory, exactly as stored. */
+/** File names in a directory, exactly as stored. A missing directory has none; any other error propagates. */
 function existingExactly(dir: string): Set<string> {
   try {
     return new Set(readdirSync(dir));
-  } catch {
-    return new Set();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Set();
+    throw error;
   }
 }
 

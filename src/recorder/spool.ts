@@ -1,6 +1,6 @@
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { eventHash, eventIdFor } from "../eventChain";
 import { redactValue, sha256 } from "../redaction";
 import type { RawEvent } from "../types";
@@ -234,9 +234,25 @@ export function spoolGeneration(content: string): string | null {
   return first === undefined ? null : sha256(first);
 }
 
-/** Generations of this spool that `recorder forget` removed; imports of them are skipped. */
+/**
+ * Generations of this spool that `recorder forget` removed; imports of them are
+ * skipped. Named by a hash of the spool's file name, so the marker that outlives
+ * the spool never carries the session id.
+ */
 export function forgottenPath(spoolFile: string): string {
-  return `${spoolFile}.forgotten`;
+  return join(dirname(spoolFile), `forgotten-${sha256(basename(spoolFile)).slice(0, 32)}`);
+}
+
+/** Removes one generation from a spool's forgotten marker (a forget that failed before deleting anything). */
+export function unforget(spoolFile: string, generation: string): void {
+  const path = forgottenPath(spoolFile);
+  try {
+    const kept = readFileSync(path, "utf8").split("\n").filter((line) => line !== "" && line !== generation);
+    if (kept.length === 0) unlinkSync(path);
+    else writeFileSync(path, `${kept.join("\n")}\n`, { mode: 0o600 });
+  } catch {
+    // Nothing recorded for it.
+  }
 }
 
 export function isForgotten(spoolFile: string, generation: string): boolean {

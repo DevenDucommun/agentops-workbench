@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
@@ -72,7 +72,7 @@ test("forget never removes a live writer's lock: it waits, then deletes nothing"
 
   const out = await runRecorderCommand(["forget", COMMIT], { cwd: repo, env });
   expect(out.exitCode).toBe(1);
-  expect(out.stderr).toContain("being recorded or imported right now");
+  expect(out.stderr).toContain("being recorded right now");
   expect(existsSync(`${spool}.lock`)).toBe(true);
   expect(readSpool(spool).records.length).toBe(before);
   const store = openStore(join(repo, ".agentops", "agentops.db"));
@@ -179,20 +179,80 @@ test("review 6010207714: another spelling of a session id removes nothing", asyn
   store.db.close();
 });
 
-test("review 6010207714: an id stored in redacted form is forgotten with its spool in one call", async () => {
+test("review 6010295645: a never-recorded id never removes another session that shares its redacted form", async () => {
   const { repo, stateDir, env } = await recordedRepo();
-  // Built at runtime so the publication scan does not see an address-shaped literal.
-  const sid = ["someone", "example.com"].join("@");
+  // Built at runtime so the publication scan does not see address-shaped literals.
+  const recorded = ["someone", "example.com"].join("@");
+  const other = ["nobody", "example.com"].join("@");
   for (const event of ["SessionStart", "SessionEnd"]) {
-    const outcome = handleHook(undefined, JSON.stringify({ session_id: sid, cwd: repo, hook_event_name: event }), { stateDir });
+    const outcome = handleHook(undefined, JSON.stringify({ session_id: recorded, cwd: repo, hook_event_name: event }), { stateDir });
     await ingestAfterSessionEnd(outcome, stateDir);
   }
-  const spool = spoolPath(join(stateDir, "spool"), sid) as string;
+  const store = () => openStore(join(repo, ".agentops", "agentops.db"));
+  const count = () => {
+    const db = store();
+    const n = (db.db.query("SELECT COUNT(*) AS n FROM sessions").get() as { n: number }).n;
+    db.db.close();
+    return n;
+  };
+  const before = count();
+  const out = await runRecorderCommand(["forget", other], { cwd: repo, env });
+  expect(out.stdout).toBe(`Nothing recorded for session ${other}.\n`);
+  expect(count()).toBe(before);
+  expect(existsSync(spoolPath(join(stateDir, "spool"), recorded) as string)).toBe(true);
+});
+
+test("review 6010295645: a manual audit that read the spool before forget imports nothing", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const snapshot = readFileSync(spool, "utf8");
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).exitCode).toBe(0);
+  writeFileSync(spool, snapshot);
+  const audit = Bun.spawnSync([process.execPath, join(import.meta.dir, "..", "src", "main.ts"), "audit", spool, "--quiet"], { cwd: repo, env: { ...process.env, ...env } });
+  expect(audit.exitCode).not.toBe(0);
+  const db = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
+  db.db.close();
+});
+
+test("review 6010295645: a forget that cannot delete leaves later imports working", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const { Database } = await import("bun:sqlite");
+  const holder = new Database(join(repo, ".agentops", "agentops.db"));
+  holder.exec("BEGIN IMMEDIATE");
+  const out = await runRecorderCommand(["forget", COMMIT], { cwd: repo, env });
+  holder.exec("ROLLBACK");
+  holder.close();
+  expect(out.exitCode).toBe(1);
+  expect(out.stderr).toContain("Run it again");
   expect(existsSync(spool)).toBe(true);
-  const out = await runRecorderCommand(["forget", sid], { cwd: repo, env });
-  expect(out.exitCode).toBe(0);
-  expect(existsSync(spool)).toBe(false);
-  const store = openStore(join(repo, ".agentops", "agentops.db"));
-  expect(store.db.query("SELECT id FROM sessions ORDER BY id").all()).toEqual([{ id: CLEAN }, { id: COMMIT }]);
-  store.db.close();
+  expect(readdirSync(join(stateDir, "spool")).filter((name) => name.startsWith("forgotten-"))).toEqual([]);
+  const { ingestSpoolFile } = await import("../src/recorder/ingest");
+  expect(ingestSpoolFile(spool, { repoRoot: repo }).sessionId).toBe(COMMIT);
+}, 10_000);
+
+test("review 6010295645: the marker never names the session", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).exitCode).toBe(0);
+  const names = readdirSync(join(stateDir, "spool"));
+  expect(names.some((name) => name.startsWith("forgotten-"))).toBe(true);
+  expect(names.some((name) => name.includes(COMMIT))).toBe(false);
+});
+
+test("review 6010295645: a spool directory that cannot be listed stops forget before any change", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spoolDir = join(stateDir, "spool");
+  chmodSync(spoolDir, 0o300);
+  let out: Awaited<ReturnType<typeof runRecorderCommand>>;
+  try {
+    out = await runRecorderCommand(["forget", COMMIT], { cwd: repo, env });
+  } finally {
+    chmodSync(spoolDir, 0o700);
+  }
+  expect(out.exitCode).toBe(1);
+  const db = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 1 });
+  db.db.close();
+  expect(existsSync(spoolPath(spoolDir, COMMIT) as string)).toBe(true);
 });

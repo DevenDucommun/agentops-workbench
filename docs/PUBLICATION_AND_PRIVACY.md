@@ -123,17 +123,22 @@ Sessions stay in the store until you remove it.
 uses (`AGENTOPS_DB` when set, otherwise the repository's store; its events,
 commands, file changes, risk flags and commit links go with it) and removes its
 spool and error files. Other sessions are untouched. Pass the session id as
-Claude Code reports it, spelled exactly; an id that looks like a secret is
-stored in redacted form, and forget removes that form too.
+Claude Code reports it, spelled exactly; forget matches it exactly. An id that
+looks like a secret is stored in redacted form, which is shared by every id of
+its kind, so forget removes only that session's spool and leaves the shared
+row; remove such a row by resetting the store.
 
 Forget takes the session's spool lock, the lock a hook holds while it appends a
 record: if a hook is appending at that moment, forget waits up to two seconds,
 then gives up without removing anything. It never takes over a held lock, so if
 no session is running and forget still reports the session busy, a crashed hook
 left the lock file it names; delete that file and retry. Before deleting the
-rows, forget records which spool it removed (in a `.forgotten` file beside it),
-so an import of that spool that is already running either finishes before the
-delete or stores nothing. Forget a session after it has ended; a hook that fires
+rows, forget records which spool it removed (in a `forgotten-<hash>` file beside
+it that does not name the session), so an import of that spool that is already
+running, by a hook or by `agentops audit`, either finishes before the delete or
+stores nothing. If forget cannot delete (the store stays busy or the spool
+folder cannot be listed), it removes nothing, says so, and later imports work
+as before; run it again. Forget a session after it has ended; a hook that fires
 later starts a new spool for it, which imports normally.
 
 If you remove the whole store instead and re-import the spools you want to
