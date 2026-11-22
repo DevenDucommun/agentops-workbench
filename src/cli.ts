@@ -1,3 +1,4 @@
+import { storeHookTranscript } from "./recorder/ingest";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
@@ -7,7 +8,7 @@ import { defaultConfig, formatConfigValidationResult, loadConfig, validateConfig
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateOpenInferenceJsonExport, generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
-import { getGitChanges } from "./git";
+import { getGitChangesOrEmpty } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownReport } from "./report";
@@ -636,6 +637,7 @@ function formatAuditImportSummary(sessionId: string, eventCount: number, adapter
 function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
   const adapter = resolveAdapter(input, adapterId);
   const transcript = adapter.parse(input, config);
+  if (adapter.id === "claude-hooks") return storeHookTranscript(store, transcript, config, process.cwd());
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
   return result;
@@ -721,14 +723,6 @@ function isAgentOpsIgnored(): boolean {
   return result.status === 0;
 }
 
-function getGitChangesOrEmpty() {
-  try {
-    return getGitChanges();
-  } catch {
-    return [];
-  }
-}
-
 function formatIngestResult(store: Store, sessionId: string, eventCount: number, adapterId: string): string {
   const lines = [`Ingested session ${sessionId} (${eventCount} events)`, `Adapter: ${adapterId}`, `Database: ${store.path}`];
   if (adapterId === "forensic-text") {
@@ -804,7 +798,7 @@ Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
 
 Environment:
-  AGENTOPS_DB  Path to SQLite database. Defaults to .agentops/agentops.db
+  AGENTOPS_DB  Path to SQLite database. Enrolled worktrees share the main checkout’s .agentops/agentops.db
 `;
 }
 

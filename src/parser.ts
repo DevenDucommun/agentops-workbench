@@ -1,7 +1,7 @@
 import { basename, resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
-import { redactValue } from "./redaction";
+import { redactString, redactValue, sha256 } from "./redaction";
 import type { ParsedTranscript, RawEvent, SessionRecord } from "./types";
 
 export type ParseOptions = {
@@ -19,7 +19,7 @@ export function parseJsonlTranscript(sourcePath: string, input: string, options:
   const normalizedEvents = config.privacy.redactBeforeStore ? events.map((event) => redactValue(event)) : events;
 
   const resolvedPath = resolve(sourcePath);
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "session");
 
   return {
     session: {
@@ -56,6 +56,9 @@ function parseLine(line: string, lineNumber: number): RawEvent | SessionRecord {
 
 export function summarizeEvent(event: RawEvent): string {
   if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
+  // A final response without a producer summary keeps its full text: a clipped copy would
+  // be checked for claims alongside the body and could invent one ("Build complete...").
+  if (event.type === "final_response" && typeof event.content === "string" && event.content.trim()) return event.content.trim();
   if (typeof event.content === "string" && event.content.trim()) return compact(event.content);
   if (typeof event.toolName === "string") return event.toolName;
   const command = extractCommand(event);
@@ -63,6 +66,43 @@ export function summarizeEvent(event: RawEvent): string {
   const path = extractPath(event);
   if (path) return path;
   return event.type ?? "event";
+}
+
+/**
+ * The full text of a final response, for claim checks: the redacted content with its
+ * formatting, or the producer's summary when there is no content. Null for other events.
+ * The display summary (summarizeEvent) is kept separately so a producer's short summary
+ * and provider Markdown still render as before.
+ */
+export function finalResponseText(event: RawEvent): string | null {
+  if (event.type !== "final_response") return null;
+  if (typeof event.content === "string" && event.content.trim()) return event.content.trim();
+  if (typeof event.summary === "string" && event.summary.trim()) return event.summary.trim();
+  return null;
+}
+
+/**
+ * Session id for an artifact that does not carry one: the file name plus a
+ * content hash, so two different `terminal.txt` files get different ids while
+ * re-importing the same artifact replaces its earlier import. 32 hex digits (128
+ * bits) keep accidental or constructed collisions out of reach.
+ */
+export function fallbackSessionId(sourcePath: string, input: string, defaultStem: string): string {
+  const stem = basename(sourcePath).replace(/\.[^.]+$/, "") || defaultStem;
+  const hash = sha256(input.replace(/\r\n/g, "\n")).slice(0, 32);
+  // Events are redacted before they are stored, session id included. A stem such as
+  // "task" followed by "-<hex>" contains "sk-<hex>" and would be redacted to one shared
+  // id. Try other separators first so the file stem, and with it the distinction
+  // between same-text captures from different files, survives; a neutral stem is the
+  // last resort.
+  for (const candidate of [`${stem}-${hash}`, `${stem}_${hash}`, `${stem}~${hash}`]) {
+    if (redactString(candidate) === candidate) return candidate;
+  }
+  // The stem itself is redacted (an email address in the file name, say): keep the
+  // name in the identity by hashing it with the content under a neutral stem.
+  const named = sha256(`${basename(sourcePath)}\0${input.replace(/\r\n/g, "\n")}`).slice(0, 32);
+  const neutral = `${defaultStem}-${named}`;
+  return redactString(neutral) === neutral ? neutral : `session-${named}`;
 }
 
 export function extractCommand(event: RawEvent): string | null {

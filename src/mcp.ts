@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { evaluateQualityGate, formatGateJson, formatGateText } from "./gate";
-import { getGitChanges } from "./git";
+import { getGitChangesOrEmpty } from "./git";
 import { generateSessionInspection } from "./inspect";
 import { generateGithubRepoComment, generateMarkdownRepoReport, generateMarkdownReport } from "./report";
 import { getSession, getSessionId, listSessions, openStore, type Store } from "./store";
@@ -287,14 +287,6 @@ function resolveSessionId(store: Store, requested: string): string {
   const sessionId = getSessionId(store, requested);
   if (!sessionId) throw new Error("No AgentOps sessions found. Run agentops demo, agentops audit <artifact>, or agentops run codex|claude <prompt>.");
   return sessionId;
-}
-
-function getGitChangesOrEmpty() {
-  try {
-    return getGitChanges();
-  } catch {
-    return [];
-  }
 }
 
 function sessionInputSchema() {

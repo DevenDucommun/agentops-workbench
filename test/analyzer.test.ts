@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { analyzeSession, claimsFinalSuccess, evaluateEvidenceClaims } from "../src/analyzer";
 import { defaultConfig, type AgentOpsConfig } from "../src/config";
+import { parseForensicTextTranscript } from "../src/forensicText";
 import { parseJsonlTranscript } from "../src/parser";
 import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
@@ -123,4 +124,46 @@ function openInlineFixture(events: unknown[]) {
   const transcript = parseJsonlTranscript("inline.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
   ingestTranscript(store, transcript, defaultConfig);
   return store;
+}
+
+test("checks claims against the whole final response, not the clipped summary", () => {
+  const preamble = "I looked at the parser. I read the config. I traced the store. I compared both adapters. I wrote a fixture. I reran the suite.";
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "long-final" },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun test" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "final_response", content: `${preamble} Tests passed and lint is clean.` }
+  ]);
+  analyzeSession(store, "long-final", defaultConfig);
+
+  expect(getRiskFlags(store, "long-final").map((flag) => flag.category)).toContain("missing-lint-evidence");
+  store.db.close();
+});
+
+test("checks the full final-response content even when the producer supplies a short summary", () => {
+  const filler = "I traced the store and compared both adapters. ".repeat(40);
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "summary-final" },
+    { schemaVersion: "agentops.event.v1", type: "tool_call", input: { cmd: "bun test" }, status: "completed", exitCode: 0 },
+    { schemaVersion: "agentops.event.v1", type: "final_response", summary: "Work is complete.", content: `${filler} Tests passed and lint is clean.` }
+  ]);
+  analyzeSession(store, "summary-final", defaultConfig);
+
+  expect(getRiskFlags(store, "summary-final").map((flag) => flag.category)).toContain("missing-lint-evidence");
+  store.db.close();
+});
+
+for (const [name, final] of [
+  ["past 1,000 characters", `Final: ${"I traced the store and compared both adapters. ".repeat(40)} Tests passed and lint is clean.`],
+  ["on a continuation line", "Final: Tests passed.\nLint is clean."]
+] as const) {
+  test(`plain-text import checks a claim ${name}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-analyzer-test-"));
+    const store = openStore(join(dir, "agentops.db"));
+    const transcript = parseForensicTextTranscript("terminal.txt", ["$ bun test", "exit code 0", final].join("\n"));
+    ingestTranscript(store, transcript, defaultConfig);
+    analyzeSession(store, transcript.session.id, defaultConfig);
+
+    expect(getRiskFlags(store, transcript.session.id).map((flag) => flag.category)).toContain("missing-lint-evidence");
+    store.db.close();
+  });
 }
