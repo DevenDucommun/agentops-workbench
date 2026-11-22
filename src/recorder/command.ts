@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
 import { spoolPath, withSpoolLock } from "./spool";
 
@@ -41,18 +41,24 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
     const text = removed
-      ? `Recorder disabled for ${roots.main}. New sessions are not recorded. Existing spools stay in ${join(stateDir, "spool")} until you remove them.`
+      ? `Recorder disabled for ${roots.main}. New sessions are not recorded. Existing spools stay in ${join(stateDir, "spool")} and imported sessions stay in ${join(roots.main, ".agentops", "agentops.db")} until you remove them (docs/RECORDER.md, "Removing recorded data").`
       : `Recorder was not enabled for ${roots.main}.`;
     return { stdout: `${text}\n`, exitCode: 0 };
   }
 
   const enrolled = enrolledRepository(cwd, stateDir) !== null;
-  const store = join(roots.main, ".agentops", "agentops.db");
+  // Status reports what the hook and `agentops check` use from this directory:
+  // AGENTOPS_DB resolved against the real working directory when set, otherwise
+  // the repository's shared store; the turn-end verdict follows this directory's
+  // agentops.config.json, or the checkout root's when it has none.
+  const here = realDirectory(cwd) ?? cwd;
+  const store = env.AGENTOPS_DB !== undefined ? resolve(here, env.AGENTOPS_DB) : join(roots.main, ".agentops", "agentops.db");
+  const verdictConfigDir = existsSync(join(here, "agentops.config.json")) ? here : roots.checkout;
   const lines = [
     `Repository: ${roots.main}${roots.checkout !== roots.main ? ` (worktree ${roots.checkout})` : ""}`,
     `Recorder: ${enrolled ? "enabled" : "disabled"}`,
     `agentops binary on PATH: ${binaryOnPath(env) ? "yes" : "no"}`,
-    `Turn-end verdict (recorder.verdict): ${configFlag(roots.main, "recorder", "verdict") === true ? "on" : "off"}`,
+    `Turn-end verdict (recorder.verdict): ${configFlag(verdictConfigDir, "recorder", "verdict") === true ? "on" : "off"}`,
     `State directory: ${stateDir}`,
     `Recorded sessions in ${store}: ${await recordedSessions(store)}`,
     `Plugin install: ${PLUGIN_INSTALL}`
@@ -148,5 +154,14 @@ async function recordedSessions(store: string): Promise<number> {
     return 0;
   } finally {
     db.close();
+  }
+}
+
+/** The real path of a directory, or null when it cannot be resolved. */
+function realDirectory(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
   }
 }

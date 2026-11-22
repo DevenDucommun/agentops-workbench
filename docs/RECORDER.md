@@ -97,9 +97,19 @@ the session can be found from the commit later.
 `<state>` is `$AGENTOPS_STATE_DIR`, else `$XDG_STATE_HOME/agentops`, else
 `~/.local/state/agentops`. Nothing is written inside the repository except
 `.agentops/`, which should be in `.gitignore` (`agentops init` adds it).
-Nothing is deleted automatically. The full field list, retention and removal
-steps are in
+Nothing is deleted automatically. The full field list and retention are in
 [publication and privacy](PUBLICATION_AND_PRIVACY.md#forensic-recorder-data).
+
+### Removing recorded data
+
+`agentops recorder disable` stops new capture only; nothing already recorded is
+deleted. To remove recorded data:
+
+- **One session's raw capture:** delete `<state>/spool/<session-id>.jsonl` and
+  its `.errors.jsonl`, if any.
+- **All raw captures:** delete `<state>/spool/`.
+- **Imported sessions:** delete `<repository>/.agentops/agentops.db`, or the
+  file `AGENTOPS_DB` points to. Re-importing a spool recreates its session.
 
 ## Turn-End Verdict (optional)
 

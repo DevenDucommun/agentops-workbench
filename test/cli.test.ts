@@ -352,9 +352,9 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   expect(ingest.stdout).toContain("Observed commands: 2");
   expect(ingest.stdout).toContain("Inferred files: 2");
   expect(ingest.stdout).toContain("Prefer agentops run or provider JSONL");
-  expect(ingest.stdout).toContain("Next: agentops look forensic-terminal-transcript");
+  expect(ingest.stdout).toContain("Next: agentops look forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164");
 
-  const inspect = await runCli(["look", "forensic-terminal-transcript"]);
+  const inspect = await runCli(["look", "forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164"]);
   expect(inspect.exitCode).toBe(0);
   expect(inspect.stdout).toContain("Plain-text forensic import");
   expect(inspect.stdout).toContain("bun test");
@@ -368,7 +368,7 @@ test("imports forensic plain-text transcripts without explicit adapter selection
   expect(weak.stdout).toContain("transcript has no observable shell commands");
 
   const reportPath = join(tmpdir(), `agentops-forensic-report-${Date.now()}.md`);
-  const report = await runCli(["save", "report", "forensic-final-only", "--out", reportPath]);
+  const report = await runCli(["save", "report", "forensic-final-only-1714a0a03699fb50a28cf9ba6683c664", "--out", reportPath]);
   expect(report.exitCode).toBe(0);
   const reportText = readFileSync(reportPath, "utf8");
   expect(reportText).toContain("weak-forensic-transcript");
