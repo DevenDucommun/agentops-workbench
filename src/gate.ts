@@ -1,4 +1,4 @@
-import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
+import { countBlockedAttempts, isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -53,7 +53,9 @@ export function evaluateQualityGate(
 
   checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));
   // Blocked risky commands are informational one by one; repeated attempts fail the gate (spec R2.4).
-  checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", risks.filter((risk) => risk.category === "blocked-attempt").length, config.gates.maxBlockedAttempts));
+  // Counted from the stored commands, not flags, so a store analyzed before this
+  // rule existed (or an interrupted analysis) cannot hide them.
+  checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", countBlockedAttempts(commands, config), config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
     checks.push({

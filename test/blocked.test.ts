@@ -89,3 +89,42 @@ describe("config", () => {
     expect(errors).toContain("gates.maxBlockedAttempts must be a non-negative integer.");
   });
 });
+
+describe("review 6010175616: start rows and stores analyzed without the rule", () => {
+  const codexDecline = (withStart: boolean) => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-blocked-"));
+    const item = (status: string) => ({ id: "c1", type: "command_execution", command: "rm -rf ./out", aggregated_output: "", exit_code: null, status });
+    const lines = [
+      { type: "thread.started", thread_id: "codex-decline" },
+      ...(withStart ? [{ type: "item.started", item: item("in_progress") }] : []),
+      { type: "item.completed", item: item("declined") },
+      { type: "turn.completed", usage: {} }
+    ];
+    const path = join(dir, "codex.jsonl");
+    writeFileSync(path, lines.map((line) => JSON.stringify(line)).join("\n"));
+    return audit(path);
+  };
+
+  test("a Codex start record followed by a decline is one blocked attempt, as without the start", () => {
+    const withStart = codexDecline(true);
+    const withoutStart = codexDecline(false);
+    expect(withStart.flags.map((f) => f.category)).toEqual(withoutStart.flags.map((f) => f.category));
+    expect(withStart.check("max-high-risks")?.observed).toBe(0);
+    expect(withStart.check("max-blocked-attempts")?.observed).toBe(1);
+  });
+
+  test("the gate counts blocked attempts from commands even when the stored flags predate the rule", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
+    const path = join(ROOT, "fixtures/blocked/repeated-attempts.jsonl");
+    const content = readFileSync(path, "utf8");
+    const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    // No analysis: as if the store was analyzed by an older release, or analysis was interrupted.
+    const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+    const reaudited = (analyzeSession(store, sessionId, defaultConfig), evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }));
+    store.db.close();
+    const blocked = (result: typeof gate) => result.checks.find((c) => c.id === "max-blocked-attempts");
+    expect(blocked(gate)).toMatchObject({ status: blocked(reaudited)?.status, observed: blocked(reaudited)?.observed });
+    expect(blocked(gate)?.observed).toBeGreaterThan(0);
+  });
+});

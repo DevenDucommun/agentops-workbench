@@ -1,6 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
+import type { CommandRecord } from "./types";
 import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
@@ -56,7 +57,12 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
+  const pairedStarts = startRowsWithOutcome(commands);
   for (const command of commands) {
+    // The start row of an invocation that also has an outcome row (Codex
+    // item.started, then item.completed or a decline) is the same command, not
+    // a second run: the outcome row alone decides its risk.
+    if (pairedStarts.has(command.id)) continue;
     // A risky command that was denied or declined never ran (spec R2.4): it is
     // an informational blocked attempt unless risk.treatBlockedAsExecuted is set.
     // One blocked attempt per command, even when it matches both rules, so
@@ -255,6 +261,41 @@ function normalizeClaimText(value: string): string {
 
 function toClaimTexts(value: string | readonly string[]): string[] {
   return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
+}
+
+const START_ROW_STATUSES = new Set(["started", "in_progress", "running"]);
+
+/**
+ * Row ids of start rows (started, in progress, no exit code) that a later row
+ * of the same command completes, paired first in, first out. A start with no
+ * later outcome (an interrupted run) is not paired: it may have run.
+ */
+export function startRowsWithOutcome(commands: CommandRecord[]): Set<number> {
+  const open = new Map<string, number[]>();
+  const paired = new Set<number>();
+  const ordered = [...commands].sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0) || a.id - b.id);
+  for (const command of ordered) {
+    const isStart = START_ROW_STATUSES.has((command.status ?? "").toLowerCase()) && command.exitCode === null;
+    if (isStart) {
+      open.set(command.command, [...(open.get(command.command) ?? []), command.id]);
+      continue;
+    }
+    const start = open.get(command.command)?.shift();
+    if (start !== undefined) paired.add(start);
+  }
+  return paired;
+}
+
+/**
+ * Blocked risky attempts, counted from the commands themselves so a store whose
+ * flags predate the rule (or whose analysis was interrupted) still counts them:
+ * one per denied or declined destructive or permission-changing command.
+ */
+export function countBlockedAttempts(commands: CommandRecord[], config: AgentOpsConfig = defaultConfig): number {
+  if (config.risk.treatBlockedAsExecuted) return 0;
+  return commands.filter(
+    (command) => isBlockedCommandStatus(command.status) && (destructiveCommandPattern.test(command.command) || permissionCommandPattern.test(command.command))
+  ).length;
 }
 
 /** Denied (by a permission rule or the user) or declined (by the agent runtime's approval policy). */
