@@ -356,7 +356,8 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
 }
 
 /** tool_use block -> whether its tool_result reported an error. */
-type ToolResults = Map<ClaudeContentBlock, boolean>;
+/** tool_use block -> its outcome: failed (true), completed (false), or only a background launch acknowledgement. */
+type ToolResults = Map<ClaudeContentBlock, boolean | "background">;
 
 // A tool_use and its outcome arrive on separate records: the tool_result in a
 // later user record carries the tool_use_id and is_error. A result belongs to
@@ -365,6 +366,20 @@ type ToolResults = Map<ClaudeContentBlock, boolean>;
 // a reused id never shares an outcome. Both events keep the tool_use_id, and
 // the claims ledger applies the same rule to decide whether the result was
 // recorded before the final response.
+/**
+ * Whether a tool_result only acknowledges that the command went to the
+ * background (launched with run_in_background, moved there after a timeout, or
+ * backgrounded by the user). Its real outcome arrives later, outside this call.
+ */
+function isBackgroundAcknowledgement(record: ClaudeStreamRecord, block: ClaudeContentBlock): boolean {
+  const meta = record.tool_use_result;
+  if (meta && typeof meta === "object") {
+    const m = meta as Record<string, unknown>;
+    if (typeof m.backgroundTaskId === "string" || m.backgroundedByUser === true || m.assistantAutoBackgrounded === true) return true;
+  }
+  return /^\s*Command running in background with ID:/i.test(stringifyOutput(block.content) ?? "");
+}
+
 function toolResults(records: ClaudeStreamRecord[]): ToolResults {
   const latestCall = new Map<string, ClaudeContentBlock>();
   const results: ToolResults = new Map();
@@ -375,7 +390,7 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
       const call = latestCall.get(block.tool_use_id);
       // Any is_error value other than false or absent (including a malformed
       // one such as the string "true") is a failure, matching the result event.
-      if (call && !results.has(call)) results.set(call, Boolean(block.is_error));
+      if (call && !results.has(call)) results.set(call, isBackgroundAcknowledgement(record, block) ? "background" : Boolean(block.is_error));
     }
   }
   return results;
@@ -389,6 +404,7 @@ function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
   if (block.input?.run_in_background === true) return "started";
   const failed = results.get(block);
   if (failed === undefined) return "no_result";
+  if (failed === "background") return "started";
   return failed ? "failed" : "completed";
 }
 

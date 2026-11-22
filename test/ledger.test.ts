@@ -6,6 +6,7 @@ import { analyzeSession, evaluateEvidenceClaims } from "../src/analyzer";
 import { defaultConfig, validateConfigFile } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
+import { parseClaudeHooksJsonl } from "../src/claudeHooks";
 import { parseCodexExecJsonl } from "../src/codexExec";
 import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger, hasRecordedOutcome, isSafeSupportCommand } from "../src/ledger";
 import { parseJsonlTranscript } from "../src/parser";
@@ -896,5 +897,47 @@ describe("review 6009611011: background runs and dashboard parity", () => {
     const rows = evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config);
     expect(rows.find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "make test -Cunit" });
     expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(false);
+  });
+});
+
+describe("review 6009703786: background acknowledgements are still running in both Claude adapters", () => {
+  test("stream: a foreground test that timed out and moved to the background never replaces a failure", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const call = (id: string) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input: { command: "bun test" } }] } });
+    const stream = [
+      { type: "system", subtype: "init", session_id: "bg2" },
+      call("a"),
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", is_error: true, content: "1 fail" }] } },
+      call("b"),
+      {
+        type: "user",
+        tool_use_result: { backgroundTaskId: "task123", timedOutAfterMs: 1000 },
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b", is_error: false, content: "Command running in background with ID: task123" }] }
+      },
+      { type: "result", subtype: "success", session_id: "bg2", result: "Tests passed." }
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.outcome).toBe("failed");
+  });
+
+  test("recorder: a background launch with a synthetic exit code 0 never replaces a failure", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const base = { session_id: "rec-bg", cwd: "/workspace" };
+    const lines = [
+      { ...base, hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "bun test" }, error: "exit 1" },
+      { ...base, hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "t2", tool_input: { command: "bun test", run_in_background: true }, tool_response: { stdout: "", backgroundTaskId: "task9" } },
+      { ...base, hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "t3", tool_input: { command: "bun test" }, tool_response: { stdout: "", backgroundTaskId: "task10" } },
+      { ...base, hook_event_name: "Stop", last_assistant_message: "Tests passed." }
+    ];
+    const transcript = parseClaudeHooksJsonl("rec.jsonl", lines.map((line) => JSON.stringify(line)).join("\n"), defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
   });
 });
