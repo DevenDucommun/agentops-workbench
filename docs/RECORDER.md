@@ -101,8 +101,10 @@ deleted. To remove recorded data:
 - **One session's raw capture:** delete `<state>/spool/<session-id>.jsonl` and
   its `.errors.jsonl`, if any.
 - **All raw captures:** delete `<state>/spool/`.
-- **Imported sessions:** delete `<repository>/.agentops/agentops.db`, or the
-  file `AGENTOPS_DB` points to. Re-importing a spool recreates its session.
+- **Imported sessions:** the store (`<repository>/.agentops/agentops.db`, or
+  the file `AGENTOPS_DB` points to) holds every imported session, including
+  ones imported from other tools. Deleting it removes all of them, and
+  re-importing spools restores only the recorded ones.
 
 ## Turn-End Verdict (optional)
 
