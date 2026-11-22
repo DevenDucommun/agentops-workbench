@@ -11,19 +11,32 @@ export type GitChange = {
 export class NotAGitRepositoryError extends Error {}
 
 /**
- * Changed files in the work tree. Throws NotAGitRepositoryError outside a repository;
- * any other failure throws, so an unreadable diff is never reported as an empty one.
+ * Changes in the working tree. With `base`, changes since the merge base of
+ * `base` and HEAD, committed or not, so a clean PR checkout still reports the
+ * branch's edits; without it, uncommitted work relative to HEAD (or the staged
+ * files before the first commit). All Git output is read NUL-delimited, so every
+ * path stays literal. Throws NotAGitRepositoryError outside a repository; any
+ * other failure throws, so an unreadable diff is never reported as an empty one.
  */
-export function getGitChanges(cwd = process.cwd()): GitChange[] {
+export function getGitChanges(cwd = process.cwd(), options: { base?: string } = {}): GitChange[] {
   if (!isInsideWorkTree(cwd)) throw new NotAGitRepositoryError(`Not inside a git work tree: ${cwd}`);
   // NUL-delimited output keeps every path literal: no quoting, and no ambiguity with
   // names that contain " -> ", " => ", tabs, newlines or control characters.
   const statusOutput = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd);
-  // Before the first commit there is no HEAD: compare the work tree with the empty
-  // tree, so staged and unstaged edits to tracked files both count.
-  const base = hasHead(cwd) ? ["HEAD"] : [emptyTree(cwd)];
-  const numstatOutput = git(["diff", "--numstat", "-z", ...base, "--"], cwd);
-  return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
+  if (!options.base) {
+    // Before the first commit there is no HEAD: compare the work tree with the empty
+    // tree, so staged and unstaged edits to tracked files both count.
+    const head = hasHead(cwd) ? ["HEAD"] : [emptyTree(cwd)];
+    const numstatOutput = git(["diff", "--numstat", "-z", ...head, "--"], cwd);
+    return mergeGitChanges(parseGitStatusZ(statusOutput), parseGitNumstatZ(numstatOutput));
+  }
+  // A base that looks like an option (`--octopus`) would be read by git as one.
+  if (options.base.startsWith("-")) throw new Error(`Invalid --base ref: ${options.base}`);
+  const mergeBase = git(["merge-base", options.base, "HEAD"], cwd).trim();
+  const committed = parseGitNameStatusZ(git(["diff", "--name-status", "-z", "-M", mergeBase, "--"], cwd));
+  const untracked = parseGitStatusZ(statusOutput).filter((change) => change.status === "??");
+  const numstatOutput = git(["diff", "--numstat", "-z", "-M", mergeBase, "--"], cwd);
+  return mergeGitChanges([...committed, ...untracked], parseGitNumstatZ(numstatOutput));
 }
 
 /** Git changes for a report, or none outside a repository. Other Git errors propagate. */
@@ -66,6 +79,32 @@ function hasHead(cwd: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** `git diff --name-status` output; a rename or copy reports its new path. */
+export function parseGitNameStatus(input: string): GitChange[] {
+  return input
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [status = "", ...paths] = line.split("\t");
+      return { path: unquoteGitPath(paths.at(-1) ?? ""), status: status.charAt(0) || "M", additions: null, deletions: null };
+    })
+    .filter((change) => change.path.length > 0);
+}
+
+/** Parses `git diff --name-status -z`: `S\0path\0`, or `R087\0orig\0new\0` for a rename or copy. */
+export function parseGitNameStatusZ(input: string): GitChange[] {
+  const fields = input.split("\0");
+  const changes: GitChange[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const status = fields[i] as string;
+    if (!/^[A-Z][0-9]*$/.test(status)) continue;
+    if (status[0] === "R" || status[0] === "C") i++; // skip the original path
+    const path = fields[++i] ?? "";
+    if (path) changes.push({ path, status: status.charAt(0), additions: null, deletions: null });
+  }
+  return changes;
 }
 
 /** Parses `git status --porcelain=v1 -z`: `XY path\0`, with `orig\0` after a rename or copy. */
@@ -172,7 +211,9 @@ const GIT_MAX_BUFFER = 1024 * 1024 * 1024;
 
 function gitRaw(args: string[], cwd: string): string {
   // core.quotePath=false keeps non-ASCII path bytes literal whatever the user's config.
-  const output = execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+  // diff.relative=false keeps diffs repository-wide when run from a subdirectory,
+  // whatever the user's config, so a report never drops changes outside it.
+  const output = execFileSync("git", ["-c", "core.quotePath=false", "-c", "diff.relative=false", ...args], {
     cwd,
     // English diagnostics, so "not a git repository" is recognized in any locale.
     env: { ...process.env, LC_ALL: "C" },

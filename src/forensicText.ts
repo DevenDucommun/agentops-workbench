@@ -90,8 +90,10 @@ export function parseForensicTextTranscript(
   for (const entry of meaningfulLines) {
     const exitCode = extractExitCode(entry.line);
     if (exitCode !== null) {
-      const previous = [...commandEvents].reverse().find((candidate) => entry.lineNumber - candidate.lineNumber <= 8);
-      if (previous) {
+      // An exit code belongs to the most recent command, and only if that command
+      // has none yet; never to an earlier command past a newer prompt.
+      const previous = commandEvents.at(-1);
+      if (previous && entry.lineNumber - previous.lineNumber <= 8 && previous.event.exitCode === undefined) {
         previous.event.exitCode = exitCode;
         previous.event.status = previous.event.status === "inferred" ? "inferred" : "observed";
       }
@@ -101,7 +103,10 @@ export function parseForensicTextTranscript(
     const observedCommand = extractObservedCommand(entry.line);
     const inferredCommand = observedCommand ? null : extractInferredCommand(entry.line);
     const command = observedCommand ?? inferredCommand;
-    if (command && !seenCommands.has(command)) {
+    // Every shell prompt line is a separate execution, so observed commands are
+    // never merged. A command only mentioned in prose is recorded once, and not
+    // at all when it was also observed.
+    if (command && (observedCommand || !seenCommands.has(command))) {
       seenCommands.add(command);
       const event: RawEvent = {
         schemaVersion: "agentops.event.v1",
