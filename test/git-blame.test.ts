@@ -536,3 +536,47 @@ describe("review 6001325620: blame revisions, isolated trailer parsing, temp-dir
     }
   });
 });
+
+describe("review on 00d4cb7: inherited repository variables never redirect the helpers", () => {
+  const repoWith = (content: string, subject: string) => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-env-")));
+    const sh = (script: string) => Bun.spawnSync(["bash", "-c", script], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" } });
+    sh(`git init -q && git config user.name synthetic && git config user.email synthetic && git config commit.gpgsign false && printf '${content}\\n' > f && git add f && git commit -q -m '${subject}'`);
+    return dir;
+  };
+  const withEnv = <T>(vars: Record<string, string>, fn: () => T): T => {
+    const saved = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, vars);
+    try {
+      return fn();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  };
+
+  test("with GIT_DIR pointing at another repository, blame and commit info read the named one", () => {
+    const a = repoWith("from-a", "subject a");
+    const b = repoWith("from-b", "subject b");
+    withEnv({ GIT_DIR: join(a, ".git") }, () => {
+      expect(blameFile(b, "f")[0]?.content).toBe("from-b");
+      expect(getCommitInfo(b, "HEAD")?.subject).toBe("subject b");
+    });
+  });
+
+  test("with GIT_COMMON_DIR set, parseTrailers leaves the caller's repository configuration untouched", () => {
+    const a = repoWith("x", "s");
+    withEnv({ GIT_COMMON_DIR: join(a, ".git") }, () => {
+      expect(parseTrailers("subject\n\nAgentOps-Session: s-1\n", a)).toEqual([{ key: "AgentOps-Session", value: "s-1" }]);
+    });
+    const bare = Bun.spawnSync(["git", "-C", a, "config", "--bool", "core.bare"], { stdout: "pipe" }).stdout.toString().trim();
+    expect(bare).toBe("false");
+  });
+
+  test("a search revision such as :/subject resolves for blame", () => {
+    const a = repoWith("seeded", "seed-marker");
+    expect(blameFile(a, "f", { rev: ":/seed-marker" })[0]?.content).toBe("seeded");
+  });
+});

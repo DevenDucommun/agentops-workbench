@@ -108,13 +108,8 @@ export function parseTrailers(message: string, cwd = process.cwd()): Array<{ key
   try {
     // Every repository location is pinned to the throwaway store, so inherited
     // GIT_DIR, GIT_OBJECT_DIRECTORY or alternates never route a write elsewhere.
-    const isolated = {
-      GIT_DIR: store,
-      GIT_OBJECT_DIRECTORY: join(store, "objects"),
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: "",
-      GIT_WORK_TREE: undefined,
-      GIT_INDEX_FILE: undefined
-    };
+    // run() drops every inherited repository variable; only the throwaway store is named.
+    const isolated = { GIT_DIR: store };
     if (run(["git", "init", "--bare", "-q", store], undefined, isolated) === null) return [];
     const inStore = ["git", ...PINNED_CONFIG, ...settings];
     const tree = run([...inStore, "hash-object", "-t", "tree", "-w", "--stdin"], new Uint8Array(), isolated)?.trim();
@@ -189,7 +184,11 @@ export function blameFile(repo: string, path: string, options: { rev?: string | 
   if (rev !== null) {
     // Resolve the revision first: an unresolvable one (or one that looks like an
     // option, such as --root) returns [] instead of reaching blame as a flag.
-    const commit = git(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`])?.trim();
+    // Resolve the revision as written (a search such as :/text must not gain a
+    // suffix), then require that object to be a commit.
+    const object = git(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", rev])?.trim();
+    if (!object || !SHA.test(object)) return [];
+    const commit = git(repo, ["rev-parse", "--verify", "--quiet", `${object}^{commit}`])?.trim();
     if (!commit || !SHA.test(commit)) return [];
     args.push(commit);
   }
@@ -297,14 +296,34 @@ const PINNED_CONFIG = [
   "color.ui=false"
 ];
 
-/** Runs a command; `env` entries override the inherited environment, and `undefined` removes a variable. */
-function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string | undefined>): string | null {
+/**
+ * Environment variables that relocate a repository. Every helper names its
+ * repository explicitly, so an inherited value (from a Git hook, a worktree
+ * script, or another tool) must never redirect it, and none is passed on.
+ */
+const REPOSITORY_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT"
+];
+
+/** Runs a command without inherited repository-location variables; `env` adds or overrides entries. */
+function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string>): string | null {
   try {
-    let merged: Record<string, string> | undefined;
-    if (env) {
-      merged = {};
-      for (const [key, value] of Object.entries({ ...process.env, ...env })) if (value !== undefined) merged[key] = value;
+    const merged: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined && !REPOSITORY_ENV.includes(key) && !key.startsWith("GIT_CONFIG_KEY_") && !key.startsWith("GIT_CONFIG_VALUE_")) merged[key] = value;
     }
+    Object.assign(merged, env ?? {});
     const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: merged });
     return proc.exitCode === 0 ? proc.stdout.toString() : null;
   } catch {
