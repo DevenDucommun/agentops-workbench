@@ -1,4 +1,4 @@
-import { countBlockedAttempts, isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
+import { blockedHighRisksNotStored, countBlockedAttempts, isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -51,7 +51,9 @@ export function evaluateQualityGate(
   const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
-  checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));
+  const destructiveFlagged = new Set(risks.filter((risk) => risk.category === "destructive-command" && risk.eventId !== null).map((risk) => risk.eventId as number));
+  const highRisks = risks.filter((risk) => risk.severity === "high").length + blockedHighRisksNotStored(commands, destructiveFlagged, config);
+  checks.push(checkAtMost("max-high-risks", "High-severity risks", highRisks, config.gates.maxHighSeverityRisks));
   // Blocked risky commands are informational one by one; repeated attempts fail the gate (spec R2.4).
   // Counted from the stored commands, not flags, so a store analyzed before this
   // rule existed (or an interrupted analysis) cannot hide them.

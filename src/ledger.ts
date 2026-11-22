@@ -391,6 +391,8 @@ export type CommandContext = {
   resultRowIds: Map<number, number>;
   toolNames: Map<number, string>;
   eventTypes: Map<number, string>;
+  /** The invocation id (tool_use_id) recorded on each event, where the store has one. */
+  toolUseIds: Map<number, string>;
 };
 
 export function getCommandContext(store: Store, sessionId: string): CommandContext {
@@ -417,10 +419,15 @@ export function getCommandContext(store: Store, sessionId: string): CommandConte
     toolName: string;
   }>;
   const types = store.db.query("SELECT id, type FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ id: number; type: string }>;
+  const hasToolUseId = (store.db.query("SELECT 1 FROM pragma_table_info('events') WHERE name = 'tool_use_id'").get() ?? null) !== null;
+  const invocations = hasToolUseId
+    ? (store.db.query("SELECT id, tool_use_id AS toolUseId FROM events WHERE session_id = $sid AND tool_use_id IS NOT NULL").all({ $sid: sessionId }) as Array<{ id: number; toolUseId: string }>)
+    : [];
   return {
     resultRowIds: new Map(results.map((row) => [row.callRowId, row.resultRowId])),
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName])),
-    eventTypes: new Map(types.map((row) => [row.id, row.type]))
+    eventTypes: new Map(types.map((row) => [row.id, row.type])),
+    toolUseIds: new Map(invocations.map((row) => [row.id, row.toolUseId]))
   };
 }
 

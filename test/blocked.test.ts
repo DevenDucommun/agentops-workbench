@@ -128,3 +128,43 @@ describe("review 6010175616: start rows and stores analyzed without the rule", (
     expect(blocked(gate)?.observed).toBeGreaterThan(0);
   });
 });
+
+describe("review 6010235387: invocation identity, start-row output, check-time policy", () => {
+  const codex = (lines: unknown[], config: AgentOpsConfig = defaultConfig) => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-blocked-"));
+    const path = join(dir, "codex.jsonl");
+    writeFileSync(path, [{ type: "thread.started", thread_id: "codex-identity" }, ...lines, { type: "turn.completed", usage: {} }].map((line) => JSON.stringify(line)).join("\n"));
+    return audit(path, config);
+  };
+  const item = (id: string, status: string, output = "") => ({ id, type: "command_execution", command: "rm -rf ./out", aggregated_output: output, exit_code: null, status });
+
+  test("a decline for one invocation does not clear another unfinished invocation of the same command", () => {
+    // c2 is declined with no start record of its own; c1 started and never finished.
+    const { check } = codex([{ type: "item.started", item: item("c1", "in_progress") }, { type: "item.completed", item: item("c2", "declined") }]);
+    // c1 started and never finished: it may have run.
+    expect(check("max-high-risks")?.observed).toBe(1);
+    expect(check("max-blocked-attempts")?.observed).toBe(1);
+  });
+
+  test("a paired start row's output is still checked for secrets", () => {
+    const { flags } = codex([{ type: "item.started", item: item("c1", "in_progress", "[REDACTED:aws-access-key]") }, { type: "item.completed", item: item("c1", "declined") }]);
+    expect(flags.map((f) => f.category)).toContain("secret-redaction");
+  });
+
+  test("switching on treatBlockedAsExecuted at check time counts blocked destructive commands as high risks", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
+    const path = join(ROOT, "fixtures/blocked/repeated-attempts.jsonl");
+    const content = readFileSync(path, "utf8");
+    const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const legacy = withConfig({ risk: { treatBlockedAsExecuted: true } });
+    const atCheck = evaluateQualityGate(store, sessionId, legacy, { gitChanges: [] });
+    analyzeSession(store, sessionId, legacy);
+    const reaudited = evaluateQualityGate(store, sessionId, legacy, { gitChanges: [] });
+    store.db.close();
+    const high = (gate: typeof atCheck) => gate.checks.find((c) => c.id === "max-high-risks")?.observed;
+    expect(high(atCheck)).toBe(high(reaudited));
+    expect(atCheck.status).toBe(reaudited.status);
+  });
+});

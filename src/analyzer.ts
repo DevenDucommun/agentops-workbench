@@ -57,12 +57,13 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  const pairedStarts = startRowsWithOutcome(commands);
+  const pairedStarts = startRowsWithOutcome(commands, getCommandContext(store, sessionId).toolUseIds);
   for (const command of commands) {
     // The start row of an invocation that also has an outcome row (Codex
     // item.started, then item.completed or a decline) is the same command, not
-    // a second run: the outcome row alone decides its risk.
-    if (pairedStarts.has(command.id)) continue;
+    // a second run: the outcome row alone decides its command risk. Its output
+    // is still checked below.
+    const pairedStart = pairedStarts.has(command.id);
     // A risky command that was denied or declined never ran (spec R2.4): it is
     // an informational blocked attempt unless risk.treatBlockedAsExecuted is set.
     // One blocked attempt per command, even when it matches both rules, so
@@ -70,7 +71,9 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     const blocked = isBlockedCommandStatus(command.status) && !config.risk.treatBlockedAsExecuted;
     const destructive = destructiveCommandPattern.test(command.command);
     const permission = permissionCommandPattern.test(command.command);
-    if (blocked && (destructive || permission)) {
+    if (pairedStart) {
+      // No command flags for the start half.
+    } else if (blocked && (destructive || permission)) {
       const kind = destructive && permission ? "Destructive, permission-changing" : destructive ? "Destructive" : "Permission-changing";
       flags.push({ eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `${kind} command was ${command.status} and did not run: ${command.command}` });
     } else {
@@ -270,17 +273,23 @@ const START_ROW_STATUSES = new Set(["started", "in_progress", "running"]);
  * of the same command completes, paired first in, first out. A start with no
  * later outcome (an interrupted run) is not paired: it may have run.
  */
-export function startRowsWithOutcome(commands: CommandRecord[]): Set<number> {
+export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<number, string> = new Map()): Set<number> {
   const open = new Map<string, number[]>();
   const paired = new Set<number>();
   const ordered = [...commands].sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0) || a.id - b.id);
+  // Rows that name their invocation pair only with the same invocation; rows
+  // without one pair by command text, first in, first out.
+  const key = (command: CommandRecord) => {
+    const invocation = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
+    return invocation === undefined ? `text:${command.command}` : `id:${invocation}`;
+  };
   for (const command of ordered) {
     const isStart = START_ROW_STATUSES.has((command.status ?? "").toLowerCase()) && command.exitCode === null;
     if (isStart) {
-      open.set(command.command, [...(open.get(command.command) ?? []), command.id]);
+      open.set(key(command), [...(open.get(key(command)) ?? []), command.id]);
       continue;
     }
-    const start = open.get(command.command)?.shift();
+    const start = open.get(key(command))?.shift();
     if (start !== undefined) paired.add(start);
   }
   return paired;
@@ -291,6 +300,22 @@ export function startRowsWithOutcome(commands: CommandRecord[]): Set<number> {
  * flags predate the rule (or whose analysis was interrupted) still counts them:
  * one per denied or declined destructive or permission-changing command.
  */
+/**
+ * Under risk.treatBlockedAsExecuted, denied or declined destructive commands are
+ * high risks. Counted from the commands so a store audited under the default
+ * policy still counts them when the policy is switched on at check time; rows
+ * that already carry a stored high destructive flag are not counted twice.
+ */
+export function blockedHighRisksNotStored(commands: CommandRecord[], flaggedEventIds: Set<number>, config: AgentOpsConfig = defaultConfig): number {
+  if (!config.risk.treatBlockedAsExecuted) return 0;
+  return commands.filter(
+    (command) =>
+      isBlockedCommandStatus(command.status) &&
+      destructiveCommandPattern.test(command.command) &&
+      !(command.eventId !== null && flaggedEventIds.has(command.eventId))
+  ).length;
+}
+
 export function countBlockedAttempts(commands: CommandRecord[], config: AgentOpsConfig = defaultConfig): number {
   if (config.risk.treatBlockedAsExecuted) return 0;
   return commands.filter(
