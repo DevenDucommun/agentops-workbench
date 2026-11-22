@@ -300,3 +300,21 @@ test("review 6010434366: an audit that read the spool through a symlink imports 
   expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
   db.db.close();
 });
+
+test("review 6010509317: after a restore from a subdirectory, forget removes the session from the store check uses", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  expect((await runRecorderCommand(["disable"], { cwd: repo, env })).exitCode).toBe(0);
+  rmSync(join(repo, ".agentops", "agentops.db"));
+  const sub = join(repo, "sub");
+  mkdirSync(sub);
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const main = join(import.meta.dir, "..", "src", "main.ts");
+  const restore = Bun.spawnSync([process.execPath, main, "audit", spool, "--quiet"], { cwd: sub, env: { ...process.env, ...env } });
+  expect(restore.exitCode).toBe(0);
+  const checkStore = join(sub, ".agentops", "agentops.db");
+  expect(existsSync(checkStore)).toBe(true);
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: sub, env })).exitCode).toBe(0);
+  const db = openStore(checkStore);
+  expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
+  db.db.close();
+});

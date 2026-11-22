@@ -36,7 +36,7 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
     return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
   }
 
-  if (sub === "forget") return forgetSession(args[1] as string, recorderStore(cwd, env, roots.main), join(stateDir, "spool"));
+  if (sub === "forget") return forgetSession(args[1] as string, forgetStores(cwd, env, roots.main, stateDir), join(stateDir, "spool"));
 
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
@@ -72,7 +72,7 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
  * files, under the session's spool lock. Nothing else is touched, so other
  * sessions keep verifying.
  */
-async function forgetSession(sessionId: string, store: string, spoolDir: string): Promise<CommandResult> {
+async function forgetSession(sessionId: string, stores: string[], spoolDir: string): Promise<CommandResult> {
   const { Database } = await import("bun:sqlite");
   // Hold the session's spool lock for the whole removal: a hook appending at
   // the same moment would otherwise recreate the spool mid-chain after it was
@@ -96,7 +96,8 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
       const generation = spoolExists ? spoolGeneration(readFileSync(spool, "utf8")) : null;
       if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
       try {
-        if (storeExists(store)) {
+        for (const store of stores) {
+          if (!storeExists(store)) continue;
           const db = new Database(store);
           try {
             db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
@@ -214,6 +215,29 @@ async function recordedSessions(store: string): Promise<number> {
 }
 
 /** The store the hook and `agentops check` use from `cwd`: AGENTOPS_DB resolved against the real directory, else the repository's shared store. */
+/**
+ * Every store the session can be in: the recorder's (where hooks import) and the
+ * one `agentops check` would open from this directory, which differ when the
+ * repository is not enrolled and a manual restore ran from a subdirectory.
+ */
+function forgetStores(cwd: string, env: NodeJS.ProcessEnv, mainRoot: string, stateDir: string): string[] {
+  const here = realDirectory(cwd) ?? cwd;
+  const recorder = recorderStore(cwd, env, mainRoot);
+  const check = resolve(here, checkStorePath(here, env, stateDir));
+  return [...new Set([recorder, check])];
+}
+
+/** The store `agentops check` opens from `cwd` (store.ts defaultStorePath, with this command's env and state dir). */
+function checkStorePath(cwd: string, env: NodeJS.ProcessEnv, stateDir: string): string {
+  if (env.AGENTOPS_DB !== undefined) return env.AGENTOPS_DB;
+  const local = join(".agentops", "agentops.db");
+  const enrolled = enrolledRepository(cwd, stateDir);
+  if (enrolled) return join(enrolled, local);
+  if (existsSync(resolve(cwd, local))) return local;
+  const main = findRepositoryRoots(cwd)?.main;
+  return main && existsSync(join(main, local)) ? join(main, local) : local;
+}
+
 function recorderStore(cwd: string, env: NodeJS.ProcessEnv, mainRoot: string): string {
   return env.AGENTOPS_DB !== undefined ? resolve(realDirectory(cwd) ?? cwd, env.AGENTOPS_DB) : join(mainRoot, ".agentops", "agentops.db");
 }
