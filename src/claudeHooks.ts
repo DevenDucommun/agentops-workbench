@@ -177,9 +177,10 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
     const commit = (response?.gitOperation as { commit?: Record<string, unknown> } | undefined)?.commit;
     // A background launch (requested, after a timeout, or by the user) only
     // acknowledges the start; its exit code is not this call's, so it is still running.
-    // A reported failure (PostToolUseFailure) stays a failure.
+    // A reported failure (PostToolUseFailure) or interruption keeps its own status.
     const background =
       !failed &&
+      response?.interrupted !== true &&
       (input?.run_in_background === true ||
       typeof response?.backgroundTaskId === "string" ||
       response?.backgroundedByUser === true ||

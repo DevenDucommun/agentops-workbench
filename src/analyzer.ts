@@ -255,12 +255,18 @@ function toClaimTexts(value: string | readonly string[]): string[] {
   return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
 }
 
-export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[], config: AgentOpsConfig = defaultConfig): EvidenceClaimEvaluation[] {
+export function evaluateEvidenceClaims(
+  value: string | readonly string[],
+  commands: string[],
+  config: AgentOpsConfig = defaultConfig,
+  finishedCommands: readonly string[] = commands
+): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    // A command the ledger accepts as support (a configured command, word for word)
-    // is evidence here too, so the dashboard never contradicts the ledger.
-    const matchingCommand = commands.find((command) => runsRuleCommand(rule, command) || isSupportCommand(rule, command, config)) ?? null;
+    // A configured support command (word for word) that finished is evidence here
+    // too, as it is for the ledger; one that only started is not.
+    const matchingCommand =
+      commands.find((command) => runsRuleCommand(rule, command)) ?? finishedCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
     return {
       id: rule.id,
       category: rule.category,

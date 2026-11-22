@@ -974,3 +974,25 @@ describe("review on e289e55: failures stay failures; background detection uses C
     expect(claim.verdict).toBe("supported");
   });
 });
+
+describe("review on 1ab87cb: interrupted background runs; unfinished configured commands", () => {
+  test("recorder: a background run reported as interrupted keeps its interrupted status", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const base = { session_id: "rec-int", cwd: "/workspace" };
+    const lines = [
+      { ...base, hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "bun test", run_in_background: true }, tool_response: { stdout: "", interrupted: true, backgroundTaskId: "x" } },
+      { ...base, hook_event_name: "Stop", last_assistant_message: "Done." }
+    ];
+    const transcript = parseClaudeHooksJsonl("rec.jsonl", lines.map((line) => JSON.stringify(line)).join("\n"), defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    const statuses = getCommands(store, sessionId).map((command) => command.status);
+    store.db.close();
+    expect(statuses).toEqual(["interrupted"]);
+  });
+
+  test("dashboard evidence: a configured command that only started is not evidence", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
+    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
+    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(true);
+  });
+});
