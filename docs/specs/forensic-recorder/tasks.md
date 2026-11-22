@@ -34,8 +34,9 @@ Sizes are relative effort: S, M or L.
 - [x] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
   T0.2 fixtures ingest. `look` shows tool calls, files and commands. The
   commit fixture links its SHA (AC6).
-- [ ] **T1.6 (S) Optional end-of-session verdict line.** Verify: off by
-  default; when on, it prints one line and never a non-zero exit.
+- [x] **T1.6 (S) Optional turn-end verdict line.** Verify: off by default;
+  when on, the Stop hook prints one `systemMessage` line and never a non-zero
+  exit. (Moved from session end: Claude Code discards SessionEnd output.)
 - [ ] **T1.7 (M) Plugin packaging.** `plugin/` manifest, hooks config,
   marketplace manifest, `agentops recorder enable|disable|status`, and
   CAPTURE_GUIDE/README. Verify: manual install in a scratch repo, then an
