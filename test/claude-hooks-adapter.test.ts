@@ -5,12 +5,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { detectAdapters, resolveAdapter } from "../src/adapters";
 import { parseClaudeHooksJsonl } from "../src/claudeHooks";
 import { runCli } from "../src/cli";
+import { evaluateQualityGate } from "../src/gate";
 import { defaultConfig } from "../src/config";
 import { enrollRepository } from "../src/recorder/enrollment";
-import { handleHook, ingestAfterSessionEnd } from "../src/recorder/hook";
-import { ingestSpoolFile, resolveCommit } from "../src/recorder/ingest";
+import { handleHook, ingestAfterSessionEnd, pushSource } from "../src/recorder/hook";
+import { ingestSpoolFile, resolveCommit, storeHookTranscript } from "../src/recorder/ingest";
 import { buildSpoolRecord, readSpool, spoolPath } from "../src/recorder/spool";
-import { findSessionsForCommit, getEventChain, getEvents, getSessionCommits, getToolCalls, ingestTranscript, openStore } from "../src/store";
+import { defaultStorePath, findSessionsForCommit, getEventChain, getEvents, getSessionCommits, getToolCalls, ingestTranscript, openStore } from "../src/store";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "claude-hooks");
 const NAMES = ["clean-session", "risky-session", "subagent-session", "failing-test-session", "commit-session"];
@@ -190,8 +191,24 @@ describe("AC6: session-end ingest links the commit", () => {
     expect(session.repo).toBe("repo");
     store.db.close();
 
-    const spool = readSpool(spoolPath(join(stateDir, "spool"), sid) as string);
+    const spoolFile = spoolPath(join(stateDir, "spool"), sid)!;
+    const spool = readSpool(spoolFile);
     expect(JSON.stringify(spool.records)).not.toContain(repo);
+    const priorDb = process.env.AGENTOPS_DB;
+    process.env.AGENTOPS_DB = join(repo, ".agentops", "agentops.db");
+    try {
+      expect((await runCli(["audit", spoolFile, "--quiet"])).exitCode).toBe(0);
+      const reopened = openStore();
+      try {
+        const [relinked] = getSessionCommits(reopened, sid);
+        expect(relinked?.sha).toBe(full);
+        expect(getEventChain(reopened, sid).find((e) => e.id === relinked?.eventId)?.eventUid)
+          .toBe(chain.find((e) => e.id === commits[0]?.eventId)?.eventUid);
+      } finally { reopened.db.close(); }
+    } finally {
+      if (priorDb === undefined) delete process.env.AGENTOPS_DB;
+      else process.env.AGENTOPS_DB = priorDb;
+    }
   });
 
   test("an unresolvable short SHA is linked as given", () => {
@@ -202,4 +219,212 @@ describe("AC6: session-end ingest links the commit", () => {
     const result = ingestSpoolFile(spoolFile, { repoRoot: root, dbPath: join(root, "db.sqlite") });
     expect(result.commits.map((c) => c.sha)).toEqual(["a1b2c3d"]);
   });
+});
+
+describe("recorder review regressions", () => {
+  test("detection and import recover the records following a torn first append", () => {
+    const content = '{"typ\n' + fixtureLines("clean-session").map((p) => JSON.stringify(buildSpoolRecord(p))).join("\n");
+    const input = { sourcePath: "interrupted.jsonl", content };
+    expect(resolveAdapter(input).id).toBe("claude-hooks");
+    expect(parseClaudeHooksJsonl(input.sourcePath, content, defaultConfig).events.length).toBe(fixtureLines("clean-session").length);
+  });
+
+  test("legacy paths are retained and failed edits do not produce a file-change row", () => {
+    const records = ["PostToolUse", "PostToolUseFailure"].map((hookEvent, i) => {
+      const r = buildSpoolRecord({ hook_event_name: hookEvent, session_id: "legacy", tool_name: "Edit",
+        tool_input: { file_path: i ? ".env" : "src/old.ts" } });
+      delete r.path;
+      return JSON.stringify(r);
+    });
+    const transcript = parseClaudeHooksJsonl("legacy.jsonl", records.join("\n"), defaultConfig);
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-legacy-")), "store.db"));
+    try {
+      ingestTranscript(store, transcript, defaultConfig);
+      expect(transcript.events.at(-1)).toMatchObject({ type: "tool_call", status: "failed", toolName: "Edit" });
+      expect(store.db.query("SELECT path FROM file_changes").all()).toEqual([{ path: "src/old.ts" }]);
+    } finally { store.db.close(); }
+  });
+
+  test("linked worktree capture uses its path and HEAD, honors the DB override and preserves links on audit", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-hook-review-")));
+    const repo = join(root, "repo"), checkout = join(root, "linked"), stateDir = join(root, "state");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "base");
+    git(repo, "worktree", "add", "-qb", "topic", checkout);
+    git(checkout, "commit", "--allow-empty", "-qm", "feature");
+    const sha = git(checkout, "rev-parse", "HEAD");
+    enrollRepository(repo, stateDir);
+    const previous = process.env.AGENTOPS_DB;
+    const db = join(root, "configured.db");
+    process.env.AGENTOPS_DB = db;
+    const sid = "linked";
+    const emit = (event: string, fields: Record<string, unknown> = {}) => handleHook(event,
+      JSON.stringify({ session_id: sid, cwd: checkout, hook_event_name: event, ...fields }), { stateDir });
+    try {
+      const push = { tool_name: "Bash", tool_input: { command: "git push origin HEAD" }, tool_response: { stdout: "", stderr: "" } };
+      emit("PostToolUseFailure", { ...push, error: "Exit code 1" });
+      emit("PostToolUse", push);
+      emit("PostToolUse", { tool_name: "Edit", tool_input: { file_path: join(checkout, "src/a.ts") } });
+      const outcome = emit("SessionEnd");
+      await ingestAfterSessionEnd(outcome, stateDir);
+      const file = spoolPath(join(stateDir, "spool"), sid)!;
+      const store = openStore(db);
+      try {
+        const check = () => {
+          expect(store.db.query("SELECT path FROM file_changes").all()).toEqual([{ path: "src/a.ts" }]);
+          const commits = getSessionCommits(store, sid);
+          expect(commits).toHaveLength(1);
+          expect(commits[0]).toMatchObject({ sha, kind: "pushed", eventId: expect.any(Number) });
+          expect(store.db.query("SELECT idx FROM events JOIN session_commits ON events.id = session_commits.event_id").all()).toEqual([{ idx: 2 }]);
+        };
+        check();
+        expect((await runCli(["audit", file, "--quiet"])).exitCode).toBe(0);
+        check();
+      } finally { store.db.close(); }
+    } finally {
+      if (previous === undefined) delete process.env.AGENTOPS_DB;
+      else process.env.AGENTOPS_DB = previous;
+    }
+  });
+});
+
+describe("recorder review regressions, round 3", () => {
+  test("push capture resolves the refspec source and skips pushes with no single commit", () => {
+    const cases: Array<[string, string | undefined]> = [
+      ["git push", undefined],
+      ["git push origin", undefined],
+      ["git push -u origin HEAD", "HEAD"],
+      ["git push -- origin HEAD:refs/heads/explicit", "HEAD"],
+      ["git push -q origin HEAD:refs/heads/quiet", undefined],
+      ["git push --quiet origin HEAD:refs/heads/quiet", undefined],
+      ["git push --qui origin HEAD:refs/heads/quiet", undefined],
+      ["git push origin HEAD:refs/heads/current", "HEAD"],
+      ["git push origin other", "other"],
+      ["git push origin +other:refs/heads/published", "other"],
+      ["git push -o ci.skip origin other", "other"],
+      ["git status --short && git push origin HEAD:refs/heads/current", "HEAD"],
+      ["git push -nv origin HEAD:refs/heads/current", undefined],
+      ["git push --dry-run origin", undefined],
+      ["git push origin :refs/heads/gone", undefined],
+      ["git push -d origin topic", undefined],
+      ["git push --tags", undefined],
+      ["git push origin a b", undefined],
+      ["cd elsewhere && git push", undefined],
+      ["git push; git push other", undefined],
+      ["git push origin \"$(git branch --show-current)\"", undefined],
+      ["git commit -m x", undefined]
+    ];
+    for (const [command, expected] of cases) expect([command, pushSource(command)]).toEqual([command, expected]);
+  });
+
+  test("re-importing a commit followed by its push keeps one canonical SHA from any directory", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-dup-sha-")));
+    const repo = join(root, "repo");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "work");
+    const full = git(repo, "rev-parse", "HEAD");
+    const bash = (command: string, response: Record<string, unknown>) =>
+      buildSpoolRecord({ hook_event_name: "PostToolUse", session_id: "dup", cwd: repo, tool_name: "Bash", tool_input: { command }, tool_response: response });
+    const push = bash("git push origin HEAD", { stdout: "", stderr: "" });
+    push.gitCommit = { sha: full, kind: "pushed" };
+    const lines = [bash("git commit -m work", { stdout: "", gitOperation: { commit: { sha: full.slice(0, 7), kind: "committed" } } }), push];
+    const transcript = parseClaudeHooksJsonl("dup.jsonl", lines.map((r) => JSON.stringify(r)).join("\n"), defaultConfig);
+    const store = openStore(join(root, "store.db"));
+    try {
+      storeHookTranscript(store, transcript, defaultConfig, repo);
+      storeHookTranscript(store, transcript, defaultConfig, root);
+      expect(getSessionCommits(store, "dup").map((c) => c.sha)).toEqual([full]);
+    } finally { store.db.close(); }
+  });
+
+  test("the default store from a linked worktree is the main checkout's, where sessions are imported", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-default-db-")));
+    const repo = join(root, "repo"), linked = join(root, "linked");
+    git(root, "init", "-q", repo);
+    git(repo, "commit", "--allow-empty", "-qm", "base");
+    git(repo, "worktree", "add", "-qb", "topic", linked);
+    const previous = process.env.AGENTOPS_DB;
+    delete process.env.AGENTOPS_DB;
+    try {
+      expect(defaultStorePath(linked)).toBe(join(".agentops", "agentops.db"));
+      openStore(join(repo, ".agentops", "agentops.db")).db.close();
+      expect(defaultStorePath(linked)).toBe(join(repo, ".agentops", "agentops.db"));
+      mkdirSync(join(repo, "sub"));
+      expect(defaultStorePath(join(repo, "sub"))).toBe(join(repo, ".agentops", "agentops.db"));
+    } finally {
+      if (previous !== undefined) process.env.AGENTOPS_DB = previous;
+    }
+  });
+
+  test("raw hook payloads keep paths relative to the checkout, not the event cwd", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-raw-cwd-")));
+    const repo = join(root, "repo");
+    git(root, "init", "-q", repo);
+    for (const dir of ["src", "test"]) mkdirSync(join(repo, dir));
+    const lines = ["src", "test"].map((dir) => JSON.stringify({ hook_event_name: "PostToolUse", session_id: "raw", cwd: join(repo, dir),
+      tool_name: "Write", tool_input: { file_path: join(repo, dir, "a.ts"), content: "x" }, tool_response: { type: "create", filePath: join(repo, dir, "a.ts") } }));
+    const transcript = parseClaudeHooksJsonl("raw.jsonl", lines.join("\n"), defaultConfig);
+    expect(transcript.events.map((e) => e.path)).toEqual(["src/a.ts", "test/a.ts"]);
+  });
+});
+
+test("Stop claims after the preview boundary still require verification", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-stop-")));
+  const file = join(root, "test.jsonl");
+  const dbPath = join(root, "store.db");
+  const message = "Here are the details. ".repeat(8) + "All tests passed.";
+  const records = [
+    { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun run lint" }, tool_response: { exitCode: 0 } },
+    { hook_event_name: "Stop", last_assistant_message: message }
+  ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: "late-claim" })));
+  writeFileSync(file, records.join("\n"));
+  ingestSpoolFile(file, { repoRoot: root, dbPath });
+  const store = openStore(dbPath);
+  try {
+    expect(evaluateQualityGate(store, "late-claim").checks).toContainEqual(expect.objectContaining({ id: "unsupported-final-claims", status: "failed" }));
+  } finally {
+    store.db.close();
+  }
+});
+
+test("an abbreviated dry run cannot link an unpublished commit", () => {
+  expect(pushSource("git push --dry origin HEAD:refs/heads/unpublished")).toBeUndefined();
+  expect(pushSource("git push --dry-r origin HEAD:refs/heads/unpublished")).toBeUndefined();
+});
+
+test("porcelain output identifies the configured source ref of an actual push", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-porcelain-")));
+  const repo = join(root, "local");
+  const remote = join(root, "remote.git");
+  git(root, "init", "-q", "-b", "trunk", repo);
+  git(root, "init", "-q", "--bare", remote);
+  git(repo, "commit", "--allow-empty", "-qm", "first");
+  git(repo, "remote", "add", "fixture", remote);
+  git(repo, "config", "remote.fixture.push", "refs/heads/trunk:refs/heads/published");
+  const push = () => git(repo, "push", "--porcelain", "fixture");
+  const detect = (output: string) => pushSource("git push --porcelain fixture", output);
+  expect(detect(push())).toBe("refs/heads/trunk");
+  expect(git(remote, "rev-parse", "published")).toBe(git(repo, "rev-parse", "trunk"));
+  expect(detect(push())).toBeUndefined();
+  git(repo, "commit", "--allow-empty", "-qm", "second");
+  expect(detect(push())).toBe("refs/heads/trunk");
+});
+
+test("spools without a session id that share a file name stay separate, and replay stays idempotent", () => {
+  const store = openStore(join(realpathSync(mkdtempSync(join(tmpdir(), "agentops-noid-"))), "a.db"));
+  // A record capped for size can lose payload.session_id.
+  const capped = (prompt: string) => {
+    const record = buildSpoolRecord({ session_id: "s", cwd: "/workspace", hook_event_name: "UserPromptSubmit", prompt }, {}) as { payload?: Record<string, unknown> };
+    delete record.payload?.session_id;
+    return `${JSON.stringify(record)}\n`;
+  };
+  const first = capped("first capture");
+  const second = capped("second capture");
+  const ingest = (content: string) => ingestTranscript(store, parseClaudeHooksJsonl("capture.jsonl", content, defaultConfig), defaultConfig).sessionId;
+  const a = ingest(first);
+  const b = ingest(second);
+  expect(a).not.toBe(b);
+  expect(ingest(first)).toBe(a);
+  expect(store.db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 2 });
+  store.db.close();
 });

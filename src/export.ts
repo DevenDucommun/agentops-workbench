@@ -1,7 +1,7 @@
 import { isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
-import type { GitChange } from "./git";
+import { displayGitPath, gitPathBytesHex, hasInvalidPathBytes, type GitChange } from "./git";
 import { sha256 } from "./redaction";
 import {
   getCommands,
@@ -201,9 +201,11 @@ export function generateRepoJsonExport(
     ...sessionExport,
     kind: "repo",
     git: {
-      changes: gitChanges,
-      observedChanges: gitChanges.filter((change) => agentPaths.has(change.path)),
-      unobservedChanges: gitChanges.filter((change) => !agentPaths.has(change.path)),
+      // Paths with bytes that are not valid UTF-8 are escaped and carry pathBytesHex (a lone
+      // surrogate would decode to U+FFFD in most JSON readers); all other paths are exact.
+      changes: gitChanges.map(exportGitChange),
+      observedChanges: gitChanges.filter((change) => agentPaths.has(change.path)).map(exportGitChange),
+      unobservedChanges: gitChanges.filter((change) => !agentPaths.has(change.path)).map(exportGitChange),
       agentOnlyFiles: files.filter((file) => !gitPaths.has(file.path))
     }
   };
@@ -217,4 +219,14 @@ function stableId(input: string, length: number): string {
 
 function compactAttributes(input: Record<string, string | number | boolean | null>): Record<string, string | number | boolean> {
   return Object.fromEntries(Object.entries(input).filter((entry): entry is [string, string | number | boolean] => entry[1] !== null));
+}
+
+/**
+ * A git change for the JSON export. A valid UTF-8 path is exported exactly as it is, so
+ * consumers can open it. A path with bytes that were not valid UTF-8 cannot be a JSON
+ * string as-is: it gets the escaped display form plus `pathBytesHex`, its exact bytes.
+ */
+function exportGitChange(change: GitChange): GitChange & { pathBytesHex?: string } {
+  if (!hasInvalidPathBytes(change.path)) return change;
+  return { ...change, path: displayGitPath(change.path), pathBytesHex: gitPathBytesHex(change.path) };
 }

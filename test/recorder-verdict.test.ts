@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { enrollRepository } from "../src/recorder/enrollment";
-import { handleHook, verdictAfterStop } from "../src/recorder/hook";
+import { handleHook, verdictAfterStop, verdictJson } from "../src/recorder/hook";
 
 // T1.6: optional turn-end verdict. Off by default; when on, a recorded Stop
 // returns exactly one JSON line with a systemMessage and no decision field.
@@ -120,4 +120,81 @@ describe("process entry", () => {
     const { repo, stateDir } = setup();
     expect(run(stop(repo), stateDir)).toEqual({ code: 0, out: "", err: "" });
   });
+});
+
+describe("review 6001087386: the verdict matches agentops check in the session's checkout", () => {
+  test("with AGENTOPS_DB set, the verdict ingests into and reads the configured store", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const out = await verdictAfterStop(recordUntilStop("clean-session", repo, stateDir), stateDir, { AGENTOPS_DB: "custom/agentops.db" });
+    expect(out).not.toBeNull();
+    expect(existsSync(join(repo, "custom", "agentops.db"))).toBe(true);
+    expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(false);
+  });
+
+  test("in a linked worktree, the worktree's own config decides and gates the verdict", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const git = (...args: string[]) => Bun.spawnSync(["git", "-c", "user.name=synthetic", "-c", "user.email=synthetic", "-c", "commit.gpgsign=false", ...args], { cwd: repo });
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    const worktree = join(repo, "..", "wt");
+    git("worktree", "add", "-q", worktree);
+
+    writeFileSync(join(worktree, "agentops.config.json"), JSON.stringify({ recorder: { verdict: false } }));
+    expect(await verdictAfterStop(recordUntilStop("clean-session", worktree, stateDir), stateDir, {})).toBeNull();
+
+    writeFileSync(join(worktree, "agentops.config.json"), JSON.stringify({ recorder: { verdict: true }, gates: { requiredVerificationCommands: ["make lint"] } }));
+    const out = await verdictAfterStop(recordUntilStop("clean-session", worktree, stateDir), stateDir, {});
+    expect(JSON.parse(out ?? "{}").systemMessage).toStartWith("agentops: needs review:");
+    // The session lands in the shared store that `agentops look` and `check` read, not a worktree-local one.
+    expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(true);
+    expect(existsSync(join(worktree, ".agentops", "agentops.db"))).toBe(false);
+  });
+
+  test("the whole JSON line stays within 300 characters, escapes included", () => {
+    const message = `agentops: needs review: ${'requires "make lint" '.repeat(30)}`;
+    const line = verdictJson(message);
+    expect(line.length).toBeLessThanOrEqual(300);
+    expect(Object.keys(JSON.parse(line))).toEqual(["systemMessage"]);
+    expect(verdictJson("short")).toBe('{"systemMessage":"short"}');
+  });
+});
+
+test("a relative AGENTOPS_DB resolves against the session's working directory, as agentops check does there", async () => {
+  const { repo, stateDir } = setup({ recorder: { verdict: true } });
+  const sub = join(repo, "packages", "app");
+  mkdirSync(sub, { recursive: true });
+  const out = await verdictAfterStop(recordUntilStop("clean-session", sub, stateDir), stateDir, { AGENTOPS_DB: "local.db" });
+  expect(out).not.toBeNull();
+  expect(existsSync(join(sub, "local.db"))).toBe(true);
+  expect(existsSync(join(repo, "local.db"))).toBe(false);
+});
+
+describe("review 6001288692: the verdict equals agentops check run in the session's directory", () => {
+  test("a package directory's own config gates the verdict, as check reads it there", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const pkg = join(repo, "packages", "app");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "agentops.config.json"), JSON.stringify({ recorder: { verdict: true }, gates: { requiredVerificationCommands: ["make lint"] } }));
+    const out = await verdictAfterStop(recordUntilStop("clean-session", pkg, stateDir), stateDir, {});
+    expect(JSON.parse(out ?? "{}").systemMessage).toStartWith("agentops: needs review:");
+  });
+
+  test("a relative AGENTOPS_DB resolves against the real directory behind a symlinked working directory", async () => {
+    const { repo, stateDir } = setup({ recorder: { verdict: true } });
+    const real = join(repo, "pkgs", "real");
+    mkdirSync(real, { recursive: true });
+    const link = join(repo, "linked");
+    Bun.spawnSync(["ln", "-s", join("pkgs", "real"), link]);
+    const out = await verdictAfterStop(recordUntilStop("clean-session", link, stateDir), stateDir, { AGENTOPS_DB: "../data/session.db" });
+    expect(out).not.toBeNull();
+    // A process in the linked directory resolves ../ from its real path, pkgs/real.
+    expect(existsSync(join(repo, "pkgs", "data", "session.db"))).toBe(true);
+    expect(existsSync(join(repo, "data", "session.db"))).toBe(false);
+  });
+});
+
+test("an explicitly empty AGENTOPS_DB never yields a verdict, as agentops check cannot open a store there either", async () => {
+  const { repo, stateDir } = setup({ recorder: { verdict: true } });
+  expect(await verdictAfterStop(recordUntilStop("clean-session", repo, stateDir), stateDir, { AGENTOPS_DB: "" })).toBeNull();
+  expect(existsSync(join(repo, ".agentops", "agentops.db"))).toBe(false);
 });

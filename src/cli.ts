@@ -1,13 +1,15 @@
+import { storeHookTranscript } from "./recorder/ingest";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
+import { demoFixtures } from "./demoFixtures";
 import { analyzeSession } from "./analyzer";
 import { defaultConfig, formatConfigValidationResult, loadConfig, validateConfigFile } from "./config";
 import { captureUsage, formatCaptureResult, parseCaptureArgs, runCapture } from "./capture";
 import { generateOpenInferenceJsonExport, generateRepoJsonExport, generateSessionJsonExport } from "./export";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "./gate";
-import { getGitChanges } from "./git";
+import { getGitChanges, getGitChangesOrEmpty } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
 import { generateGithubRepoComment, generateMarkdownReport } from "./report";
@@ -25,6 +27,15 @@ type CliResult = {
 
 export async function runCli(argv: string[]): Promise<CliResult> {
   const [command, ...args] = argv;
+  // `--base` without a ref (last argument, or followed by another option) is an
+  // error for every command, never a silent comparison against nothing.
+  // Every occurrence is checked, and only one is accepted: `--base` names a single ref.
+  const baseFlags = args.flatMap((arg, index) => (arg === "--base" ? [index] : []));
+  if (baseFlags.length > 1) return { stderr: "--base can be given only once\n", exitCode: 1 };
+  for (const index of baseFlags) {
+    const value = args[index + 1];
+    if (!value || value.startsWith("-")) return { stderr: "--base needs a git ref, for example --base origin/main\n", exitCode: 1 };
+  }
   try {
     if (!command) {
       return runStatus([]);
@@ -157,7 +168,7 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 function readSessionArg(args: string[]): string {
   const explicit = readOption(args, "--session");
   if (explicit) return explicit;
-  const optionNamesWithValues = new Set(["--session", "--config", "--format", "--scope", "--out", "--port", "--host"]);
+  const optionNamesWithValues = new Set(["--session", "--config", "--format", "--scope", "--out", "--port", "--host", "--base"]);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
@@ -302,14 +313,7 @@ function runDemo(args: string[]): CliResult {
   const dashboardUrl = `http://${host}:${port}`;
   const config = loadConfig(configPath);
   const store = openStore();
-  const fixtures = [
-    ["fixtures/sample-session.jsonl", "ready"],
-    ["fixtures/needs-review-session.jsonl", "needs review"],
-    ["fixtures/risky-session.jsonl", "blocked"],
-    ["fixtures/forensic-terminal-transcript.txt", "forensic"]
-  ] as const;
-  const imported = fixtures.map(([sourcePath, state]) => {
-    const input = loadAdapterInput(sourcePath);
+  const imported = demoFixtures.map(({ input, state }) => {
     const adapter = resolveAdapter(input);
     const result = ingestInput(store, input, adapter.id, config);
     return { ...result, adapterId: adapter.id, state };
@@ -368,7 +372,7 @@ function runAudit(args: string[]): CliResult {
 
   const importSummary = formatAuditImportSummary(result.sessionId, result.eventCount, adapter.id);
   const review = generateSessionInspection(store, result.sessionId, config);
-  const gate = evaluateQualityGate(store, result.sessionId, config, { gitChanges: getGitChangesOrEmpty() });
+  const gate = evaluateQualityGate(store, result.sessionId, config, { gitChanges: gitChangesFor(args) });
   const gateText = formatGateText(gate);
   store.db.close();
 
@@ -400,7 +404,7 @@ function runStatus(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: getGitChangesOrEmpty() });
+  const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: gitChangesFor(args) });
   const lines = [
     "# AgentOps Status",
     "",
@@ -461,7 +465,7 @@ function runCheck(args: string[]): CliResult {
   const configPath = readOption(args, "--config") ?? "agentops.config.json";
   const explicitFormat = readOption(args, "--format");
   if (explicitFormat && !["text", "json", "github"].includes(explicitFormat)) {
-    return { stderr: "Usage: agentops check [latest|session-id] [--format text|json|github] [--out file] [--save]\n", exitCode: 1 };
+    return { stderr: "Usage: agentops check [latest|session-id] [--format text|json|github] [--out file] [--save] [--base ref]\n", exitCode: 1 };
   }
   const format = explicitFormat ?? (args.includes("--json") || args.includes("--save") ? "json" : "text");
   const saveDefault = format === "github" ? "agentops-gate-comment.md" : format === "text" ? "agentops-gate.txt" : "agentops-gate.json";
@@ -473,7 +477,7 @@ function runCheck(args: string[]): CliResult {
     store.db.close();
     return { stderr: noSessionsMessage(), exitCode: 1 };
   }
-  const result = evaluateQualityGate(store, sessionId, config, { gitChanges: getGitChangesOrEmpty() });
+  const result = evaluateQualityGate(store, sessionId, config, { gitChanges: gitChangesFor(args) });
   store.db.close();
   const output = format === "json" ? formatGateJson(result) : format === "github" ? formatGateGithub(result) : formatGateText(result);
   const written = outputResult(output, outPath, format === "github" ? "quality gate PR comment" : "quality gate");
@@ -528,11 +532,11 @@ function runSave(args: string[]): CliResult {
     kind === "report"
       ? generateMarkdownReport(store, sessionId, config)
       : kind === "pr"
-        ? generateGithubRepoComment(store, sessionId, getGitChangesOrEmpty(), config)
+        ? generateGithubRepoComment(store, sessionId, gitChangesFor(args), config)
         : variant === "openinference"
           ? generateOpenInferenceJsonExport(store, sessionId, config)
           : variant === "repo"
-            ? generateRepoJsonExport(store, sessionId, getGitChangesOrEmpty(), config)
+            ? generateRepoJsonExport(store, sessionId, gitChangesFor(args), config)
             : generateSessionJsonExport(store, sessionId, config);
   store.db.close();
   const written = outputResult(output, outPath, saveLabel(variant));
@@ -549,7 +553,7 @@ function runSaveBundle(args: string[]): CliResult {
     store.db.close();
     return { stderr: noSessionsMessage(), exitCode: 1 };
   }
-  const gitChanges = getGitChangesOrEmpty();
+  const gitChanges = gitChangesFor(args);
   const gate = evaluateQualityGate(store, sessionId, config, { gitChanges });
   const outputs = [
     ["agentops-report.md", "report", generateMarkdownReport(store, sessionId, config)],
@@ -571,7 +575,7 @@ function runSaveBundle(args: string[]): CliResult {
 }
 
 function readSaveOutputPath(args: string[]): string | null {
-  const optionNamesWithValues = new Set(["--session", "--config", "--out", "--format"]);
+  const optionNamesWithValues = new Set(["--session", "--config", "--out", "--format", "--base"]);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg) continue;
@@ -636,6 +640,7 @@ function formatAuditImportSummary(sessionId: string, eventCount: number, adapter
 function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
   const adapter = resolveAdapter(input, adapterId);
   const transcript = adapter.parse(input, config);
+  if (adapter.id === "claude-hooks") return storeHookTranscript(store, transcript, config, process.cwd());
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
   return result;
@@ -721,12 +726,13 @@ function isAgentOpsIgnored(): boolean {
   return result.status === 0;
 }
 
-function getGitChangesOrEmpty() {
-  try {
-    return getGitChanges();
-  } catch {
-    return [];
-  }
+// `--base <ref>` (or AGENTOPS_GIT_BASE) compares against the branch point, for a
+// clean PR checkout. An explicit base that git cannot resolve is an error, not
+// an empty change list; without one, a missing repository means no changes and
+// any other git error fails the command.
+function gitChangesFor(args: string[]) {
+  const base = readOption(args, "--base") ?? process.env.AGENTOPS_GIT_BASE;
+  return base ? getGitChanges(process.cwd(), { base }) : getGitChangesOrEmpty();
 }
 
 function formatIngestResult(store: Store, sessionId: string, eventCount: number, adapterId: string): string {
@@ -782,11 +788,11 @@ Get a run in:
 
 Save artifacts (agentops save <kind>):
   report   Markdown session report
-  pr       GitHub PR comment
+  pr       GitHub PR comment  (--base ref compares the branch, not just uncommitted work)
   json     Session JSON export  (--repo for repo-scoped, --format openinference for spans)
 
 Quality gate output (for CI/PR):
-  agentops check [latest|session-id] [--format text|json|github] [--out file] [--save]
+  agentops check [latest|session-id] [--format text|json|github] [--out file] [--save] [--base ref]
 
 Advanced:
   agentops doctor [--fix]
@@ -804,7 +810,7 @@ Adapters:
 ${adapters.map((adapter) => `  ${adapter.id}  ${adapter.displayName}`).join("\n")}
 
 Environment:
-  AGENTOPS_DB  Path to SQLite database. Defaults to .agentops/agentops.db
+  AGENTOPS_DB  Path to SQLite database. Enrolled worktrees share the main checkout’s .agentops/agentops.db
 `;
 }
 
