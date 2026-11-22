@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isVerificationCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
@@ -13,13 +13,9 @@ type RiskFlag = {
 };
 
 export type { EvidenceClaimId } from "./ledger";
-export { isVerificationCommand } from "./ledger";
-
-/** The command-matched claim kinds that `evaluateEvidenceClaims` reports. */
-export type CommandClaimId = Extract<EvidenceClaimId, "test" | "lint" | "typecheck" | "build">;
 
 export type EvidenceClaimEvaluation = {
-  id: CommandClaimId;
+  id: EvidenceClaimId;
   category: string;
   label: string;
   claimed: boolean;
@@ -157,7 +153,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
           eventId: finalEvent.id,
           severity: "medium",
           category: claim.category,
-          message: evidenceClaimRules.find((rule) => rule.id === claim.id)?.unsupportedMessage ?? `Final response claims ${claim.claimText}, but no matching run was recorded.`
+          message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
         });
       } else if (claim.verdict === "contradicted" && claim.cited) {
         const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
@@ -165,12 +161,12 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
           eventId: finalEvent.id,
           severity: "medium",
           category: "contradicted-claim",
-          message: `Final response claims ${claim.claimText}, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
+          message: `Final response claims ${claim.label} success, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
         });
       }
     }
     const unsupportedEvidenceClaims = ledger.claims.filter((claim) => claim.verdict !== "supported");
-    if (claimsSuccess(finalEvent.summary) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
+    if (claimsSuccess(finalClaimTexts(finalEvent)) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
       flags.push({
         eventId: finalEvent.id,
         severity: "medium",
@@ -232,29 +228,66 @@ export function isExecutedCommandStatus(status: string | null | undefined): bool
   return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
 }
 
-/** Command-matched claims only (test/lint/typecheck/build), as the dashboard shows them; the ledger covers all claims. */
-export function evaluateEvidenceClaims(value: string, commands: string[]): EvidenceClaimEvaluation[] {
-  return evidenceClaimRules.flatMap((rule) => {
-    const pattern = rule.commandPattern;
-    if (!pattern || rule.toolPattern || rule.afterLastEdit) return [];
-    const matchingCommand = commands.find((command) => pattern.test(command)) ?? null;
+export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
+  const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
+  const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
+  return pattern.test(command);
+}
+
+/**
+ * The texts whose claims a final response makes: the full response and, unless the
+ * two are identical, the stored summary too, so every claim shown as the Final Outcome
+ * needs evidence. A summary derived from the response is stored as the full response
+ * (see summarizeEvent), so only a producer's own summary adds claims. Older stores
+ * have no `text`, so the summary alone is used.
+ */
+export function finalClaimTexts(event: { text?: string | null; summary: string }): string[] {
+  const text = event.text?.trim() ? event.text : null;
+  if (!text) return [event.summary];
+  // Both are checked. A producer's summary is shown as the Final Outcome, so every claim
+  // in it needs evidence; skipping a summary that "looks like" the body's opening let
+  // unsupported claims through, and checking it at worst flags a claim twice.
+  return normalizeClaimText(event.summary) === normalizeClaimText(text) ? [text] : [text, event.summary];
+}
+
+/** Whitespace-normalized for matching only, so a Markdown soft wrap inside a claim still matches. */
+function normalizeClaimText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function toClaimTexts(value: string | readonly string[]): string[] {
+  return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
+}
+
+export function evaluateEvidenceClaims(
+  value: string | readonly string[],
+  commands: string[],
+  config: AgentOpsConfig = defaultConfig,
+  finishedCommands: readonly string[] = commands
+): EvidenceClaimEvaluation[] {
+  const texts = toClaimTexts(value);
+  return evidenceClaimRules.map((rule) => {
+    // A configured support command (word for word) that finished is evidence here
+    // too, as it is for the ledger; one that only started is not.
+    const matchingCommand =
+      commands.find((command) => runsRuleCommand(rule, command)) ?? finishedCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
     return {
-      id: rule.id as CommandClaimId,
+      id: rule.id,
       category: rule.category,
       label: rule.label,
-      claimed: rule.claimPattern.test(value),
+      claimed: texts.some((text) => claimsRule(rule, text)),
       supported: matchingCommand !== null,
       matchingCommand
     };
   });
 }
 
-export function claimsFinalSuccess(value: string): boolean {
+export function claimsFinalSuccess(value: string | readonly string[]): boolean {
   return claimsSuccess(value);
 }
 
-function claimsSuccess(value: string): boolean {
-  return /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(value);
+function claimsSuccess(value: string | readonly string[]): boolean {
+  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(text));
 }
 
 function isSensitivePath(path: string, config: AgentOpsConfig): boolean {

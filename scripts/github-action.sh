@@ -4,7 +4,8 @@
 #
 # Inputs (environment):
 #   AGENTOPS_BIN          agentops executable (required)
-#   AGENTOPS_ARTIFACTS    newline/space-separated artifact paths or globs (required)
+#   AGENTOPS_ARTIFACTS    newline/space-separated artifact paths or globs (required;
+#                         an empty value is reported as a failed gate)
 #   AGENTOPS_CONFIG       config path (default: agentops.config.json)
 #   AGENTOPS_FAIL_ON_GATE "true" (default) exits 1 when any gate fails
 #   AGENTOPS_REPORT_DIR   where to write gate comments (default: $RUNNER_TEMP or $TMPDIR)
@@ -21,10 +22,16 @@ mkdir -p "$report_base"
 report_dir="$(mktemp -d "$report_base/agentops-gate.XXXXXX")"
 combined="$report_dir/agentops-gate-comment.md"
 
-# Expand globs; keep literal paths so a missing file is reported, not skipped.
+# Expand globs; keep unmatched patterns so a missing file is reported, not
+# skipped. Split the input with globbing off: expanding it here, with nullglob
+# on, would drop an unmatched pattern before the loop could keep it.
+set -f
+# shellcheck disable=SC2206 # intentional word splitting; globbing is off
+patterns=(${AGENTOPS_ARTIFACTS-})
+set +f
 shopt -s nullglob
 artifacts=()
-for pattern in ${AGENTOPS_ARTIFACTS:?AGENTOPS_ARTIFACTS is required}; do
+for pattern in ${patterns[@]+"${patterns[@]}"}; do
   # shellcheck disable=SC2206 # intentional glob expansion of the pattern
   matches=($pattern)
   if [ ${#matches[@]} -eq 0 ]; then
@@ -47,12 +54,19 @@ gate_failed() {
   failed=$((failed + 1))
 }
 
+# An input that resolves to no paths is a failure, reported like any other so
+# that the status output and report exist when enforcement is deferred.
+if [ ${#artifacts[@]} -eq 0 ]; then
+  gate_failed "(empty artifacts input)" "the artifacts input resolved to no paths"
+  printf '\n## AgentOps Quality Gate\n\n**Status:** FAILED\n\nThe artifacts input resolved to no paths.\n' >> "$combined"
+fi
+
 # Artifacts are untrusted. Nothing derived from their content (such as the
 # session id) is used in a file path, a command argument, or stdout, where it
 # could traverse paths or inject workflow commands. Each artifact gets its own
 # throwaway database outside the checkout, so `check latest` is unambiguous.
 index=0
-for artifact in "${artifacts[@]}"; do
+for artifact in ${artifacts[@]+"${artifacts[@]}"}; do
   index=$((index + 1))
   if [ ! -f "$artifact" ]; then
     gate_failed "$artifact" "artifact not found"
