@@ -1074,3 +1074,30 @@ describe("review 6010303180: the gate judges claims under the config it is given
     a.store.db.close();
   });
 });
+
+describe("review 6010390361: failures with flags, hook exit_code", () => {
+  test("a later failed `npm --silent test` contradicts the claim after an earlier passing configured run", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "silent" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "npm --silent test", status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("silent.jsonl", lines.map((line) => JSON.stringify(line)).join("\n")), config);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    expect(claim).toMatchObject({ verdict: "contradicted", cited: { command: "npm --silent test", exitCode: 1 } });
+  });
+
+  test("a PostToolUse reporting exit_code 1 is stored as exit 1", () => {
+    const lines = [
+      { session_id: "hook-exit", cwd: "/r", hook_event_name: "SessionStart", source: "startup" },
+      { session_id: "hook-exit", cwd: "/r", hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "h1", tool_input: { command: "bun test" }, tool_response: { stdout: "", stderr: "", exit_code: 1 } }
+    ];
+    const transcript = parseClaudeHooksJsonl("hook.jsonl", lines.map((line) => JSON.stringify(line)).join("\n"), defaultConfig);
+    const bash = transcript.events.find((event) => event.command === "bun test");
+    expect(bash?.exitCode).toBe(1);
+  });
+});
