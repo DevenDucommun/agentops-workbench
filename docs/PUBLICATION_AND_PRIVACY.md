@@ -84,6 +84,7 @@ Records are redacted (secrets, emails, local paths) before they are written.
 | Repository-relative file paths, line counts | Command stdout and stderr |
 | Tool names, search patterns, subagent types | Tool error text |
 | Subagent prompts and the text a subagent returns, which can quote file contents | |
+| Notebook cell source written with NotebookEdit | |
 | Session, prompt, tool-use and agent IDs; git commit SHAs and branches | |
 
 Only the fields in the right-hand column are reduced to a digest; everything
@@ -123,7 +124,7 @@ Sessions stay in the store until you remove it.
 | Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
-| Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store as above (removing only `<state>` leaves imported sessions in the store, and a shared `AGENTOPS_STATE_DIR` may hold other files) |
+| Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store of every repository that was enrolled (each repository has its own store; check `<state>/recorder/enrolled.json` for the list before removing it). A shared `AGENTOPS_STATE_DIR` may hold other files, so remove only those two folders |
 
 No command deletes a single session from the store yet. The store can hold
 every imported session, including other tools' imports, so removing it removes
