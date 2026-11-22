@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
+import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
@@ -154,24 +154,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
     const ledger = getClaimsLedger(store, sessionId, config);
-    for (const claim of ledger.claims) {
-      if (claim.verdict === "unsupported") {
-        flags.push({
-          eventId: finalEvent.id,
-          severity: "medium",
-          category: claim.category,
-          message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
-        });
-      } else if (claim.verdict === "contradicted" && claim.cited) {
-        const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
-        flags.push({
-          eventId: finalEvent.id,
-          severity: "medium",
-          category: "contradicted-claim",
-          message: `Final response claims ${claim.label} success, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
-        });
-      }
-    }
+    flags.push(...ledgerClaimFlags(ledger, finalEvent.id));
     const unsupportedEvidenceClaims = ledger.claims.filter((claim) => claim.verdict !== "supported");
     if (claimsSuccess(finalClaimTexts(finalEvent)) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
       flags.push({
@@ -368,6 +351,45 @@ function isProductionPath(path: string, config: AgentOpsConfig): boolean {
     const pattern = new RegExp(`(^|/)${escapeRegex(entry)}(/|\\.|-|_)`, "i");
     return pattern.test(path);
   });
+}
+
+/** Risk flags for a ledger's unsupported and contradicted claims (spec R2.1, R2.2). */
+export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | null): RiskFlag[] {
+  const flags: RiskFlag[] = [];
+  for (const claim of ledger.claims) {
+    if (claim.verdict === "unsupported") {
+      flags.push({
+        eventId: finalEventId,
+        severity: "medium",
+        category: claim.category,
+        message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
+      });
+    } else if (claim.verdict === "contradicted" && claim.cited) {
+      const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
+      flags.push({
+        eventId: finalEventId,
+        severity: "medium",
+        category: "contradicted-claim",
+        message: `Final response claims ${claim.label} success, but the latest ${claim.label} run failed: ${claim.cited.command}${exit}.`
+      });
+    }
+  }
+  return flags;
+}
+
+/** Categories that only ledger verdicts raise. */
+export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim"]);
+
+/**
+ * The ledger's claim flags for a stored session under `config`, after its
+ * suppressions: what an audit with this config would store. The gate uses these
+ * instead of the stored ones, so a check with a different config, or a store
+ * whose analysis did not finish, still judges claims by the config it was given.
+ */
+export function currentLedgerClaimFlags(store: Store, sessionId: string, config: AgentOpsConfig): RiskFlag[] {
+  const ledger = getClaimsLedger(store, sessionId, config);
+  if (ledger.finalEventRowId === null) return [];
+  return ledgerClaimFlags(ledger, ledger.finalEventRowId).filter((flag) => !isSuppressed(flag, config.suppressions));
 }
 
 function isSuppressed(flag: RiskFlag, suppressions: RiskSuppression[]): boolean {

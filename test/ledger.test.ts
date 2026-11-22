@@ -1039,3 +1039,38 @@ describe("review 6010176414: the dashboard counts a configured command only when
     expect(row).toMatchObject({ status: "verified", command: "bun run ci", commandExitCode: 0 });
   });
 });
+
+describe("review 6010303180: the gate judges claims under the config it is given", () => {
+  const permissive = { ...defaultConfig, evidence: { ...defaultConfig.evidence, verificationCommands: [...defaultConfig.evidence.verificationCommands, "ci"], supportCommands: { test: ["bun run ci"] } } };
+  const strict = { ...permissive, evidence: { ...permissive.evidence, supportCommands: { test: ["bun test"] } } };
+  const session = (auditConfig: typeof defaultConfig) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "gate-config" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("gate.jsonl", lines.map((line) => JSON.stringify(line)).join("\n")), auditConfig);
+    analyzeSession(store, sessionId, auditConfig);
+    return { store, sessionId };
+  };
+  const claims = (gate: ReturnType<typeof evaluateQualityGate>) => gate.checks.find((check) => check.id === "unsupported-final-claims")?.observed;
+
+  test("a stricter check config rejects a claim the audit config supported, and the reverse", () => {
+    const a = session(permissive);
+    expect(claims(evaluateQualityGate(a.store, a.sessionId, permissive))).toBe(0);
+    expect(claims(evaluateQualityGate(a.store, a.sessionId, strict))).toBe(1);
+    a.store.db.close();
+    const b = session(strict);
+    expect(claims(evaluateQualityGate(b.store, b.sessionId, strict))).toBe(1);
+    expect(claims(evaluateQualityGate(b.store, b.sessionId, permissive))).toBe(0);
+    b.store.db.close();
+  });
+
+  test("a check-time suppression still applies to ledger verdicts", () => {
+    const a = session(strict);
+    const suppressed = { ...strict, suppressions: [{ category: "missing-test-evidence", reason: "accepted" }] };
+    expect(claims(evaluateQualityGate(a.store, a.sessionId, suppressed))).toBe(0);
+    a.store.db.close();
+  });
+});
