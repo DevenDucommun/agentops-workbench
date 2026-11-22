@@ -213,3 +213,28 @@ describe("review 6010332003: id-less pairing, check-time policy both ways, suppr
     expect(gate.checks.find((c) => c.id === "max-high-risks")?.observed).toBe(0);
   });
 });
+
+describe("review of 1cd60fc: reused ids and the dashboard", () => {
+  test("a started run is never paired away by a later denial that reuses its id", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-blocked-"));
+    const path = join(dir, "reuse.jsonl");
+    const cmd = (status: string) => ({ schemaVersion: "agentops.event.v1", type: "command", command: "rm -rf ./out", toolUseId: "t1", status });
+    writeFileSync(path, [{ schemaVersion: "agentops.event.v1", type: "session", id: "blocked-reuse" }, cmd("started"), cmd("denied")].map((line) => JSON.stringify(line)).join("\n"));
+    expect(audit(path).check("max-high-risks")?.observed).toBe(1);
+  });
+
+  test("the dashboard is blocked when blocked attempts exceed the gate", () => {
+    const { getDashboardSession } = require("../src/dashboardData") as typeof import("../src/dashboardData");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
+    const path = join(ROOT, "fixtures/blocked/repeated-attempts.jsonl");
+    const content = readFileSync(path, "utf8");
+    const transcript = resolveAdapter({ sourcePath: path, content }).parse({ sourcePath: path, content }, defaultConfig);
+    const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+    const readiness = getDashboardSession(store, sessionId, defaultConfig)?.decision.mergeReadiness.status;
+    store.db.close();
+    expect(gate.status).toBe("failed");
+    expect(readiness).toBe("blocked");
+  });
+});

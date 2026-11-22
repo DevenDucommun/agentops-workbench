@@ -10,8 +10,11 @@
   flag. `gates.maxBlockedAttempts` (default 2) fails the gate on repeated
   attempts. Gate outcomes can change: the bundled
   `codex-exec-current-session` fixture, whose only high risk was a declined
-  command, now passes. Set `risk.treatBlockedAsExecuted: true` to restore the
-  previous behavior.
+  command, now passes. Set `risk.treatBlockedAsExecuted: true` to count
+  blocked commands as executed again. A Codex command's start and completion
+  rows now count as one command either way (they were counted twice before).
+  The dashboard's readiness uses the same high-risk and blocked-attempt counts
+  as the gate.
 
 ## v3.2.0 - 2026-11-02
 

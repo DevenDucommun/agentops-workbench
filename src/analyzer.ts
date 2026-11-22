@@ -249,7 +249,10 @@ function toClaimTexts(value: string | readonly string[]): string[] {
   return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
 }
 
-const START_ROW_STATUSES = new Set(["started", "in_progress", "running"]);
+// Only the separate start row an adapter writes before the outcome row (Codex
+// item.started, "in_progress"). A Claude Code "started" row is a background run
+// that did execute, so it is never paired away.
+const START_ROW_STATUSES = new Set(["in_progress"]);
 
 /**
  * Row ids of start rows (started, in progress, no exit code) that a later row
