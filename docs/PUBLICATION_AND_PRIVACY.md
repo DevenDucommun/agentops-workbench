@@ -123,15 +123,17 @@ Sessions stay in the store until you remove it.
 | Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
-| Remove all recorder state | remove `<state>/` |
+| Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store as above (removing only `<state>` leaves imported sessions in the store, and a shared `AGENTOPS_STATE_DIR` may hold other files) |
 
 No command deletes a single session from the store yet. The store can hold
 every imported session, including other tools' imports, so removing it removes
 all of them. To keep some, re-import their spools afterwards with
 `agentops audit <state>/spool/<session-id>.jsonl`, run from the recorded
 repository. That restores each session's events, tool calls, commands, file
-changes, risk flags and commit links. A commit recorded by its abbreviated SHA
-is linked by its full SHA only when that commit exists in the repository the
+changes and commit links. Risk flags are recomputed under the configuration in
+effect when you import, so they can differ from the original import. A commit
+recorded by its abbreviated SHA is linked by its full SHA when the spool also
+records it in full (a push does) or the commit exists in the repository the
 import runs in; otherwise the link keeps the abbreviated SHA.
 
 ## Public Release Checklist
