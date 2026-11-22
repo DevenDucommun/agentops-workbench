@@ -225,6 +225,28 @@ export function withSpoolFileLock<T>(
   }
 }
 
+/**
+ * Identifies one spool generation: the hash of its first record line. A spool
+ * started again after `recorder forget` begins with a different first record.
+ */
+export function spoolGeneration(content: string): string | null {
+  const first = content.split("\n").find((line) => line.trim() !== "");
+  return first === undefined ? null : sha256(first);
+}
+
+/** Generations of this spool that `recorder forget` removed; imports of them are skipped. */
+export function forgottenPath(spoolFile: string): string {
+  return `${spoolFile}.forgotten`;
+}
+
+export function isForgotten(spoolFile: string, generation: string): boolean {
+  try {
+    return readFileSync(forgottenPath(spoolFile), "utf8").split("\n").includes(generation);
+  } catch {
+    return false;
+  }
+}
+
 /** Reads a spool file: parsed records in order, plus the 1-based line numbers that failed to parse. */
 export function readSpool(path: string): { records: RawEvent[]; invalidLines: number[] } {
   const records: RawEvent[] = [];

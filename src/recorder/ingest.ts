@@ -1,11 +1,11 @@
 import type { ParsedTranscript } from "../types";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
-import { withSpoolFileLock } from "./spool";
+import { isForgotten, spoolGeneration } from "./spool";
 import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
@@ -32,35 +32,44 @@ export class SpoolGoneError extends Error {
 
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
-  // Read and import under the spool's lock, the lock `recorder forget` holds
-  // while it removes a session: a forget either finishes first (the spool is
-  // gone and nothing is imported) or waits until the import is done and then
-  // removes what it stored.
-  const locked = withSpoolFileLock(
-    spoolFile,
-    () => {
-      if (!existsSync(spoolFile)) throw new SpoolGoneError(`spool removed: ${spoolFile}`);
-      const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
-      // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
-      transcript.session.repo ??= basename(options.repoRoot);
-      const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
-      try {
-        return storeHookTranscript(store, transcript, config, options.repoRoot);
-      } finally {
-        store.db.close();
-      }
-    },
-    { lockTimeoutMs: INGEST_LOCK_TIMEOUT_MS }
-  );
-  if (!locked.ok) throw new Error(`could not lock ${spoolFile}: ${locked.detail}`);
-  return locked.value;
+  let content: string;
+  try {
+    content = readFileSync(spoolFile, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new SpoolGoneError(`spool removed: ${spoolFile}`);
+    throw error;
+  }
+  const generation = spoolGeneration(content);
+  const transcript = parseClaudeHooksJsonl(spoolFile, content, config);
+  // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
+  transcript.session.repo ??= basename(options.repoRoot);
+  const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
+  try {
+    store.db.exec(`PRAGMA busy_timeout = ${STORE_BUSY_TIMEOUT_MS}`);
+    // `recorder forget` records the generation it removes before deleting the
+    // session's rows. Checking that record inside this write transaction orders
+    // the two through SQLite's write lock: either forget's delete runs after this
+    // import commits, or the import sees the record and stores nothing.
+    return storeHookTranscript(store, transcript, config, options.repoRoot, () => {
+      if (generation !== null && isForgotten(spoolFile, generation)) throw new SpoolGoneError(`spool forgotten: ${spoolFile}`);
+    });
+  } finally {
+    store.db.close();
+  }
 }
 
-/** How long an import waits for a hook append or a forget to release the spool. */
-const INGEST_LOCK_TIMEOUT_MS = 2000;
+/** How long an import waits for another writer (such as `recorder forget`) to release the store. */
+const STORE_BUSY_TIMEOUT_MS = 10_000;
 
-export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
-  return store.db.transaction(() => {
+export function storeHookTranscript(
+  store: Store,
+  transcript: ParsedTranscript,
+  config: AgentOpsConfig,
+  repoRoot: string,
+  guard: () => void = () => {}
+): SpoolIngestResult {
+  const run = store.db.transaction(() => {
+    guard();
     // Full SHAs already known for this session (an earlier import, or a push record in this
     // transcript) resolve a short SHA the same way wherever the re-import runs.
     const isFull = (sha: string) => sha.length === 40 || sha.length === 64;
@@ -92,7 +101,9 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
       linkSessionCommit(store, link);
     }
     return { sessionId, eventCount, commits: getSessionCommits(store, sessionId) };
-  })();
+  });
+  // Immediate: the write lock is taken before the guard runs.
+  return run.immediate();
 }
 
 /**

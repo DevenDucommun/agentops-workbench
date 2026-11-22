@@ -130,7 +130,6 @@ test("review 6010150626: a session-end import after forget does not restore the 
   const { repo, stateDir, env } = await recordedRepo();
   const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
   expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).exitCode).toBe(0);
-  // The SessionEnd hook that was about to import the spool runs now.
   const { ingestSpoolFile } = await import("../src/recorder/ingest");
   expect(() => ingestSpoolFile(spool, { repoRoot: repo })).toThrow("spool removed");
   await ingestAfterSessionEnd({ recorded: true, hookEventName: "SessionEnd", spoolFile: spool, repository: repo } as never, stateDir);
@@ -138,4 +137,62 @@ test("review 6010150626: a session-end import after forget does not restore the 
   expect(store.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
   store.db.close();
   expect(existsSync(spool.replace(/\.jsonl$/, ".errors.jsonl"))).toBe(false);
+});
+
+test("review 6010207714: an import that read the spool before forget stores nothing after it", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  // The import already read this snapshot when forget ran.
+  const snapshot = readFileSync(spool, "utf8");
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).exitCode).toBe(0);
+  writeFileSync(spool, snapshot);
+  const { ingestSpoolFile } = await import("../src/recorder/ingest");
+  expect(() => ingestSpoolFile(spool, { repoRoot: repo })).toThrow("spool forgotten");
+  const store = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(store.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
+  store.db.close();
+  rmSync(spool);
+  // A spool started again after forget is a new generation and imports normally.
+  expect(appendHookPayload(join(stateDir, "spool"), { session_id: COMMIT, hook_event_name: "Stop", last_assistant_message: "later" })).toMatchObject({ ok: true, seq: 1 });
+  expect(ingestSpoolFile(spool, { repoRoot: repo }).sessionId).toBe(COMMIT);
+});
+
+test("review 6010207714: an import never takes the spool lock, so it cannot delay a hook append", async () => {
+  const { repo, stateDir } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  writeFileSync(`${spool}.lock`, "12345");
+  const { ingestSpoolFile } = await import("../src/recorder/ingest");
+  const started = Date.now();
+  expect(ingestSpoolFile(spool, { repoRoot: repo }).sessionId).toBe(COMMIT);
+  expect(Date.now() - started).toBeLessThan(1500);
+  expect(readFileSync(`${spool}.lock`, "utf8")).toBe("12345");
+});
+
+test("review 6010207714: another spelling of a session id removes nothing", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const out = await runRecorderCommand(["forget", COMMIT.toUpperCase()], { cwd: repo, env });
+  expect(out.stdout).toBe(`Nothing recorded for session ${COMMIT.toUpperCase()}.\n`);
+  expect(existsSync(spool)).toBe(true);
+  const store = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(store.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 1 });
+  store.db.close();
+});
+
+test("review 6010207714: an id stored in redacted form is forgotten with its spool in one call", async () => {
+  const { repo, stateDir, env } = await recordedRepo();
+  // Built at runtime so the publication scan does not see an address-shaped literal.
+  const sid = ["someone", "example.com"].join("@");
+  for (const event of ["SessionStart", "SessionEnd"]) {
+    const outcome = handleHook(undefined, JSON.stringify({ session_id: sid, cwd: repo, hook_event_name: event }), { stateDir });
+    await ingestAfterSessionEnd(outcome, stateDir);
+  }
+  const spool = spoolPath(join(stateDir, "spool"), sid) as string;
+  expect(existsSync(spool)).toBe(true);
+  const out = await runRecorderCommand(["forget", sid], { cwd: repo, env });
+  expect(out.exitCode).toBe(0);
+  expect(existsSync(spool)).toBe(false);
+  const store = openStore(join(repo, ".agentops", "agentops.db"));
+  expect(store.db.query("SELECT id FROM sessions ORDER BY id").all()).toEqual([{ id: CLEAN }, { id: COMMIT }]);
+  store.db.close();
 });

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
-import { spoolPath, withSpoolLock } from "./spool";
+import { forgottenPath, spoolGeneration, spoolPath, withSpoolLock } from "./spool";
+import { redactString } from "../redaction";
 
 // `agentops recorder enable|disable|status|forget` (spec R1.7). Dispatched from
 // src/main.ts like `hook`, so it works in the release binary and `bun run
@@ -76,27 +77,44 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
   const { Database } = await import("bun:sqlite");
   // Hold the session's spool lock for the whole removal: a hook appending at
   // the same moment would otherwise recreate the spool mid-chain after it was
-  // deleted, and a session-end import would put the session back. A held lock is
-  // never reclaimed, however old (a slow writer may still be running); forget
-  // waits briefly, then gives up and deletes nothing.
+  // deleted. A held lock is never reclaimed, however old (a slow writer may still
+  // be running); forget waits briefly, then gives up and deletes nothing.
+  // The stored session id is the hook's id after redaction (spool records are
+  // redacted before they are written), so an id that looks like a secret is
+  // stored in its redacted form; both are removed.
+  const ids = [...new Set([sessionId, redactString(sessionId)])];
   const locked = withSpoolLock(
     spoolDir,
     sessionId,
     () => {
       const removed: string[] = [];
+      const spool = spoolPath(spoolDir, sessionId) as string;
+      // Exact names only: on a case-insensitive volume another spelling of the id
+      // would otherwise reach this session's spool while SQLite matches exactly.
+      const present = existingExactly(spoolDir);
+      const spoolExists = present.has(basename(spool));
+      // Record the generation being removed before the rows go: an import of it
+      // that is already running checks this inside its write transaction, so it
+      // either commits before the delete below or stores nothing.
+      if (spoolExists) {
+        const generation = spoolGeneration(readFileSync(spool, "utf8"));
+        if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
+      }
       if (existsSync(store)) {
         const db = new Database(store);
         try {
+          db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
           db.exec("PRAGMA foreign_keys = ON");
-          const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId });
-          if (result.changes > 0) removed.push(`session ${sessionId} from ${store}`);
+          for (const id of ids) {
+            const result = db.query("DELETE FROM sessions WHERE id = $id").run({ $id: id });
+            if (result.changes > 0) removed.push(`session ${id} from ${store}`);
+          }
         } finally {
           db.close();
         }
       }
-      const spool = spoolPath(spoolDir, sessionId) as string;
       for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl")]) {
-        if (!existsSync(file)) continue;
+        if (!present.has(basename(file))) continue;
         rmSync(file, { force: true });
         removed.push(file);
       }
@@ -121,6 +139,17 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
 
 /** How long forget waits for a hook to finish appending before giving up. */
 const FORGET_LOCK_TIMEOUT_MS = 2000;
+/** How long forget waits for a running import to commit before giving up. */
+const FORGET_STORE_BUSY_TIMEOUT_MS = 30_000;
+
+/** File names in a directory, exactly as stored. */
+function existingExactly(dir: string): Set<string> {
+  try {
+    return new Set(readdirSync(dir));
+  } catch {
+    return new Set();
+  }
+}
 
 function binaryOnPath(env: NodeJS.ProcessEnv): boolean {
   return Bun.which(env.AGENTOPS_BIN || "agentops", { PATH: env.PATH ?? "" }) !== null;
