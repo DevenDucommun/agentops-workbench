@@ -3,7 +3,7 @@ import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
 import { evaluateQualityGate, formatGateGithub } from "./gate";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
-import type { GitChange } from "./git";
+import { displayGitPath, type GitChange } from "./git";
 import type { UsageSummary } from "./types";
 
 type RepoReportData = {
@@ -123,7 +123,7 @@ export function generateMarkdownRepoReport(
     ]),
     "## Current Git Changes",
     data.gitChanges.length
-      ? data.gitChanges.map((change) => `- \`${change.path}\` - ${change.status}${formatGitChurn(change)}`).join("\n")
+      ? data.gitChanges.map((change) => `- \`${displayGitPath(change.path)}\` - ${change.status}${formatGitChurn(change)}`).join("\n")
       : "- No git changes detected.",
     "## Session Coverage",
     coverageSummary(data.observedGitChanges, data.unobservedGitChanges, data.agentOnlyFiles),
@@ -177,7 +177,7 @@ export function generateGithubRepoComment(
     formatRiskFlags(data.risks, 4),
     "### Git Changes Not Observed In Session",
     data.unobservedGitChanges.length
-      ? data.unobservedGitChanges.map((change) => `- \`${change.path}\``).join("\n")
+      ? data.unobservedGitChanges.map((change) => `- \`${displayGitPath(change.path)}\``).join("\n")
       : "- None.",
     `<details><summary>Commands run</summary>\n\n${
       data.commands.length ? data.commands.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n") : "- None."
@@ -234,9 +234,9 @@ function formatGitChurn(change: GitChange): string {
 function coverageSummary(observed: GitChange[], unobserved: GitChange[], agentOnly: ReturnType<typeof getFileChanges>): string {
   const sections = [];
   sections.push("### Git Changes Observed In Session");
-  sections.push(observed.length ? observed.map((change) => `- \`${change.path}\``).join("\n") : "- None.");
+  sections.push(observed.length ? observed.map((change) => `- \`${displayGitPath(change.path)}\``).join("\n") : "- None.");
   sections.push("### Git Changes Not Observed In Session");
-  sections.push(unobserved.length ? unobserved.map((change) => `- \`${change.path}\``).join("\n") : "- None.");
+  sections.push(unobserved.length ? unobserved.map((change) => `- \`${displayGitPath(change.path)}\``).join("\n") : "- None.");
   sections.push("### Agent-Touched Files Not In Current Git Diff");
   sections.push(agentOnly.length ? agentOnly.map((file) => `- \`${file.path}\` - ${file.operation}`).join("\n") : "- None.");
   return sections.join("\n\n");

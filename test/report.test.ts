@@ -304,10 +304,10 @@ test("reports forensic text evidence quality and observed commands", () => {
   const transcript = adapter.parse(input, defaultConfig);
 
   ingestTranscript(store, transcript, defaultConfig);
-  analyzeSession(store, "forensic-terminal-transcript", defaultConfig);
+  analyzeSession(store, "forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164", defaultConfig);
 
-  const commands = getCommands(store, "forensic-terminal-transcript");
-  const report = generateMarkdownReport(store, "forensic-terminal-transcript");
+  const commands = getCommands(store, "forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164");
+  const report = generateMarkdownReport(store, "forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164");
 
   expect(commands.some((command) => command.command === "bun test" && command.status === "observed" && command.exitCode === 0)).toBe(true);
   expect(report).toContain("Adapter | forensic-text");
@@ -326,9 +326,9 @@ test("flags final-only forensic text as weak evidence", () => {
   const transcript = adapter.parse(input, defaultConfig);
 
   ingestTranscript(store, transcript, defaultConfig);
-  analyzeSession(store, "forensic-final-only", defaultConfig);
+  analyzeSession(store, "forensic-final-only-1714a0a03699fb50a28cf9ba6683c664", defaultConfig);
 
-  const report = generateMarkdownReport(store, "forensic-final-only");
+  const report = generateMarkdownReport(store, "forensic-final-only-1714a0a03699fb50a28cf9ba6683c664");
 
   expect(report).toContain("weak-forensic-transcript");
   expect(report).toContain("missing-test-evidence");
@@ -345,10 +345,10 @@ test("flags inferred forensic verification as review evidence", () => {
   const transcript = adapter.parse(input, defaultConfig);
 
   ingestTranscript(store, transcript, defaultConfig);
-  analyzeSession(store, "forensic-copied-chat", defaultConfig);
+  analyzeSession(store, "forensic-copied-chat-031eb0e65c6914af5535e4a15e2fd566", defaultConfig);
 
-  const commands = getCommands(store, "forensic-copied-chat");
-  const report = generateMarkdownReport(store, "forensic-copied-chat");
+  const commands = getCommands(store, "forensic-copied-chat-031eb0e65c6914af5535e4a15e2fd566");
+  const report = generateMarkdownReport(store, "forensic-copied-chat-031eb0e65c6914af5535e4a15e2fd566");
 
   expect(commands.some((command) => command.command === "bun test" && command.status === "inferred")).toBe(true);
   expect(report).toContain("`bun test` - inferred");

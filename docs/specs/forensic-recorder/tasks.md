@@ -15,8 +15,8 @@ Sizes are relative effort: S, M or L.
   [`fixtures/claude-hooks/*.jsonl`](../../../fixtures/claude-hooks/) (clean session, risky session, subagent
   session, failing-test session, commit session). Verify: `bun run
   scan:public` clean.
-- [ ] **T0.3 (S) S2 Codex capture decision note.** Artifact: `spike-s2.md`.
-  Does not block M1.
+- [x] **T0.3 (S) S2 Codex capture decision note.** Artifact:
+  [`spike-s2.md`](spike-s2.md). Does not block M1.
 
 ## M1: Recorder (v3.3.0)
 
@@ -31,11 +31,12 @@ Sizes are relative effort: S, M or L.
 - [x] **T1.4 (M) `agentops hook <event>` entrypoint plus enrollment check.**
   Verify: malformed stdin, missing enrollment (AC2) and exit code are always
   0. `smoke:recorder` reports p95 latency under budget (AC4).
-- [ ] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
+- [x] **T1.5 (M) `claude-hooks` adapter and session-end ingest.** Verify:
   T0.2 fixtures ingest. `look` shows tool calls, files and commands. The
   commit fixture links its SHA (AC6).
-- [ ] **T1.6 (S) Optional end-of-session verdict line.** Verify: off by
-  default; when on, it prints one line and never a non-zero exit.
+- [x] **T1.6 (S) Optional turn-end verdict line.** Verify: off by default;
+  when on, the Stop hook prints one `systemMessage` line and never a non-zero
+  exit. (Moved from session end: Claude Code discards SessionEnd output.)
 - [ ] **T1.7 (M) Plugin packaging.** `plugin/` manifest, hooks config,
   marketplace manifest, `agentops recorder enable|disable|status`, and
   CAPTURE_GUIDE/README. Verify: manual install in a scratch repo, then an
@@ -51,7 +52,7 @@ Sizes are relative effort: S, M or L.
 - [x] **T2.1 (M) Ledger model with supported/unsupported/contradicted and
   event citations.** Verify: AC7 fixtures (pass, fail then claim, no run then
   claim, fail then pass then claim).
-- [x] **T2.2 (M) New claim categories** (callers/usages, on-device or
+- [ ] **T2.2 (M) New claim categories** (callers/usages, on-device or
   in-browser verification, "fixed"). Verify: one positive and one negative
   fixture per category.
 - [x] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing

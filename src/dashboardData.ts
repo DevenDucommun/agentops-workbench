@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, evaluateEvidenceClaims, finalClaimTexts, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import {
   getCommands,
@@ -295,7 +295,7 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification);
+  const decision = buildDashboardDecision(events, commands, risks, verification, config);
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -439,10 +439,12 @@ function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  config: AgentOpsConfig
 ): DashboardDecision {
-  const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
-  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification);
+  const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
+  const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
+  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, config);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
@@ -487,13 +489,17 @@ function buildDashboardDecision(
 }
 
 function buildEvidenceRows(
-  finalSummary: string,
+  finalTexts: string[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  config: AgentOpsConfig
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
+  // Commands with an outcome; a started, unanswered or never-run command is not evidence.
+  const unfinished = new Set(["started", "in_progress", "running", "pending", "queued", "no_result", "inferred", "denied", "declined"]);
+  const finished = commands.filter((command) => !unfinished.has((command.status ?? "").toLowerCase())).map((command) => command.command);
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings, config, finished).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
     return toEvidenceRow({
@@ -506,7 +512,7 @@ function buildEvidenceRows(
     });
   });
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
-  const finalSuccessClaimed = claimsFinalSuccess(finalSummary) || successRisk !== null;
+  const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
   rows.push(
     toEvidenceRow({
       id: "final-success",

@@ -163,6 +163,22 @@ describe("appendHookPayload", () => {
     expect(checkChain(records).status).toBe("valid");
   });
 
+  test("a torn first record still gets a line break, so the next records stay readable", () => {
+    const dir = tempDir();
+    const sid = "0a1b2c3d-000d-4000-8000-00000000000d";
+    const payload = { session_id: sid, hook_event_name: "Stop", last_assistant_message: "done" };
+    const path = spoolPath(dir, sid) as string;
+    appendHookPayload(dir, payload);
+    writeFileSync(path, '{"schemaVersion":"agentops.event.v1","type":"claude_ho');
+
+    expect(appendHookPayload(dir, payload)).toMatchObject({ ok: true, seq: 1 });
+    expect(appendHookPayload(dir, payload)).toMatchObject({ ok: true, seq: 2 });
+    const { records, invalidLines } = readSpool(path);
+    expect(invalidLines).toEqual([1]);
+    expect(records.map((r) => r.seq)).toEqual([1, 2]);
+    expect(checkChain(records).status).toBe("valid");
+  });
+
   test("caps oversized records but keeps them chained", () => {
     const dir = tempDir();
     const sid = "0a1b2c3d-000d-4000-8000-00000000000d";

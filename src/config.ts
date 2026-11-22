@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { isSafeSupportCommand } from "./ledger";
 
 export type AgentOpsConfig = {
   schemaVersion: "agentops.config.v1";
@@ -17,6 +18,11 @@ export type AgentOpsConfig = {
   };
   evidence: {
     verificationCommands: string[];
+    /**
+     * Commands that can support a claim kind, matched word for word (evidence
+     * trust model, rule 3). A kind listed here replaces the built-in list.
+     */
+    supportCommands?: Partial<Record<"test" | "lint" | "typecheck" | "build", string[]>>;
   };
   gates: {
     requireVerification: boolean;
@@ -194,6 +200,25 @@ function validateConfigShape(value: unknown): string[] {
       errors.push("evidence must be an object.");
     } else {
       requireStringArray(value.evidence, "evidence.verificationCommands", "verificationCommands", errors);
+      const support = value.evidence.supportCommands;
+      if (support !== undefined) {
+        if (!isRecord(support)) {
+          errors.push("evidence.supportCommands must be an object.");
+        } else {
+          for (const key of Object.keys(support)) {
+            if (!["test", "lint", "typecheck", "build"].includes(key)) errors.push(`evidence.supportCommands.${key} is not a claim kind (test, lint, typecheck, build).`);
+            else {
+              requireStringArray(support, `evidence.supportCommands.${key}`, key, errors);
+              const entries = Array.isArray(support[key]) ? (support[key] as unknown[]) : [];
+              for (const entry of entries) {
+                if (typeof entry === "string" && entry.trim() && !isSafeSupportCommand(entry)) {
+                  errors.push(`evidence.supportCommands.${key} entry "${entry}" must have no shell syntax or ! negation and none of -h, --help, -V, --version, --dry-run, --list or --collect-only.`);
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
