@@ -114,3 +114,34 @@ describe("agentops recorder", () => {
     });
   }
 });
+
+describe("review 6009787233: recorder status matches what the hook and check use", () => {
+  const setup = () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-status-")));
+    const dir = join(root, "repo");
+    mkdirSync(join(dir, "pkg"), { recursive: true });
+    Bun.spawnSync(["git", "init", "-q", dir]);
+    return { dir, env: { PATH: "/usr/bin:/bin", AGENTOPS_STATE_DIR: join(root, "state") } };
+  };
+
+  test("with AGENTOPS_DB set, status counts the sessions in that store", async () => {
+    const { dir, env } = setup();
+    const { openStore, ingestTranscript } = await import("../src/store");
+    const { parseClaudeHooksJsonl } = await import("../src/claudeHooks");
+    const { defaultConfig } = await import("../src/config");
+    const custom = join(dir, "custom.db");
+    const store = openStore(custom);
+    const line = JSON.stringify({ session_id: "status-1", cwd: dir, hook_event_name: "UserPromptSubmit", prompt: "hi" });
+    ingestTranscript(store, parseClaudeHooksJsonl("s.jsonl", `${line}\n`, defaultConfig), defaultConfig);
+    store.db.close();
+    const out = (await runRecorderCommand(["status"], { cwd: dir, env: { ...env, AGENTOPS_DB: "custom.db" } })).stdout;
+    expect(out).toContain(`Recorded sessions in ${custom}: 1`);
+  });
+
+  test("from a package directory, status reports that directory's turn-end verdict setting", async () => {
+    const { dir, env } = setup();
+    writeFileSync(join(dir, "pkg", "agentops.config.json"), JSON.stringify({ recorder: { verdict: true } }));
+    expect((await runRecorderCommand(["status"], { cwd: join(dir, "pkg"), env })).stdout).toContain("Turn-end verdict (recorder.verdict): on");
+    expect((await runRecorderCommand(["status"], { cwd: dir, env })).stdout).toContain("Turn-end verdict (recorder.verdict): off");
+  });
+});
