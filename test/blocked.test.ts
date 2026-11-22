@@ -238,3 +238,13 @@ describe("review of 1cd60fc: reused ids and the dashboard", () => {
     expect(readiness).toBe("blocked");
   });
 });
+
+describe("review 6010416443: a reused id with a different command never pairs", () => {
+  test("another command's completion does not clear an unfinished destructive run", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-blocked-"));
+    const path = join(dir, "reuse-other.jsonl");
+    const row = (command: string, status: string, exitCode?: number) => ({ schemaVersion: "agentops.event.v1", type: "command", command, toolUseId: "w1", status, exitCode });
+    writeFileSync(path, [{ schemaVersion: "agentops.event.v1", type: "session", id: "blocked-reuse-other" }, row("rm -rf ./out", "in_progress"), row("pwd", "completed", 0)].map((line) => JSON.stringify(line)).join("\n"));
+    expect(audit(path).check("max-high-risks")?.observed).toBe(1);
+  });
+});

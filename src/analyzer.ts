@@ -267,8 +267,11 @@ export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<
   // are never paired: matching by command text could pair an interrupted run
   // with a later, unrelated decline and clear its risk.
   for (const command of ordered) {
-    const invocation = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
-    if (invocation === undefined) continue;
+    const id = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
+    if (id === undefined) continue;
+    // Same invocation id and same command: an id reused by another worker for a
+    // different command never pairs.
+    const invocation = `${id}\u0000${command.command}`;
     const isStart = START_ROW_STATUSES.has((command.status ?? "").toLowerCase()) && command.exitCode === null;
     if (isStart) {
       open.set(invocation, [...(open.get(invocation) ?? []), command.id]);
