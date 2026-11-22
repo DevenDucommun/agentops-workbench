@@ -145,3 +145,14 @@ describe("review 6009787233: recorder status matches what the hook and check use
     expect((await runRecorderCommand(["status"], { cwd: dir, env })).stdout).toContain("Turn-end verdict (recorder.verdict): off");
   });
 });
+
+test("recorder disable names the store AGENTOPS_DB points to", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-disable-")));
+  const dir = join(root, "repo");
+  mkdirSync(dir, { recursive: true });
+  Bun.spawnSync(["git", "init", "-q", dir]);
+  const env = { PATH: "/usr/bin:/bin", AGENTOPS_STATE_DIR: join(root, "state"), AGENTOPS_DB: "review.db" };
+  await runRecorderCommand(["enable"], { cwd: dir, env });
+  const out = (await runRecorderCommand(["disable"], { cwd: dir, env })).stdout;
+  expect(out).toContain(join(dir, "review.db"));
+});

@@ -37,7 +37,7 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
     const text = removed
-      ? `Recorder disabled for ${roots.main}. New sessions are not recorded. Existing spools stay in ${join(stateDir, "spool")} and imported sessions stay in ${join(roots.main, ".agentops", "agentops.db")} until you remove them (docs/RECORDER.md, "Removing recorded data").`
+      ? `Recorder disabled for ${roots.main}. New sessions are not recorded. Existing spools stay in ${join(stateDir, "spool")} and imported sessions stay in ${recorderStore(cwd, env, roots.main)} until you remove them (docs/RECORDER.md, "Removing recorded data").`
       : `Recorder was not enabled for ${roots.main}.`;
     return { stdout: `${text}\n`, exitCode: 0 };
   }
@@ -48,7 +48,7 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   // the repository's shared store; the turn-end verdict follows this directory's
   // agentops.config.json, or the checkout root's when it has none.
   const here = realDirectory(cwd) ?? cwd;
-  const store = env.AGENTOPS_DB !== undefined ? resolve(here, env.AGENTOPS_DB) : join(roots.main, ".agentops", "agentops.db");
+  const store = recorderStore(cwd, env, roots.main);
   const verdictConfigDir = existsSync(join(here, "agentops.config.json")) ? here : roots.checkout;
   const lines = [
     `Repository: ${roots.main}${roots.checkout !== roots.main ? ` (worktree ${roots.checkout})` : ""}`,
@@ -96,6 +96,11 @@ async function recordedSessions(store: string): Promise<number> {
   } finally {
     db.close();
   }
+}
+
+/** The store the hook and `agentops check` use from `cwd`: AGENTOPS_DB resolved against the real directory, else the repository's shared store. */
+function recorderStore(cwd: string, env: NodeJS.ProcessEnv, mainRoot: string): string {
+  return env.AGENTOPS_DB !== undefined ? resolve(realDirectory(cwd) ?? cwd, env.AGENTOPS_DB) : join(mainRoot, ".agentops", "agentops.db");
 }
 
 /** The real path of a directory, or null when it cannot be resolved. */
