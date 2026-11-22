@@ -147,6 +147,7 @@ so the summary appears at turn end instead.
   and enabled (`claude plugin list`).
 - **Recorder errors:** see `<state>/spool/*.errors.jsonl`. Each line names the
   reason (`lock-timeout`, `write-failed`, `ingest-failed`, `verdict-failed`).
-- **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`.
-  This restores the session's events but not its commit links, which only the
-  recorder's session-end import creates.
+- **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`,
+  from the recorded repository. This restores the session's events and its
+  commit links; an abbreviated commit SHA resolves to the full SHA only when
+  that commit exists in the repository the import runs in.

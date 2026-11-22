@@ -83,8 +83,11 @@ Records are redacted (secrets, emails, local paths) before they are written.
 | Bash commands and exit codes | Edit `old_string` / `new_string` |
 | Repository-relative file paths, line counts | Command stdout and stderr |
 | Tool names, search patterns, subagent types | Tool error text |
+| Subagent prompts and the text a subagent returns, which can quote file contents | |
 | Session, prompt, tool-use and agent IDs; git commit SHAs and branches | |
 
+Only the fields in the right-hand column are reduced to a digest; everything
+else on the left, including subagent results, is kept as text after redaction.
 `privacy.storeRawPayload: true` in `agentops.config.json` keeps the right-hand
 column as text too (still redacted). Claude Code's `transcript_path` fields are
 dropped, and transcript files are never read.
@@ -96,11 +99,14 @@ dropped, and transcript files are never read.
 | Enrolled repositories | `<state>/recorder/enrolled.json` |
 | Spools, one JSONL file per session | `<state>/spool/<session-id>.jsonl` |
 | Recorder errors | `<state>/spool/<session-id>.errors.jsonl` |
-| Imported sessions | `<repository>/.agentops/agentops.db` |
+| Imported sessions | `$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db` |
 
 `<state>` is `$AGENTOPS_STATE_DIR`, else `$XDG_STATE_HOME/agentops`, else
-`~/.local/state/agentops`. It is outside every repository. The store is under
-`.agentops/`, which must stay in `.gitignore`.
+`~/.local/state/agentops`. The defaults are outside every repository; if you
+point `AGENTOPS_STATE_DIR` inside a checkout, its spools and registry show up
+as untracked files, so keep it outside or ignore it. The default store is under
+`.agentops/`, which must stay in `.gitignore`. `agentops recorder status` names
+the store in use.
 
 ### Retention
 
@@ -116,16 +122,17 @@ Sessions stay in the store until you remove it.
 | Stop recording everywhere | `claude plugin uninstall agentops-recorder` |
 | Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
 | Delete all spools | remove `<state>/spool/` |
-| Delete imported sessions for a repository | remove `<repository>/.agentops/agentops.db` |
+| Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
 | Remove all recorder state | remove `<state>/` |
 
-No command deletes a single session from the store yet. You can remove the
-store and re-import the spools you want to keep with `agentops audit`, but the
-re-import is partial. It restores each session's events, tool calls, commands,
-file changes and risk flags. It does not restore the session's links to the
-commits it made, so a lookup from a commit back to its session will not find
-those sessions. Only the recorder's own session-end import creates commit
-links.
+No command deletes a single session from the store yet. The store can hold
+every imported session, including other tools' imports, so removing it removes
+all of them. To keep some, re-import their spools afterwards with
+`agentops audit <state>/spool/<session-id>.jsonl`, run from the recorded
+repository. That restores each session's events, tool calls, commands, file
+changes, risk flags and commit links. A commit recorded by its abbreviated SHA
+is linked by its full SHA only when that commit exists in the repository the
+import runs in; otherwise the link keeps the abbreviated SHA.
 
 ## Public Release Checklist
 
