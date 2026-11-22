@@ -160,7 +160,9 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
  * still counts against the claim, while support stays word for word.
  */
 function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  const normalized = normalizeCommand(command);
+  // For failures only: tabs count as spaces and leading VAR=value assignments
+  // are ignored, so `CI=1 node --test x` still counts against the claim.
+  const normalized = normalizeCommand(command.replace(/\t/g, " ").replace(/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""));
   if (normalized === null) return false;
   const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
   return configured.some((candidate) => {

@@ -398,7 +398,7 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
       const call = latestCall.get(block.tool_use_id);
       // Any is_error value other than false or absent (including a malformed
       // one such as the string "true") is a failure, matching the result event.
-      if (call && !results.has(call)) results.set(call, isBackgroundAcknowledgement(record, block) ? "background" : isInterrupted(record, block) ? "interrupted" : Boolean(block.is_error));
+      if (call && !results.has(call)) results.set(call, isInterrupted(record, block) ? "interrupted" : isBackgroundAcknowledgement(record, block) ? "background" : Boolean(block.is_error));
     }
   }
   return results;

@@ -1132,3 +1132,38 @@ describe("review 6010457450: interrupted stream runs, narrowed failures", () => 
     expect(claim).toMatchObject({ verdict: "contradicted", cited: { command: "node --test runner.test.cjs" } });
   });
 });
+
+describe("review 6010483073: interruption beats background; failure spellings", () => {
+  test("an interrupted result with a background marker is still interrupted", () => {
+    const records = [
+      { type: "system", subtype: "init", session_id: "int-bg" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b0", name: "Bash", input: { command: "bun test" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b0", is_error: false, content: "ok" }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b1", is_error: false, content: "" }] }, tool_use_result: { interrupted: true, backgroundTaskId: "t1" } },
+      { type: "result", subtype: "success", session_id: "int-bg", result: "Tests passed." }
+    ];
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("int.jsonl", records.map((r) => JSON.stringify(r)).join("\n")), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim?.verdict).toBe("contradicted");
+  });
+
+  test("a failed configured run behind CI=1 or with a tab still contradicts", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["node --test"] } } };
+    for (const failed of ["CI=1 node --test runner.test.cjs", "node\t--test"]) {
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      const lines = [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "spelling" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "node --test", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: failed, status: "failed", exitCode: 1 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("s.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+      const [claim] = getClaimsLedger(store, sessionId, config).claims;
+      store.db.close();
+      expect(claim?.verdict).toBe("contradicted");
+    }
+  });
+});
