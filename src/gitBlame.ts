@@ -95,7 +95,9 @@ export function parseBlamePorcelain(output: string): BlameLine[] {
  */
 export function parseTrailers(message: string, cwd = process.cwd()): Array<{ key: string; value: string }> {
   const settings: string[] = [];
-  for (const entry of (run(["git", "-C", cwd, "config", "--null", "--get-regexp", "^trailer\\."]) ?? "").split("\0").filter(Boolean)) {
+  // Trailer settings, plus the comment character Git uses to skip comment lines
+  // when it finds the trailer block, so the throwaway store parses as the repository does.
+  for (const entry of (run(["git", "-C", cwd, "config", "--null", "--get-regexp", "^(trailer\\.|core\\.comment(char|string)$)"]) ?? "").split("\0").filter(Boolean)) {
     const end = entry.indexOf("\n");
     if (end > 0) settings.push("-c", `${entry.slice(0, end)}=${entry.slice(end + 1)}`);
   }
@@ -297,31 +299,17 @@ const PINNED_CONFIG = [
 ];
 
 /**
- * Environment variables that relocate a repository. Every helper names its
- * repository explicitly, so an inherited value (from a Git hook, a worktree
- * script, or another tool) must never redirect it, and none is passed on.
+ * Runs a command without any inherited GIT_* variable; `env` adds or overrides
+ * entries. Every helper names its repository and reads only local state, so a
+ * variable from a Git hook, worktree script or sibling clone (GIT_DIR,
+ * GIT_COMMON_DIR, GIT_SHALLOW_FILE, GIT_CONFIG_*, ...) must never change what
+ * Git reads.
  */
-const REPOSITORY_ENV = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_COMMON_DIR",
-  "GIT_NAMESPACE",
-  "GIT_CEILING_DIRECTORIES",
-  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-  "GIT_CONFIG",
-  "GIT_CONFIG_PARAMETERS",
-  "GIT_CONFIG_COUNT"
-];
-
-/** Runs a command without inherited repository-location variables; `env` adds or overrides entries. */
 function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string>): string | null {
   try {
     const merged: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined && !REPOSITORY_ENV.includes(key) && !key.startsWith("GIT_CONFIG_KEY_") && !key.startsWith("GIT_CONFIG_VALUE_")) merged[key] = value;
+      if (value !== undefined && !key.startsWith("GIT_")) merged[key] = value;
     }
     Object.assign(merged, env ?? {});
     const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: merged });

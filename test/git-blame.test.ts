@@ -580,3 +580,39 @@ describe("review on 00d4cb7: inherited repository variables never redirect the h
     expect(blameFile(a, "f", { rev: ":/seed-marker" })[0]?.content).toBe("seeded");
   });
 });
+
+describe("review 6009711110: no inherited GIT_* variable, and the repository's comment character", () => {
+  const scratch = () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "agentops-r10-")));
+    const sh = (script: string) =>
+      Bun.spawnSync(["bash", "-c", script], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" } });
+    sh("git init -q && git config user.name synthetic && git config user.email synthetic && git config commit.gpgsign false");
+    return { dir, sh };
+  };
+
+  test("an inherited GIT_SHALLOW_FILE never changes blame attribution", () => {
+    const { dir, sh } = scratch();
+    sh("printf 'line\\n' > f && git add f && git commit -q -m root && git commit -q --allow-empty -m tip");
+    const root = sh("git rev-list --max-parents=0 HEAD").stdout.toString().trim();
+    const tip = sh("git rev-parse HEAD").stdout.toString().trim();
+    const shallow = join(dir, "shallow-from-elsewhere");
+    writeFileSync(shallow, `${tip}\n`);
+    const saved = process.env.GIT_SHALLOW_FILE;
+    process.env.GIT_SHALLOW_FILE = shallow;
+    try {
+      expect(blameFile(dir, "f")[0]?.sha).toBe(root);
+    } finally {
+      if (saved === undefined) delete process.env.GIT_SHALLOW_FILE;
+      else process.env.GIT_SHALLOW_FILE = saved;
+    }
+  });
+
+  test("parseTrailers honours the repository's core.commentChar, as getCommitInfo does", () => {
+    const { dir, sh } = scratch();
+    sh("git config core.commentChar ';'");
+    const message = "subject\n\nAgentOps-Session: s-1\n; a comment line\n";
+    writeFileSync(join(dir, "msg"), message);
+    sh("git commit -q --allow-empty --cleanup=verbatim -F msg");
+    expect(parseTrailers(message, dir)).toEqual(getCommitInfo(dir, "HEAD")?.trailers ?? []);
+  });
+});
