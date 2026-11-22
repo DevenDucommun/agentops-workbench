@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, isSupportCommand, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
@@ -132,7 +132,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   }
 
   // Retry and stall rules (spec R2.3).
-  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }));
+  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
   const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
@@ -307,14 +307,16 @@ export function evaluateEvidenceClaims(
   value: string | readonly string[],
   commands: string[],
   config: AgentOpsConfig = defaultConfig,
-  finishedCommands: readonly string[] = commands
+  passingCommands: readonly string[] = commands
 ): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    // A configured support command (word for word) that finished is evidence here
-    // too, as it is for the ledger; one that only started is not.
+    // The dashboard's evidence rows keep their original, loose match (any command
+    // that mentions the kind); the ledger is where strict support rules apply. A
+    // configured support command that does not mention the kind (bun run ci) counts
+    // here only when it passed, so a failed one is never shown as verified.
     const matchingCommand =
-      commands.find((command) => runsRuleCommand(rule, command)) ?? finishedCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
+      commands.find((command) => mentionsRuleCommand(rule, command)) ?? passingCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
     return {
       id: rule.id,
       category: rule.category,

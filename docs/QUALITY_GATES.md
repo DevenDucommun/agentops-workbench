@@ -112,12 +112,22 @@ response or its summary, even when negated, hedged or in different sentences.
 reads the full final response when the store has it, together with the stored
 summary.
 
-Before the ledger, any matching run supported a claim, including a failed one.
-To keep that behavior, suppress the new flag:
+Before the ledger, any run that mentioned the kind supported a claim, including
+a failed one and one with extra arguments (`bun test a.test.ts`). Two changes
+restore parts of that behavior, and each restores only its own part:
 
-```json
-{ "suppressions": [{ "category": "contradicted-claim", "reason": "Accept claims after failing runs." }] }
-```
+- To accept a claim after a failing run, suppress the new flag:
+
+  ```json
+  { "suppressions": [{ "category": "contradicted-claim", "reason": "Accept claims after failing runs." }] }
+  ```
+
+- A suppression does not make a command a supporting run. A passing run whose
+  command is not on the kind's support list (extra arguments, a different
+  script) still leaves the claim unsupported and fails the gate. List every
+  command that runs your checks in `evidence.supportCommands`
+  ([CONFIGURATION.md](CONFIGURATION.md)), for example
+  `{ "evidence": { "supportCommands": { "test": ["bun test", "bun test a.test.ts"] } } }`.
 
 ## Retry And Stall Signals
 
@@ -127,7 +137,7 @@ with the other risks:
 
 | Flag | When | Severity |
 | --- | --- | --- |
-| `retry-without-change` | The same command ran again after failing, with no file change in between | low for one retry, medium for two or more |
+| `retry-without-change` | The same shell command started again after a run of it failed (non-zero exit, failed or timed out), with no applied file change in between. Runs without a recorded outcome, non-shell tools, and calls issued before the failure's result arrived do not count | low for one retry, medium for two or more |
 | `repeated-edits` | One file changed at least `risk.repeatedEditThreshold` times (default 6) | medium |
 
 A failing test that is never re-run before a success claim is the ledger's

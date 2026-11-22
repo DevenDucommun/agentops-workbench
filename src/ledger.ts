@@ -203,7 +203,7 @@ export function isShellTool(toolName: string | null | undefined): boolean {
 }
 
 /** Whether a command row came from a shell execution: a `command` event, or a `tool_call` of a shell tool. */
-function isShellExecution(eventType: string | undefined, toolName: string | undefined): boolean {
+export function isShellExecution(eventType: string | undefined, toolName: string | undefined): boolean {
   if (eventType === undefined) return isShellTool(toolName);
   if (eventType === "command") return true;
   return eventType === "tool_call" && isShellTool(toolName);
@@ -371,6 +371,29 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
     id: number;
     eventUid: string;
   }>;
+  const { resultRowIds, toolNames, eventTypes } = getCommandContext(store, sessionId);
+  const adapter = store.db.query("SELECT source_adapter AS sourceAdapter FROM sessions WHERE id = $sid").get({ $sid: sessionId }) as { sourceAdapter: string | null } | null;
+  return buildClaimsLedger({
+    sessionId,
+    finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
+    commands: getCommands(store, sessionId),
+    linkedStatusIsOutcome: adapter?.sourceAdapter === "claude-code-stream-json",
+    config,
+    eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
+    resultRowIds,
+    toolNames,
+    eventTypes
+  });
+}
+
+/** What a stored session records about each command row: its linked result row, tool name and event type. */
+export type CommandContext = {
+  resultRowIds: Map<number, number>;
+  toolNames: Map<number, string>;
+  eventTypes: Map<number, string>;
+};
+
+export function getCommandContext(store: Store, sessionId: string): CommandContext {
   // A tool call's separate result event shares its tool_use_id. A result
   // belongs to the most recent call with that id before it, and a call's result
   // is the first one that belongs to it: the same rule the adapter uses for the
@@ -389,28 +412,16 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
        GROUP BY call.id`
     )
     .all({ $sid: sessionId }) as Array<{ callRowId: number; resultRowId: number }>;
-  const resultRowIds = new Map(results.map((row) => [row.callRowId, row.resultRowId]));
-  const adapter = store.db.query("SELECT source_adapter AS sourceAdapter FROM sessions WHERE id = $sid").get({ $sid: sessionId }) as { sourceAdapter: string | null } | null;
   const tools = store.db.query("SELECT event_id AS eventId, tool_name AS toolName FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL").all({ $sid: sessionId }) as Array<{
     eventId: number;
     toolName: string;
   }>;
-  return buildClaimsLedger({
-    sessionId,
-    finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
-    commands: getCommands(store, sessionId),
-    linkedStatusIsOutcome: adapter?.sourceAdapter === "claude-code-stream-json",
-    config,
-    eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
-    resultRowIds,
+  const types = store.db.query("SELECT id, type FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ id: number; type: string }>;
+  return {
+    resultRowIds: new Map(results.map((row) => [row.callRowId, row.resultRowId])),
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName])),
-    eventTypes: new Map(
-      (store.db.query("SELECT id, type FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ id: number; type: string }>).map((row) => [
-        row.id,
-        row.type
-      ])
-    )
-  });
+    eventTypes: new Map(types.map((row) => [row.id, row.type]))
+  };
 }
 
 /** How a ledger entry names an event: its eventId, else `#<row id>`. */

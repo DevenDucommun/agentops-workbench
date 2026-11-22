@@ -444,7 +444,9 @@ function isFileChangeType(type: string): boolean {
 }
 
 // A file change counts once, when it lands: the start half of a start/completion
-// pair (Codex `item.started`) and failed or denied attempts changed nothing.
+// pair (Codex `item.started`) and failed or denied attempts changed nothing. An
+// edit with no recorded result (`no_result`) may have landed before the stream
+// ended, so it still counts, as it always has.
 const UNAPPLIED_CHANGE_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "failed", "error", "denied", "declined", "rejected", "cancelled", "canceled"]);
 
 function isAppliedChange(status: unknown): boolean {
