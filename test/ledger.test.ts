@@ -9,6 +9,7 @@ import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
 import { parseClaudeHooksJsonl } from "../src/claudeHooks";
 import { parseCodexExecJsonl } from "../src/codexExec";
 import { buildClaimsLedger, commandOutcome, eventRef, getClaimsLedger, hasRecordedOutcome, isSafeSupportCommand } from "../src/ledger";
+import { getDashboardSession } from "../src/dashboardData";
 import { parseJsonlTranscript } from "../src/parser";
 import { getCommands, getRiskFlags, ingestTranscript, openStore } from "../src/store";
 
@@ -892,11 +893,10 @@ describe("review 6009611011: background runs and dashboard parity", () => {
     expect(claim.cited?.outcome).toBe("failed");
   });
 
-  test("the dashboard counts a configured support command as evidence, as the ledger does", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
-    const rows = evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config);
-    expect(rows.find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "make test -Cunit" });
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(false);
+  test("the dashboard counts a configured support command that passed as evidence", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config).find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "bun run ci" });
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"]).find((row) => row.id === "test")?.supported).toBe(false);
   });
 });
 
@@ -990,9 +990,41 @@ describe("review on 1ab87cb: interrupted background runs; unfinished configured 
     expect(statuses).toEqual(["interrupted"]);
   });
 
-  test("dashboard evidence: a configured command that only started is not evidence", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(true);
+  test("dashboard evidence: a configured command that did not pass is not evidence; loose matches stay as on main", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    // Started, failed, or unanswered: not in the passing list, so not evidence.
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
+    // A command that mentions the kind matches loosely, with or without config, as on main.
+    for (const command of ["make test -Cunit", "go test -count=1 ./..."]) {
+      expect(evaluateEvidenceClaims(["Tests passed."], [command]).find((row) => row.id === "test")?.supported).toBe(true);
+    }
+  });
+});
+
+describe("review 6010176414: the dashboard counts a configured command only when it passed", () => {
+  const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+  const testRow = (run: Record<string, unknown>) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "dash-ci" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", ...run },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("dash.jsonl", lines.map((line) => JSON.stringify(line)).join("\n")), config);
+    analyzeSession(store, sessionId, config);
+    const row = getDashboardSession(store, sessionId, config)?.decision.evidence.find((item) => item.id === "test");
+    store.db.close();
+    return row?.status;
+  };
+
+  test("no recorded result, interrupted with exit 0, or failed: not verified", () => {
+    expect(testRow({ status: "completed" })).not.toBe("verified");
+    expect(testRow({ status: "no_result" })).not.toBe("verified");
+    expect(testRow({ status: "interrupted", exitCode: 0 })).not.toBe("verified");
+    expect(testRow({ status: "failed", exitCode: 1 })).not.toBe("verified");
+  });
+
+  test("a configured command that exited 0 is verified", () => {
+    expect(testRow({ status: "completed", exitCode: 0 })).toBe("verified");
   });
 });
