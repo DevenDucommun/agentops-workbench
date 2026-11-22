@@ -189,6 +189,20 @@ export function mentionsRuleCommand(rule: Pick<EvidenceClaimRule, "commandPatter
   return new RegExp(rule.commandPattern.source, rule.commandPattern.flags.replace(/[gy]/g, "")).test(command);
 }
 
+const KIND_WORDS: Record<string, string> = { test: "test", lint: "lint", typecheck: "typecheck|type-check", build: "build|package|compile" };
+
+/**
+ * A failed run counts against a claim at least as broadly as v3.2 matched runs:
+ * a known tool followed, anywhere later on the line, by the kind's word, flags
+ * in between included (`npm --silent test`, `make -C unit test`). Used only for
+ * failures; support stays word for word.
+ */
+function looselyMentionsKind(rule: Pick<EvidenceClaimRule, "id">, command: string): boolean {
+  const words = KIND_WORDS[rule.id];
+  if (!words) return false;
+  return new RegExp(`\\b(bun|npm|pnpm|yarn|npx|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${words})\\b`, "i").test(command);
+}
+
 /** Tools that execute shell commands: Claude `Bash`, Codex `shell`, and generic exec tools. */
 const SHELL_TOOLS = new Set(["Bash", "shell", "exec_command", "local_shell"]);
 
@@ -341,7 +355,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed"
-          ? mentionsRuleCommand(rule, command.command) || isSupportCommand(rule, command.command, input.config)
+          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || isSupportCommand(rule, command.command, input.config)
           : fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
       .map((command): LedgerEvidence => ({
