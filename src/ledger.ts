@@ -154,6 +154,21 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
   return configured.some((candidate) => isSafeSupportCommand(candidate) && normalizeCommand(candidate) === normalized);
 }
 
+/**
+ * A support command, or one with more arguments after it (`node --test
+ * runner.test.cjs`). Used only for failures: a failed run of a narrowed check
+ * still counts against the claim, while support stays word for word.
+ */
+function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
+  const normalized = normalizeCommand(command);
+  if (normalized === null) return false;
+  const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
+  return configured.some((candidate) => {
+    const base = normalizeCommand(candidate);
+    return base !== null && (normalized === base || normalized.startsWith(`${base} `));
+  });
+}
+
 /** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */
 function normalizeCommand(command: string): string | null {
   if (!PLAIN_ASCII.test(command)) return null;
@@ -355,7 +370,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed"
-          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || isSupportCommand(rule, command.command, input.config)
+          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || extendsSupportCommand(rule, command.command, input.config)
           : fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
       .map((command): LedgerEvidence => ({
