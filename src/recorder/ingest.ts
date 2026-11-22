@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
-import { type AgentOpsConfig, defaultConfig, loadConfig } from "../config";
+import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
+import { evaluateQualityGate } from "../gate";
 import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
@@ -17,6 +18,8 @@ export type SpoolIngestOptions = {
   /** Store path; defaults to `<repoRoot>/.agentops/agentops.db`, which `look` reads from the repo root. */
   dbPath?: string;
   config?: AgentOpsConfig;
+  /** Config file for the turn verdict; defaults to `<repoRoot>/agentops.config.json`. */
+  configPath?: string;
 };
 
 export type SpoolIngestResult = { sessionId: string; eventCount: number; commits: SessionCommit[] };
@@ -66,6 +69,38 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
     }
     return { sessionId, eventCount, commits: getSessionCommits(store, sessionId) };
   })();
+}
+
+/**
+ * One-line gate verdict for the session so far (spec R1.6, T1.6): ingests the
+ * spool, runs the quality gate and summarizes it. Shown at the end of a turn
+ * through the Stop hook's `systemMessage`, because Claude Code discards
+ * SessionEnd hook output.
+ */
+export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): string {
+  // An invalid config must not be replaced by defaults here: that would report a
+  // pass that `agentops check` rejects. Say the config is invalid instead.
+  let config = options.config;
+  if (!config) {
+    const validation = validateConfigFile(options.configPath ?? join(options.repoRoot, "agentops.config.json"));
+    if (validation.errors.length) {
+      const line = `agentops: needs review: invalid agentops.config.json: ${validation.errors.join("; ")} (run agentops check)`;
+      return line.replace(/\s+/g, " ").slice(0, 300);
+    }
+    config = validation.config;
+  }
+  const { sessionId } = ingestSpoolFile(spoolFile, { ...options, config });
+  const store = openStore(options.dbPath ?? join(options.repoRoot, ".agentops", "agentops.db"));
+  try {
+    const gate = evaluateQualityGate(store, sessionId, config);
+    const failed = gate.checks.filter((check) => check.status === "failed");
+    const detail =
+      failed.length === 0 ? "all quality gates passed" : failed.map((check) => `${check.label}: ${check.message.replace(/\.$/, "")}`).join("; ");
+    const line = `agentops: ${gate.status === "passed" ? "passed" : "needs review"}: ${detail} (agentops look ${sessionId})`;
+    return line.replace(/\s+/g, " ").slice(0, 300);
+  } finally {
+    store.db.close();
+  }
 }
 
 /** Full SHA for a (possibly short) commit in the repository, or null when git cannot resolve it. */
