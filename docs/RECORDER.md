@@ -150,5 +150,6 @@ so the summary appears at turn end instead.
   reason (`lock-timeout`, `write-failed`, `ingest-failed`, `verdict-failed`).
 - **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`,
   from the recorded repository. This restores the session's events and its
-  commit links; an abbreviated commit SHA resolves to the full SHA only when
-  that commit exists in the repository the import runs in.
+  commit links, and recomputes risk flags under the current configuration. An
+  abbreviated commit SHA resolves to the full SHA when the spool also records
+  it in full (a push) or the commit exists in the repository the import runs in.
