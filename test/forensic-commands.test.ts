@@ -44,4 +44,9 @@ test("--base without a ref, or followed by an option, is an error rather than an
     expect(result.exitCode).toBe(1);
     expect(result.stderr ?? "").toContain("--base needs a git ref");
   }
+  for (const args of [["check", "latest", "--base", "HEAD", "--base"], ["save", "pr", "--base", "HEAD", "--base", "--octopus"], ["check", "--base", "a", "--base", "b"]]) {
+    const result = await runCli(args);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr ?? "").toContain("--base can be given only once");
+  }
 });

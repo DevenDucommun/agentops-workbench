@@ -29,8 +29,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
   const [command, ...args] = argv;
   // `--base` without a ref (last argument, or followed by another option) is an
   // error for every command, never a silent comparison against nothing.
-  if (args.includes("--base")) {
-    const value = readOption(args, "--base");
+  // Every occurrence is checked, and only one is accepted: `--base` names a single ref.
+  const baseFlags = args.flatMap((arg, index) => (arg === "--base" ? [index] : []));
+  if (baseFlags.length > 1) return { stderr: "--base can be given only once\n", exitCode: 1 };
+  for (const index of baseFlags) {
+    const value = args[index + 1];
     if (!value || value.startsWith("-")) return { stderr: "--base needs a git ref, for example --base origin/main\n", exitCode: 1 };
   }
   try {
