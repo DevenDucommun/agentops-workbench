@@ -496,10 +496,11 @@ function buildEvidenceRows(
   config: AgentOpsConfig
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  // Commands with an outcome; a started, unanswered or never-run command is not evidence.
-  const unfinished = new Set(["started", "in_progress", "running", "pending", "queued", "no_result", "inferred", "denied", "declined"]);
-  const finished = commands.filter((command) => !unfinished.has((command.status ?? "").toLowerCase())).map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalTexts, commandStrings, config, finished).map((claim) => {
+  // Commands that passed: exit code 0, or a completed status without an exit code.
+  const passing = commands
+    .filter((command) => (typeof command.exitCode === "number" ? command.exitCode === 0 : (command.status ?? "").toLowerCase() === "completed"))
+    .map((command) => command.command);
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings, config, passing).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
     return toEvidenceRow({

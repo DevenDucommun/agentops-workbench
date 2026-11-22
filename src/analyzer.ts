@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, mentionsRuleCommand } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
@@ -259,14 +259,16 @@ export function evaluateEvidenceClaims(
   value: string | readonly string[],
   commands: string[],
   config: AgentOpsConfig = defaultConfig,
-  finishedCommands: readonly string[] = commands
+  passingCommands: readonly string[] = commands
 ): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    // A configured support command (word for word) that finished is evidence here
-    // too, as it is for the ledger; one that only started is not.
+    // The dashboard's evidence rows keep their original, loose match (any command
+    // that mentions the kind); the ledger is where strict support rules apply. A
+    // configured support command that does not mention the kind (bun run ci) counts
+    // here only when it passed, so a failed one is never shown as verified.
     const matchingCommand =
-      commands.find((command) => runsRuleCommand(rule, command)) ?? finishedCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
+      commands.find((command) => mentionsRuleCommand(rule, command)) ?? passingCommands.find((command) => isSupportCommand(rule, command, config)) ?? null;
     return {
       id: rule.id,
       category: rule.category,

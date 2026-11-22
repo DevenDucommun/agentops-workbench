@@ -892,11 +892,10 @@ describe("review 6009611011: background runs and dashboard parity", () => {
     expect(claim.cited?.outcome).toBe("failed");
   });
 
-  test("the dashboard counts a configured support command as evidence, as the ledger does", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
-    const rows = evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config);
-    expect(rows.find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "make test -Cunit" });
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(false);
+  test("the dashboard counts a configured support command that passed as evidence", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config).find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "bun run ci" });
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"]).find((row) => row.id === "test")?.supported).toBe(false);
   });
 });
 
@@ -990,9 +989,13 @@ describe("review on 1ab87cb: interrupted background runs; unfinished configured 
     expect(statuses).toEqual(["interrupted"]);
   });
 
-  test("dashboard evidence: a configured command that only started is not evidence", () => {
-    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
-    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config, ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(true);
+  test("dashboard evidence: a configured command that did not pass is not evidence; loose matches stay as on main", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["bun run ci"] } } };
+    // Started, failed, or unanswered: not in the passing list, so not evidence.
+    expect(evaluateEvidenceClaims(["Tests passed."], ["bun run ci"], config, []).find((row) => row.id === "test")?.supported).toBe(false);
+    // A command that mentions the kind matches loosely, with or without config, as on main.
+    for (const command of ["make test -Cunit", "go test -count=1 ./..."]) {
+      expect(evaluateEvidenceClaims(["Tests passed."], [command]).find((row) => row.id === "test")?.supported).toBe(true);
+    }
   });
 });
