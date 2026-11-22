@@ -45,11 +45,12 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
   transcript.session.repo ??= basename(options.repoRoot);
   const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
   try {
-    store.db.exec(`PRAGMA busy_timeout = ${STORE_BUSY_TIMEOUT_MS}`);
     // `recorder forget` records the generation it removes before deleting the
     // session's rows. Checking that record inside this write transaction orders
     // the two through SQLite's write lock: either forget's delete runs after this
-    // import commits, or the import sees the record and stores nothing.
+    // import commits, or the import sees the record and stores nothing. A busy
+    // store fails the import at once, as before, so a hook stays within its time
+    // budget and records the failure.
     return storeHookTranscript(store, transcript, config, options.repoRoot, () => {
       if (generation !== null && isForgotten(spoolFile, generation)) throw new SpoolGoneError(`spool forgotten: ${spoolFile}`);
     });
@@ -57,9 +58,6 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
     store.db.close();
   }
 }
-
-/** How long an import waits for another writer (such as `recorder forget`) to release the store. */
-const STORE_BUSY_TIMEOUT_MS = 10_000;
 
 export function storeHookTranscript(
   store: Store,

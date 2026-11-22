@@ -256,3 +256,18 @@ test("review 6010295645: a spool directory that cannot be listed stops forget be
   db.db.close();
   expect(existsSync(spoolPath(spoolDir, COMMIT) as string)).toBe(true);
 });
+
+test("review on e397286: a session-end import against a busy store fails fast and records why", async () => {
+  const { repo, stateDir } = await recordedRepo();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const { Database } = await import("bun:sqlite");
+  const holder = new Database(join(repo, ".agentops", "agentops.db"));
+  holder.exec("BEGIN IMMEDIATE");
+  const started = Date.now();
+  await ingestAfterSessionEnd({ recorded: true, hookEventName: "SessionEnd", spoolFile: spool, repository: repo } as never, stateDir);
+  const elapsed = Date.now() - started;
+  holder.exec("ROLLBACK");
+  holder.close();
+  expect(elapsed).toBeLessThan(1000);
+  expect(readFileSync(spool.replace(/\.jsonl$/, ".errors.jsonl"), "utf8")).toContain("ingest-failed");
+});
