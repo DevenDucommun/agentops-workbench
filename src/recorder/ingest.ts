@@ -1,6 +1,6 @@
 import type { ParsedTranscript } from "../types";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
@@ -27,6 +27,8 @@ export type SpoolIngestResult = { sessionId: string; eventCount: number; commits
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
   const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
+  // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
+  transcript.session.repo ??= basename(options.repoRoot);
   const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
   try {
     return storeHookTranscript(store, transcript, config, options.repoRoot);

@@ -1,0 +1,17 @@
+{
+  "name": "agentops-recorder",
+  "version": "3.3.0-dev",
+  "description": "Forensic recorder for AgentOps Workbench: records Claude Code sessions in enrolled repositories through hooks, with redaction and a hash chain.",
+  "author": {
+    "name": "AgentOps Workbench"
+  },
+  "homepage": "https://github.com/DevenDucommun/agentops-workbench",
+  "repository": "https://github.com/DevenDucommun/agentops-workbench",
+  "license": "MIT",
+  "keywords": [
+    "observability",
+    "audit",
+    "hooks",
+    "forensics"
+  ]
+}
