@@ -616,3 +616,16 @@ describe("review 6009711110: no inherited GIT_* variable, and the repository's c
     expect(parseTrailers(message, dir)).toEqual(getCommitInfo(dir, "HEAD")?.trailers ?? []);
   });
 });
+
+test("blameFile never fetches a partial clone's missing blob from its remote", () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "agentops-partial-")));
+  const env = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" };
+  const sh = (script: string, cwd = base) => Bun.spawnSync(["bash", "-c", script], { cwd, stdout: "pipe", stderr: "pipe", env });
+  sh("git init -q src && cd src && git config user.name synthetic && git config user.email synthetic && git config commit.gpgsign false && git config uploadpack.allowfilter true && printf 'remote line\\n' > f && git add f && git commit -q -m add");
+  sh(`git clone -q --no-checkout --filter=blob:none "file://${join(base, "src")}" clone`);
+  const clone = join(base, "clone");
+  const packs = () => sh("ls .git/objects/pack | wc -l", clone).stdout.toString().trim();
+  const before = packs();
+  expect(blameFile(clone, "f")).toEqual([]);
+  expect(packs()).toBe(before);
+});

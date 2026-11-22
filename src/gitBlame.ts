@@ -299,8 +299,8 @@ const PINNED_CONFIG = [
 ];
 
 /**
- * Runs a command without any inherited GIT_* variable; `env` adds or overrides
- * entries. Every helper names its repository and reads only local state, so a
+ * Runs a command without any inherited GIT_* variable and with lazy fetching
+ * off (GIT_NO_LAZY_FETCH=1); `env` adds or overrides entries. Every helper names its repository and reads only local state, so a
  * variable from a Git hook, worktree script or sibling clone (GIT_DIR,
  * GIT_COMMON_DIR, GIT_SHALLOW_FILE, GIT_CONFIG_*, ...) must never change what
  * Git reads.
@@ -311,6 +311,9 @@ function run(argv: string[], stdin?: Uint8Array, env?: Record<string, string>): 
     for (const [key, value] of Object.entries(process.env)) {
       if (value !== undefined && !key.startsWith("GIT_")) merged[key] = value;
     }
+    // The helpers read local history only: a partial clone's missing object is
+    // reported as missing, never fetched from a remote into the caller's repository.
+    merged.GIT_NO_LAZY_FETCH = "1";
     Object.assign(merged, env ?? {});
     const proc = Bun.spawnSync(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "ignore", env: merged });
     return proc.exitCode === 0 ? proc.stdout.toString() : null;
