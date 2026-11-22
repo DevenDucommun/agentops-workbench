@@ -384,6 +384,9 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
 // A Bash command's status comes from its tool_result: an error result is a
 // failed run, and a tool_use with no recorded result (`no_result`) proves nothing.
 function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
+  // A background run's tool_result only acknowledges the launch; its outcome is
+  // not in the stream, so it is still running as far as the ledger can tell.
+  if (block.input?.run_in_background === true) return "started";
   const failed = results.get(block);
   if (failed === undefined) return "no_result";
   return failed ? "failed" : "completed";

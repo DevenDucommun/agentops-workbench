@@ -295,7 +295,7 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification);
+  const decision = buildDashboardDecision(events, commands, risks, verification, config);
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -439,11 +439,12 @@ function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  config: AgentOpsConfig
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification);
+  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, config);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
@@ -491,10 +492,11 @@ function buildEvidenceRows(
   finalTexts: string[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  config: AgentOpsConfig
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings, config).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
     return toEvidenceRow({

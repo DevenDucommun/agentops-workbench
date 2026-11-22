@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { analyzeSession } from "../src/analyzer";
+import { analyzeSession, evaluateEvidenceClaims } from "../src/analyzer";
 import { defaultConfig, validateConfigFile } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
@@ -866,5 +866,35 @@ describe("review 6001207975: Claude outcomes at their result, precise non-execut
     const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
     writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["go test -count=1 ./...", "make test -Cunit"] } } }));
     expect(validateConfigFile(join(dir, "agentops.config.json")).errors).toEqual([]);
+  });
+});
+
+describe("review 6009611011: background runs and dashboard parity", () => {
+  test("a Claude background run is still running: its launch acknowledgement never replaces a failure", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const call = (id: string, input: Record<string, unknown>) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input }] } });
+    const result = (id: string, isError: boolean, content: string) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content }] } });
+    const stream = [
+      { type: "system", subtype: "init", session_id: "bg" },
+      call("a", { command: "bun test" }),
+      result("a", true, "1 fail"),
+      call("b", { command: "bun test", run_in_background: true }),
+      result("b", false, "Command running in background with ID: x"),
+      { type: "result", subtype: "success", session_id: "bg", result: "Tests passed." }
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim.verdict).toBe("contradicted");
+    expect(claim.cited?.outcome).toBe("failed");
+  });
+
+  test("the dashboard counts a configured support command as evidence, as the ledger does", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["make test -Cunit"] } } };
+    const rows = evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"], config);
+    expect(rows.find((row) => row.id === "test")).toMatchObject({ claimed: true, supported: true, matchingCommand: "make test -Cunit" });
+    expect(evaluateEvidenceClaims(["Tests passed."], ["make test -Cunit"]).find((row) => row.id === "test")?.supported).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, runsRuleCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
 type RiskFlag = {
@@ -255,10 +255,12 @@ function toClaimTexts(value: string | readonly string[]): string[] {
   return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
 }
 
-export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[]): EvidenceClaimEvaluation[] {
+export function evaluateEvidenceClaims(value: string | readonly string[], commands: string[], config: AgentOpsConfig = defaultConfig): EvidenceClaimEvaluation[] {
   const texts = toClaimTexts(value);
   return evidenceClaimRules.map((rule) => {
-    const matchingCommand = commands.find((command) => runsRuleCommand(rule, command)) ?? null;
+    // A command the ledger accepts as support (a configured command, word for word)
+    // is evidence here too, so the dashboard never contradicts the ledger.
+    const matchingCommand = commands.find((command) => runsRuleCommand(rule, command) || isSupportCommand(rule, command, config)) ?? null;
     return {
       id: rule.id,
       category: rule.category,
