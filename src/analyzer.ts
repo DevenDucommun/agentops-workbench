@@ -1,7 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, isSupportCommand, runsRuleCommand } from "./ledger";
+import { claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, isSupportCommand, runsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession } from "./store";
 
@@ -128,7 +128,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   }
 
   // Retry and stall rules (spec R2.3).
-  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }));
+  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
   const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));

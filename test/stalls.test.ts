@@ -6,6 +6,7 @@ import { analyzeSession } from "../src/analyzer";
 import { defaultConfig, validateConfigFile } from "../src/config";
 import { evaluateQualityGate } from "../src/gate";
 import { parseJsonlTranscript } from "../src/parser";
+import { parseClaudeCodeStreamJsonl } from "../src/claudeStream";
 import { parseCodexExecJsonl } from "../src/codexExec";
 import { detectStalls, normalizeCommand } from "../src/stalls";
 import { getRiskFlags, ingestTranscript, openStore } from "../src/store";
@@ -124,5 +125,101 @@ describe("config", () => {
     const path = join(dir, "agentops.config.json");
     writeFileSync(path, JSON.stringify({ risk: { repeatedEditThreshold: 1 } }));
     expect(validateConfigFile(path).errors).toContain("risk.repeatedEditThreshold must be an integer of at least 2.");
+  });
+});
+
+describe("review 6010139248: edit outcomes, run order, shell runs, argument boundaries", () => {
+  const claude = (records: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const text = records.map((record) => JSON.stringify(record)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", text), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const flags = stallFlags(getRiskFlags(store, sessionId));
+    const files = (store.db.query("SELECT COUNT(*) AS n FROM file_changes WHERE session_id = $sid").get({ $sid: sessionId }) as { n: number }).n;
+    store.db.close();
+    return { flags, files };
+  };
+  const generic = (events: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const text = [{ schemaVersion: "agentops.event.v1", type: "session", id: "stall-review" }, ...events].map((event) => JSON.stringify(event)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("stall.jsonl", text), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const flags = stallFlags(getRiskFlags(store, sessionId));
+    store.db.close();
+    return flags;
+  };
+  const init = { type: "system", subtype: "init", session_id: "stall-claude" };
+  const done = { type: "result", subtype: "success", session_id: "stall-claude", result: "Done." };
+  const use = (id: string, name: string, input: Record<string, unknown>) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } });
+  const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: isError ? "error" : "ok" }] } });
+
+  test("failed Claude edits are not applied changes", () => {
+    const records: unknown[] = [init];
+    for (let i = 0; i < 6; i++) records.push(use(`e${i}`, "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }), result(`e${i}`, true));
+    const { flags, files } = claude([...records, done]);
+    expect(files).toBe(0);
+    expect(flags).toEqual([]);
+  });
+
+  test("a failed Claude edit does not separate a retry; a landed one does", () => {
+    const run = (editFails: boolean) =>
+      claude([
+        init,
+        use("b1", "Bash", { command: "bun test" }),
+        result("b1", true),
+        use("e1", "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }),
+        result("e1", editFails),
+        use("b2", "Bash", { command: "bun test" }),
+        result("b2", false),
+        done
+      ]).flags;
+    expect(run(true)).toEqual(["low:retry-without-change:Command re-run 1 time after failing, with no file change in between: bun test"]);
+    expect(run(false)).toEqual([]);
+  });
+
+  test("identical Claude calls issued before the first result are not a retry", () => {
+    const parallel = claude([
+      init,
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test" } }, { type: "tool_use", id: "b2", name: "Bash", input: { command: "bun test" } }] } },
+      result("b1", true),
+      result("b2", false),
+      done
+    ]);
+    expect(parallel.flags).toEqual([]);
+    const sequential = claude([init, use("b1", "Bash", { command: "bun test" }), result("b1", true), use("b2", "Bash", { command: "bun test" }), result("b2", false), done]);
+    expect(sequential.flags).toHaveLength(1);
+  });
+
+  test("overlapping Codex runs (start, start, fail, complete) are not a retry", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const item = (id: string, status: string, exit: number | null) => ({ id, type: "command_execution", command: "bun test", aggregated_output: "", exit_code: exit, status });
+    const lines = [
+      { type: "thread.started", thread_id: "codex-overlap" },
+      { type: "item.started", item: item("c1", "in_progress", null) },
+      { type: "item.started", item: item("c2", "in_progress", null) },
+      { type: "item.completed", item: item("c1", "failed", 1) },
+      { type: "item.completed", item: item("c2", "completed", 0) }
+    ];
+    const { sessionId } = ingestTranscript(store, parseCodexExecJsonl("codex.jsonl", lines.map((line) => JSON.stringify(line)).join("\n")), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const flags = stallFlags(getRiskFlags(store, sessionId));
+    store.db.close();
+    expect(flags).toEqual([]);
+  });
+
+  test("only shell runs with an outcome count; a timeout is a failure", () => {
+    const cmd = (extra: Record<string, unknown>) => ({ schemaVersion: "agentops.event.v1", type: "command", command: "bun test", ...extra });
+    // A failed MCP lookup that carries a command input is not a shell run.
+    expect(generic([{ schemaVersion: "agentops.event.v1", type: "tool_call", toolName: "mcp__docs__search", command: "bun test", status: "failed" }, cmd({ exitCode: 0, status: "completed" })])).toEqual([]);
+    // A rerun with no recorded result proves nothing.
+    expect(generic([cmd({ exitCode: 1, status: "failed" }), cmd({ status: "no_result" })])).toEqual([]);
+    // A timed-out run followed by a rerun is a retry.
+    expect(generic([cmd({ status: "timed_out" }), cmd({ exitCode: 0, status: "completed" })])).toHaveLength(1);
+  });
+
+  test("an escaped quote or a newline keeps commands distinct", () => {
+    expect(normalizeCommand('test -f "a\\" b"')).not.toBe(normalizeCommand('test -f "a\\"  b"'));
+    expect(normalizeCommand("make\nclean")).not.toBe(normalizeCommand("make clean"));
+    expect(normalizeCommand("bun   test\t a.ts")).toBe("bun test a.ts");
   });
 });

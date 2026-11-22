@@ -126,7 +126,7 @@ with the other risks:
 
 | Flag | When | Severity |
 | --- | --- | --- |
-| `retry-without-change` | The same command ran again after failing, with no file change in between | low for one retry, medium for two or more |
+| `retry-without-change` | The same shell command started again after a run of it failed (non-zero exit, failed or timed out), with no applied file change in between. Runs without a recorded outcome, non-shell tools, and calls issued before the failure's result arrived do not count | low for one retry, medium for two or more |
 | `repeated-edits` | One file changed at least `risk.repeatedEditThreshold` times (default 6) | medium |
 
 A failing test that is never re-run before a success claim is the ledger's
