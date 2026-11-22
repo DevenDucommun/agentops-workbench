@@ -36,7 +36,7 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
     return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
   }
 
-  if (sub === "forget") return forgetSession(args[1] as string, join(roots.main, ".agentops", "agentops.db"), join(stateDir, "spool"));
+  if (sub === "forget") return forgetSession(args[1] as string, recorderStore(cwd, env, roots.main), join(stateDir, "spool"));
 
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
@@ -76,8 +76,9 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
   const { Database } = await import("bun:sqlite");
   // Hold the session's spool lock for the whole removal: a hook appending at
   // the same moment would otherwise recreate the spool mid-chain after it was
-  // deleted. A live writer's lock is never removed; forget waits briefly, then
-  // gives up and deletes nothing.
+  // deleted, and a session-end import would put the session back. A held lock is
+  // never reclaimed, however old (a slow writer may still be running); forget
+  // waits briefly, then gives up and deletes nothing.
   const locked = withSpoolLock(
     spoolDir,
     sessionId,
@@ -101,14 +102,14 @@ async function forgetSession(sessionId: string, store: string, spoolDir: string)
       }
       return removed;
     },
-    { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS }
+    { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS, staleLockMs: Number.POSITIVE_INFINITY }
   );
   if (!locked.ok) {
     const busy = locked.reason === "lock-timeout";
     return {
       stdout: "",
       stderr: busy
-        ? `Session ${sessionId} is being recorded right now (its spool is locked). Nothing was removed; try again when the session has ended.\n`
+        ? `Session ${sessionId} is being recorded or imported right now (its spool is locked). Nothing was removed; try again when the session has ended. If no session is running, a crashed hook left ${spoolPath(spoolDir, sessionId)}.lock behind; delete it and retry.\n`
         : `Could not lock session ${sessionId}: ${locked.detail}. Nothing was removed.\n`,
       exitCode: 1
     };

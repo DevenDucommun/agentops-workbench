@@ -1,10 +1,11 @@
 import type { ParsedTranscript } from "../types";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
+import { withSpoolFileLock } from "./spool";
 import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
@@ -24,18 +25,39 @@ export type SpoolIngestOptions = {
 
 export type SpoolIngestResult = { sessionId: string; eventCount: number; commits: SessionCommit[] };
 
+/** The spool was removed (by `recorder forget`) before it could be imported. */
+export class SpoolGoneError extends Error {
+  readonly code = "SPOOL_GONE";
+}
+
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
-  const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
-  // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
-  transcript.session.repo ??= basename(options.repoRoot);
-  const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
-  try {
-    return storeHookTranscript(store, transcript, config, options.repoRoot);
-  } finally {
-    store.db.close();
-  }
+  // Read and import under the spool's lock, the lock `recorder forget` holds
+  // while it removes a session: a forget either finishes first (the spool is
+  // gone and nothing is imported) or waits until the import is done and then
+  // removes what it stored.
+  const locked = withSpoolFileLock(
+    spoolFile,
+    () => {
+      if (!existsSync(spoolFile)) throw new SpoolGoneError(`spool removed: ${spoolFile}`);
+      const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
+      // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
+      transcript.session.repo ??= basename(options.repoRoot);
+      const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
+      try {
+        return storeHookTranscript(store, transcript, config, options.repoRoot);
+      } finally {
+        store.db.close();
+      }
+    },
+    { lockTimeoutMs: INGEST_LOCK_TIMEOUT_MS }
+  );
+  if (!locked.ok) throw new Error(`could not lock ${spoolFile}: ${locked.detail}`);
+  return locked.value;
 }
+
+/** How long an import waits for a hook append or a forget to release the spool. */
+const INGEST_LOCK_TIMEOUT_MS = 2000;
 
 export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
   return store.db.transaction(() => {

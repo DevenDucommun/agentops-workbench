@@ -119,13 +119,16 @@ Sessions stay in the store until you remove it.
 | Delete imported sessions for a repository | remove `<repository>/.agentops/agentops.db` |
 | Remove all recorder state | remove `<state>/` |
 
-`agentops recorder forget` deletes the session from the repository's store
-(its events, commands, file changes, risk flags and commit links go with it)
-and removes its spool and error files. Other sessions are untouched. It takes
-the session's spool lock first: if a hook is writing to that session at that
-moment, it waits up to two seconds, then gives up without removing anything.
-Forget a session after it has ended; a hook that fires later starts a new
-spool for it.
+`agentops recorder forget` deletes the session from the store `agentops check`
+uses (`AGENTOPS_DB` when set, otherwise the repository's store; its events,
+commands, file changes, risk flags and commit links go with it) and removes its
+spool and error files. Other sessions are untouched. It takes the session's
+spool lock first, the lock hooks hold while they append to the spool or import
+it: if a hook is doing either at that moment, forget waits up to two seconds,
+then gives up without removing anything. It never takes over a held lock, so
+if no session is running and forget still reports the session busy, a crashed
+hook left the lock file it names; delete that file and retry. Forget a session
+after it has ended; a hook that fires later starts a new spool for it.
 
 If you remove the whole store instead and re-import the spools you want to
 keep with `agentops audit`, the re-import is partial. It restores each

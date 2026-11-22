@@ -184,7 +184,8 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
 /**
  * Runs `fn` while holding the session's spool lock, the same lock appendRecord
  * takes, so no hook can append to the session meanwhile. A lock older than the
- * stale limit is reclaimed as appendRecord does. Never throws for lock errors.
+ * stale limit is reclaimed as appendRecord does, unless `staleLockMs` is
+ * Infinity. Never throws for lock errors.
  */
 export function withSpoolLock<T>(
   dir: string,
@@ -200,7 +201,20 @@ export function withSpoolLock<T>(
   } catch (error) {
     return { ok: false, reason: "lock-failed", detail: `mkdir: ${message(error)}` };
   }
-  const lockPath = `${path}.lock`;
+  return withSpoolFileLock(path, fn, settings);
+}
+
+/**
+ * Runs `fn` while holding the lock of the spool file at `spoolFile` (the lock
+ * appendRecord takes). Never throws for lock errors; `fn`'s own errors propagate.
+ */
+export function withSpoolFileLock<T>(
+  spoolFile: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed"; detail: string } {
+  const settings = { ...DEFAULTS, ...options };
+  const lockPath = `${spoolFile}.lock`;
   const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
   if (lock === "timeout") return { ok: false, reason: "lock-timeout", detail: `lock not acquired within ${settings.lockTimeoutMs} ms` };
   if (lock !== "acquired") return { ok: false, reason: "lock-failed", detail: lock.error };
