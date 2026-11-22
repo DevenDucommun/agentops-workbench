@@ -188,14 +188,17 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
     if (background) {
       return { ...base, type: "tool_call", toolName: name, command, input: command === undefined ? undefined : { command }, status: "started", output: stdout, summary: command ?? "Bash" };
     }
+    // An exit code the record or the tool response reports wins over the hook's
+    // generic success: a PostToolUse can carry exitCode / exit_code 1.
+    const reported = [r.exitCode, r.exit_code, response?.exitCode, response?.exit_code].find((value): value is number => typeof value === "number");
     return {
       ...base,
       type: "tool_call",
       toolName: name,
       command,
       input: command === undefined ? undefined : { command },
-      status: response?.interrupted === true ? "interrupted" : status,
-      exitCode: typeof r.exitCode === "number" ? r.exitCode : failed ? undefined : 0,
+      status: response?.interrupted === true ? "interrupted" : reported !== undefined && reported !== 0 ? "failed" : status,
+      exitCode: reported ?? (failed ? undefined : 0),
       output: stdout,
       gitCommit: !failed && response?.interrupted !== true ? (r.gitCommit ?? commit) : undefined,
       summary: command ?? "Bash"
