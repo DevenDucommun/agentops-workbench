@@ -208,7 +208,12 @@ Configure gates in `agentops.config.json`:
 ```
 
 `requiredVerificationCommands` checks observed verification command text. For
-example, `"lint"` matches `bun run lint`.
+example, `"lint"` matches `bun run lint`. The recorded invocation must start
+with a recognized runner, optionally preceded by environment assignments.
+Printing `echo bun test` cannot satisfy either verification check. For Make,
+the gate looks for a configured goal and accepts ordinary options such as
+`-j4` and `-C dir`. Dry-run options, explicit Make flag variables, and
+unrecognized Make options leave the verification requirement unsatisfied.
 
 `generatedFilePatterns` is a simple case-insensitive path substring match.
 

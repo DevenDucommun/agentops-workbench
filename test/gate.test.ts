@@ -63,6 +63,33 @@ test("supports required verification commands and generated-file churn gates", (
   store.db.close();
 });
 
+test.each([
+  ["echo bun test", "failed"],
+  ["make test --just-print", "failed"],
+  ["MAKEFLAGS=n make test", "failed"],
+  ["make -kn test", "failed"],
+  ["make -f test", "failed"],
+  ["gmake -C project test", "passed"],
+  ["mvn clean test", "passed"],
+  ["make test", "passed"],
+  ["make -j4 test", "passed"],
+  ["CI=1 bun test unit.test.ts", "passed"]
+])("checks the recorded invocation %s for both verification gates", (command, status) => {
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "command-shape" },
+    { schemaVersion: "agentops.event.v1", type: "command", command, status: "completed", exitCode: 0 }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const result = evaluateQualityGate(store, "command-shape", config);
+    for (const id of ["required-verification", "required-command:test"]) {
+      expect(result.checks).toContainEqual(expect.objectContaining({ id, status }));
+    }
+  } finally {
+    store.db.close();
+  }
+});
+
 function openFixture(path: string) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-gate-test-"));
   const store = openStore(join(dir, "agentops.db"));

@@ -5,6 +5,7 @@ import type { CommandRecord } from "./types";
 import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
+import { verificationInvocation } from "./verificationCommand";
 
 type RiskFlag = {
   eventId: number | null;
@@ -227,9 +228,12 @@ export function isObservedExecution(command: CommandRecord): boolean {
 }
 
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
-  const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
-  return pattern.test(command);
+  const invocation = verificationInvocation(command);
+  if (!invocation) return false;
+  const tasks = config.evidence.verificationCommands;
+  if (invocation.runner === "make" || invocation.runner === "gmake") return invocation.args.some((goal) => tasks.includes(goal));
+  const keywords = tasks.filter(Boolean).map(escapeRegex).join("|");
+  return keywords !== "" && new RegExp(`\\b(?:${keywords})\\b`, "i").test(invocation.args.join(" "));
 }
 
 /**
