@@ -360,7 +360,8 @@ function runAudit(args: string[]): CliResult {
   const config = loadConfig(configPath);
   const input = loadAdapterInput(sourcePath);
   const adapter = resolveAdapter(input, adapterId ?? undefined);
-  const store = openStore();
+  // A dashboard download can hold a read snapshot while the import commits.
+  const store = openStore(undefined, { busyTimeoutMs: 500 });
   const result = ingestInput(store, input, adapter.id, config);
 
   // --quiet ingests only (no inspection/gate), exits 0 — for scripting or loading

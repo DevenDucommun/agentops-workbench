@@ -1246,3 +1246,44 @@ describe("review 6026938504: default-config adapter regressions", () => {
     expect(commands).toEqual([{ command: "git status --short", status: "completed" }]);
   });
 });
+
+describe("failed runs retain their configured evidence kind", () => {
+  for (const [retry, verdict] of [
+    ["env CHECK=unit node verify.cjs", "contradicted"],
+    ["env CHECK=unit node verify.cjs sample.js", "contradicted"],
+    ["node verify.cjs sample.js", "supported"]
+  ] as const) {
+    test(`a failed ${retry} leaves the test claim ${verdict}`, () => {
+      const config = {
+        ...defaultConfig,
+        evidence: { ...defaultConfig.evidence, supportCommands: { test: ["CHECK=unit node verify.cjs"], lint: ["node verify.cjs"] } }
+      };
+      const rows = [
+        { type: "session", id: "selector" },
+        { type: "command", command: "CHECK=unit node verify.cjs", status: "completed", exitCode: 0 },
+        { type: "command", command: retry, status: "failed", exitCode: 1 },
+        { type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const trace = rows.map((row) => JSON.stringify({ ...row, schemaVersion: "agentops.event.v1" })).join("\n");
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      try {
+        const { sessionId } = ingestTranscript(store, parseJsonlTranscript("selector.jsonl", trace), config);
+        const claim = getClaimsLedger(store, sessionId, config).claims[0];
+        expect(claim?.verdict).toBe(verdict);
+        expect(claim?.cited?.command).toBe(verdict === "contradicted" ? retry : "CHECK=unit node verify.cjs");
+      } finally {
+        store.db.close();
+      }
+    });
+  }
+
+  test("a requested background retry with an explicit nonzero exit is a terminal failure", () => {
+    const record = {
+      session_id: "background-exit", cwd: "/workspace", hook_event_name: "PostToolUse",
+      tool_name: "Bash", tool_use_id: "retry", tool_input: { command: "bun test", run_in_background: true },
+      tool_response: { exit_code: 1 }
+    };
+    const trace = parseClaudeHooksJsonl("hook.jsonl", JSON.stringify(record), defaultConfig);
+    expect(trace.events.find((event) => event.command === "bun test")).toMatchObject({ status: "failed", exitCode: 1 });
+  });
+});
