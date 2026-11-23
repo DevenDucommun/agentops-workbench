@@ -147,7 +147,7 @@ export function formatGateText(result: GateResult): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function formatGateGithub(result: GateResult): string {
+export function formatGateGithub(result: GateResult, evidence: readonly string[] = []): string {
   const icon = result.status === "passed" ? "PASS" : "FAIL";
   const rows = result.checks.map((check) => `| ${check.status === "passed" ? "PASS" : "FAIL"} | ${escapeTable(check.label)} | ${escapeTable(check.message)} |`);
   return [
@@ -160,6 +160,7 @@ export function formatGateGithub(result: GateResult): string {
     "| Status | Check | Detail |",
     "| --- | --- | --- |",
     ...rows,
+    ...evidence.flatMap(section => ["", section]),
     "",
     "_Generated locally by AgentOps Workbench. This command does not post to GitHub._"
   ].join("\n") + "\n";

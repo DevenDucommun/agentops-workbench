@@ -2,7 +2,7 @@ import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
 import { evaluateQualityGate, formatGateGithub } from "./gate";
-import { type ClaimsLedger, getClaimsLedger, type LedgerEvidence } from "./ledger";
+import { type ClaimsLedger, commandOutcome, getClaimsLedger, hasRecordedOutcome, type LedgerEvidence } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
 import { displayGitPath, type GitChange } from "./git";
 import type { UsageSummary } from "./types";
@@ -202,6 +202,42 @@ function renderGithubRepoComment(store: Store, sessionId: string, gitChanges: Gi
   return `${sections.join("\n\n")}\n`;
 }
 
+/** GitHub job summaries and sticky comments use the same citations as the PR report. */
+export function githubGateEvidence(store: Store, sessionId: string, config: AgentOpsConfig): string[] {
+  const ledger = getClaimsLedger(store, sessionId, config);
+  const cited = new Set(ledger.claims.map(claim => claim.cited?.eventRowId));
+  const failures = getCommands(store, sessionId).filter(run =>
+    (run.eventId === null || !cited.has(run.eventId)) && hasRecordedOutcome(run) && commandOutcome(run) === "failed" && isVerificationCommand(run.command, config)
+  );
+  if (!ledger.claims.length && !failures.length) return [];
+  const events = store.db.query("SELECT id, idx FROM events WHERE session_id = ?").all(sessionId) as Array<{ id: number; idx: number }>;
+  const sections = ledger.claims.length ? ["### Claims", formatLedger(ledger, events, false)] : [];
+  if (failures.length) {
+    const steps = new Map(events.map(event => [event.id, event.idx]));
+    // Keep a long retry history from crowding out the current claim verdict.
+    const recent = failures.slice(-5);
+    const lines = recent.map(run => "- " + formatRun(run, stepRef({ eventRowId: run.eventId, eventId: null }, steps, false)));
+    if (failures.length > recent.length) lines.push(`Showing the latest ${recent.length} of ${failures.length} uncited failures.`);
+    sections.push("### Other recorded verification failures", lines.join("\n"));
+  }
+  return sections;
+}
+
+function formatRun(run: Pick<LedgerEvidence, "command" | "status" | "exitCode">, reference: string): string {
+  let outcome = run.exitCode === null ? run.status : `exit ${run.exitCode}`;
+  if (run.exitCode === 0 && commandOutcome(run) === "failed") outcome += `, ${run.status}`;
+  return `${codeSpan(run.command)}${outcome ? ` (${outcome})` : ""}, ${reference}`;
+}
+
+function codeSpan(text: string): string {
+  let width = 1;
+  for (const match of text.matchAll(/`+/g)) width = Math.max(width, match[0].length + 1);
+  const fence = "`".repeat(width);
+  const value = text.replace(/[\r\n]+/g, " ");
+  const padding = value.startsWith("`") || value.endsWith("`") ? " " : "";
+  return `${fence}${padding}${value}${padding}${fence}`;
+}
+
 const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported", stale: "Rerun needed" } as const;
 
 /** One row per claim in the final response: its verdict and the run it rests on (spec R2.5). */
@@ -209,7 +245,7 @@ function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: num
   const steps = new Map(events.map((event) => [event.id, event.idx]));
   const rows = ledger.claims.map((claim) => {
     const evidence = claim.cited
-      ? `\`${claim.cited.command}\`${claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`}, ${stepRef(claim.cited, steps, linkTimeline)}`
+      ? formatRun(claim.cited, stepRef(claim.cited, steps, linkTimeline))
       : claim.reason;
     return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(claim.verdict === "stale" ? `${evidence}. ${claim.reason}` : evidence)} |`;
   });
@@ -217,10 +253,12 @@ function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: num
 }
 
 /** The timeline step that recorded a run, plus its source eventId when there is one. */
-function stepRef(evidence: LedgerEvidence, steps: Map<number, number>, linkTimeline: boolean): string {
+function stepRef(evidence: Pick<LedgerEvidence, "eventRowId" | "eventId">, steps: Map<number, number>, linkTimeline: boolean): string {
   const step = evidence.eventRowId === null ? undefined : steps.get(evidence.eventRowId);
   const label = step === undefined ? "unlinked event" : linkTimeline ? `[step ${step}](#event-step-${step})` : `step ${step}`;
-  return evidence.eventId ? `${label} (${evidence.eventId})` : label;
+  if (!evidence.eventId) return label;
+  const id = /^[a-zA-Z0-9_.:-]+$/.test(evidence.eventId) ? evidence.eventId : codeSpan(evidence.eventId);
+  return `${label} (${id})`;
 }
 
 function table(rows: Array<[string, string]>): string {

@@ -221,7 +221,9 @@ example, `"lint"` matches `bun run lint`.
 
 The repository is itself a GitHub Action. It installs a pinned AgentOps
 release binary, audits each artifact, runs `agentops check --format github`,
-writes the results to the job summary, and fails the job when any gate fails:
+writes the results to the job summary, and fails the job when any gate fails. The summary and optional sticky comment include the claim verdict, command, recorded outcome, and timeline step. Up to five additional failed verification runs appear separately from the claim verdicts.
+
+Example workflow:
 
 ```yaml
 name: AgentOps Gate
