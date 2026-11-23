@@ -419,3 +419,12 @@ test("check --save default filename matches the requested format", async () => {
   // github output must not be written into the JSON default
   expect(readFileSync("agentops-gate.json", "utf8")).toContain("agentops.gate.v1");
 });
+
+test("review 6027053197: open --check rejects a configuration that open would refuse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-open-check-"));
+  const bad = join(dir, "agentops.config.json");
+  writeFileSync(bad, JSON.stringify({ schemaVersion: "agentops.config.v1", evidence: { supportCommands: { test: "bun test" } } }));
+  const result = await runCli(["open", "--check", "--config", bad]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stdout ?? "").not.toContain("Dashboard configuration OK");
+});

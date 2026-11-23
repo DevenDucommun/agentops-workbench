@@ -443,6 +443,9 @@ function runShow(args: string[]): CliResult {
 function runOpen(args: string[]): CliResult {
   const host = readOption(args, "--host") ?? "127.0.0.1";
   const port = parsePort(readOption(args, "--port"));
+  // Loaded before the preflight, so `open --check` rejects a configuration
+  // that `open` itself would refuse.
+  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
   if (args.includes("--check")) {
     const store = openStore();
     const databasePath = store.path;
@@ -452,7 +455,6 @@ function runOpen(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
   const server = startDashboardServer({ host, port, config });
   return {
     stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,

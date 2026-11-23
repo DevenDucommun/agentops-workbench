@@ -448,6 +448,12 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
 
 /** Ledger for a stored session's latest final response. */
 export function getClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): ClaimsLedger {
+  // Every read below comes from one transaction, so a re-import committing in
+  // between can never pair the old final response with the new command rows.
+  return store.db.transaction(() => readClaimsLedger(store, sessionId, config))();
+}
+
+function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfig): ClaimsLedger {
   const final = store.db
     // Claims are read from both the full final response (events.text, when the
     // store saved one) and the summary, which may be a producer's explicit one.
