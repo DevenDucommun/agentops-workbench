@@ -1167,3 +1167,26 @@ describe("review 6010483073: interruption beats background; failure spellings", 
     }
   });
 });
+
+describe("review on 82ca3f39: an exact configured command with an assignment", () => {
+  const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { lint: ["bun run lint"], test: ["CI=1 node --test"] } } };
+
+  for (const failed of ["CI=1 node --test", "CI=1 node --test runner.test.cjs"]) {
+    test(`a failed retry of \`${failed}\` contradicts the earlier pass`, () => {
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      const lines = [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "exact-env" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "bun run lint", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "CI=1 node --test", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: failed, status: "failed", exitCode: 1 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("e.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+      const [claim] = getClaimsLedger(store, sessionId, config).claims;
+      const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: [] });
+      store.db.close();
+      expect(claim).toMatchObject({ verdict: "contradicted", cited: { command: failed, outcome: "failed" } });
+      expect(gate.status).not.toBe("passed");
+    });
+  }
+});

@@ -160,15 +160,23 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
  * still counts against the claim, while support stays word for word.
  */
 function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  // For failures only: tabs count as spaces and leading VAR=value assignments
-  // are ignored, so `CI=1 node --test x` still counts against the claim.
-  const normalized = normalizeCommand(command.replace(/\t/g, " ").replace(/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""));
-  if (normalized === null) return false;
+  // The command as written is compared first, so a configured entry that
+  // itself carries an assignment (`CI=1 node --test`) still matches its own
+  // failed run. Then, for failures only, tabs count as spaces and leading
+  // VAR=value assignments are ignored, so `CI=1 node --test x` still counts
+  // against a configured `node --test`.
+  const spellings = [
+    normalizeCommand(command),
+    normalizeCommand(command.replace(/\t/g, " ").replace(/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, ""))
+  ].filter((spelling): spelling is string => spelling !== null);
+  if (spellings.length === 0) return false;
   const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
-  return configured.some((candidate) => {
-    const base = normalizeCommand(candidate);
-    return base !== null && (normalized === base || normalized.startsWith(`${base} `));
-  });
+  return spellings.some((normalized) =>
+    configured.some((candidate) => {
+      const base = normalizeCommand(candidate);
+      return base !== null && (normalized === base || normalized.startsWith(`${base} `));
+    })
+  );
 }
 
 /** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */

@@ -320,7 +320,7 @@ function runDemo(args: string[]): CliResult {
   });
   const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
   store.db.close();
-  const server = args.includes("--serve") ? startDashboardServer({ host, port }) : null;
+  const server = args.includes("--serve") ? startDashboardServer({ host, port, config }) : null;
 
   const lines = [
     "# AgentOps Demo",
@@ -452,7 +452,8 @@ function runOpen(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const server = startDashboardServer({ host, port });
+  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
+  const server = startDashboardServer({ host, port, config });
   return {
     stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,
     exitCode: 0,

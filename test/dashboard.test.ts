@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -466,6 +466,55 @@ test("dashboard serves markdown reports for sessions", async () => {
     expect(await missingReport.json()).toEqual({ error: "Session not found" });
   } finally {
     server.stop();
+  }
+});
+
+test("agentops open reads the project config like check does", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-open-config-test-"));
+  const originalCwd = process.cwd();
+  const sessionPath = join(dir, "ci-session.jsonl");
+  writeFileSync(
+    join(dir, "agentops.config.json"),
+    JSON.stringify({ schemaVersion: "agentops.config.v1", evidence: { verificationCommands: ["ci"], supportCommands: { test: ["bun run ci"] } } })
+  );
+  writeFileSync(
+    sessionPath,
+    [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "configured-ci" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n")
+  );
+  process.chdir(dir);
+  try {
+    const audit = await runCli(["audit", sessionPath]);
+    expect(audit.exitCode).toBe(0);
+    const check = await runCli(["check", "configured-ci"]);
+    expect(check.exitCode).toBe(0);
+
+    // `open` refuses port 0, so borrow a free port from the OS first.
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("") });
+    const port = String(probe.port);
+    probe.stop(true);
+    const open = await runCli(["open", "--port", port]);
+    const url = /listening at (\S+)/.exec(open.stdout ?? "")?.[1];
+    expect(url).toBeDefined();
+    try {
+      type Detail = { decision: { evidence: Array<{ id: string; status: string; command: string | null }> } };
+      const detail = (await (await fetch(`${url}/api/sessions/configured-ci`)).json()) as Detail;
+      expect(detail.decision.evidence.find((row) => row.id === "test")).toMatchObject({ status: "verified", command: "bun run ci", commandExitCode: 0 });
+      expect(detail.decision.evidence.filter((row) => row.status === "missing-evidence")).toEqual([]);
+
+      const bundle = (await (await fetch(`${url}/api/sessions/configured-ci/evidence`)).json()) as Record<string, unknown>;
+      expect(JSON.stringify(bundle)).not.toContain("missing-evidence");
+    } finally {
+      process.emit("SIGTERM");
+      await open.keepAlive;
+    }
+  } finally {
+    process.chdir(originalCwd);
   }
 });
 
