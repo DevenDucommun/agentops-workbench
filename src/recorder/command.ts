@@ -156,8 +156,11 @@ async function forgetSession(sessionId: string, stores: string[], spoolDir: stri
     };
   }
   const removed = locked.value;
-  if (!removed.length) return { stdout: `Nothing recorded for session ${sessionId}.\n`, exitCode: 0 };
-  return { stdout: `Removed:\n${removed.map((item) => `- ${item}`).join("\n")}\n`, exitCode: 0 };
+  const result = removed.length
+    ? `Removed:\n${removed.map((item) => `- ${item}`).join("\n")}`
+    : `Nothing recorded for session ${sessionId} in the checked locations.`;
+  const checked = stores.map((store) => `- ${store}`).join("\n");
+  return { stdout: `${result}\nStore paths checked:\n${checked}\nSpool directory checked: ${spoolDir}\n`, exitCode: 0 };
 }
 
 /** How long forget waits for a hook to finish appending before giving up. */

@@ -156,7 +156,7 @@ Sessions stay in the store until you remove it.
 | --- | --- |
 | Stop recording a repository | `agentops recorder disable` |
 | Stop recording everywhere | `claude plugin uninstall agentops-recorder` |
-| Delete one session everywhere | `agentops recorder forget <session-id>`, from inside the repository |
+| Delete one session from the stores used here and its recorder spool | `agentops recorder forget <session-id>`, from inside the repository |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
 | Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store of every repository you recorded. `<state>/recorder/enrolled.json` lists only repositories still enabled (disabling one removes it from the list), so include disabled ones too. Repositories that point `AGENTOPS_DB` at the same file share one store, and deleting it removes all of their sessions. A shared `AGENTOPS_STATE_DIR` may hold other files, so remove only those two folders |
@@ -167,7 +167,11 @@ in, whether or not recording is enabled at that moment: `AGENTOPS_DB` when set,
 otherwise both the repository's store and the current directory's
 `.agentops/agentops.db`. Its events, commands, file changes, risk flags and
 commit links go with it. Forget then removes the session's spool and error
-files. Other sessions are untouched. Pass the session id as
+files. The command lists the store paths and spool directory it checked.
+If you restored a copy into another directory’s store, run the command again
+from that directory. For copies in another configured database or state
+directory, use the corresponding `AGENTOPS_DB` or `AGENTOPS_STATE_DIR`.
+Pass the session id as
 Claude Code reports it, spelled exactly; forget matches it exactly. An id that
 looks like a secret is stored in redacted form, which is shared by every id of
 its kind, so forget removes only that session's spool and leaves the shared

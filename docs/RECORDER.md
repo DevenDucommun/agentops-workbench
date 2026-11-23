@@ -10,8 +10,9 @@ Status: preview, targeted at v3.3.0. Design:
 
 ## Requirements
 
-- The `agentops` binary from this release or later, on `PATH`
-  ([installation](INSTALLATION.md)). If it lives somewhere else, export
+- An `agentops` command with recorder support on `PATH`. For the preview,
+  use [Run From Source](../README.md#run-from-source-development). The v3.2.0
+  release binary predates the recorder. If the command lives elsewhere, export
   `AGENTOPS_BIN=/path/to/agentops` in the shell you start `claude` from.
 - Claude Code with plugin support. macOS or Linux.
 
