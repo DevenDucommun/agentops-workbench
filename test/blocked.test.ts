@@ -183,6 +183,15 @@ describe("review 6010332003: id-less pairing, check-time policy both ways, suppr
     expect(check("max-high-risks")?.observed).toBe(1);
   });
 
+  test("a decline only pairs with a start from the same recorded worker", () => {
+    const start = { ...cmd("in_progress"), agentId: "worker-a", toolUseId: "item_0" };
+    for (const [agentId, highRisks] of [["worker-b", 1], ["worker-a", 0]] as const) {
+      const { check } = generic([start, { ...cmd("declined"), agentId, toolUseId: "item_0" }]);
+      expect(check("max-high-risks")?.observed).toBe(highRisks);
+      expect(check("max-blocked-attempts")?.observed).toBe(1);
+    }
+  });
+
   const storeWith = (auditConfig: AgentOpsConfig) => {
     const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-blocked-")), "agentops.db"));
     const path = join(ROOT, "fixtures/blocked/declined-destructive.jsonl");

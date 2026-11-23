@@ -182,6 +182,10 @@ type DashboardPublicCommand = Omit<CommandRecord, "output">;
 type DashboardPublicEvent = Omit<StoredEvent, "rawJson" | "rawPayloadHash">;
 
 export function getDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
+  return store.db.transaction(() => readDashboardComparison(store, baseId, targetId, config))();
+}
+
+function readDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
   const base = getDashboardSession(store, baseId, config);
   const target = getDashboardSession(store, targetId, config);
   if (!base || !target) return null;
@@ -287,7 +291,16 @@ function severityRank(severity: RiskFlagRecord["severity"]): number {
   return 2;
 }
 
+/**
+ * A session's dashboard detail, read from one snapshot: a re-import committing
+ * mid-request can never mix the old session's rows with the replacement's
+ * claims ledger.
+ */
 export function getDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
+  return store.db.transaction(() => readDashboardSession(store, sessionId, config))();
+}
+
+function readDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
   const session = getSession(store, sessionId);
   if (!session) return null;
 

@@ -357,7 +357,7 @@ function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
 
 /** tool_use block -> whether its tool_result reported an error. */
 /** tool_use block -> its outcome: failed (true), completed (false), or only a background launch acknowledgement. */
-type ToolResults = Map<ClaudeContentBlock, boolean | "background">;
+type ToolResults = Map<ClaudeContentBlock, boolean | "background" | "interrupted">;
 
 // A tool_use and its outcome arrive on separate records: the tool_result in a
 // later user record carries the tool_use_id and is_error. A result belongs to
@@ -381,6 +381,13 @@ function isBackgroundAcknowledgement(record: ClaudeStreamRecord, block: ClaudeCo
   return typeof m.backgroundTaskId === "string" || m.backgroundedByUser === true || m.assistantAutoBackgrounded === true;
 }
 
+/** Claude Code's own metadata says the command was interrupted: not a pass, even with is_error false. */
+function isInterrupted(record: ClaudeStreamRecord, block: ClaudeContentBlock): boolean {
+  if (block.is_error) return false;
+  const meta = record.tool_use_result;
+  return !!meta && typeof meta === "object" && (meta as Record<string, unknown>).interrupted === true;
+}
+
 function toolResults(records: ClaudeStreamRecord[]): ToolResults {
   const latestCall = new Map<string, ClaudeContentBlock>();
   const results: ToolResults = new Map();
@@ -391,7 +398,7 @@ function toolResults(records: ClaudeStreamRecord[]): ToolResults {
       const call = latestCall.get(block.tool_use_id);
       // Any is_error value other than false or absent (including a malformed
       // one such as the string "true") is a failure, matching the result event.
-      if (call && !results.has(call)) results.set(call, isBackgroundAcknowledgement(record, block) ? "background" : Boolean(block.is_error));
+      if (call && !results.has(call)) results.set(call, isInterrupted(record, block) ? "interrupted" : isBackgroundAcknowledgement(record, block) ? "background" : Boolean(block.is_error));
     }
   }
   return results;
@@ -403,8 +410,9 @@ function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
   // A background run's tool_result only acknowledges the launch; its outcome is
   // not in the stream, so it is still running as far as the ledger can tell.
   const failed = results.get(block);
-  // A reported failure is a failure even for a background run.
+  // Linked terminal outcomes take precedence over the requested launch mode.
   if (failed === true) return "failed";
+  if (failed === "interrupted") return "interrupted";
   if (block.input?.run_in_background === true) return "started";
   if (failed === undefined) return "no_result";
   if (failed === "background") return "started";
@@ -413,6 +421,8 @@ function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
 
 function editStatus(block: ClaudeContentBlock, results: ToolResults): string {
   const result = results.get(block);
+  if (result === "interrupted") return "interrupted";
+  if (result === "background") return "started";
   if (result === true) return "failed";
   if (result === undefined) return "no_result";
   return "completed";
@@ -424,7 +434,8 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
   const command = typeof input?.command === "string" ? input.command : undefined;
   const path = pathFromInput(input);
 
-  if (name === "Bash") {
+  // Shell tools: their `command` is a shell command, unlike other tools' arguments.
+  if (name === "Bash" || name === "PowerShell") {
     return {
       schemaVersion: "agentops.event.v1",
       type: "tool_call",

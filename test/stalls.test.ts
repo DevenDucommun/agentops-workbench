@@ -61,8 +61,8 @@ describe("detectStalls", () => {
   const edit = (id: number, eventId: number | null, path: string) => ({ id, eventId, path, operation: "edit", linesAdded: 1, linesRemoved: 0 });
   const opts = { repeatedEditThreshold: 3 };
 
-  test("one retry is low severity; whitespace differences are the same command", () => {
-    const flags = detectStalls([cmd(1, 1, "bun  test", 1), cmd(2, 2, "bun test", 0)], [], opts);
+  test("one retry is low severity; leading and trailing whitespace is ignored", () => {
+    const flags = detectStalls([cmd(1, 1, "  bun test\n", 1), cmd(2, 2, "bun test", 0)], [], opts);
     expect(flags.map((f) => [f.severity, f.category])).toEqual([["low", "retry-without-change"]]);
   });
 
@@ -79,9 +79,9 @@ describe("detectStalls", () => {
     expect(detectStalls([cmd(1, null, "bun test", 1), cmd(2, null, "bun test", 1)], [], opts)).toEqual([]);
   });
 
-  test("whitespace inside quotes is part of the argument", () => {
-    expect(normalizeCommand(`bun   test  "test/a  b.test.ts"`)).toBe(`bun test "test/a  b.test.ts"`);
-    expect(normalizeCommand(`bun test 'x  y'   z`)).toBe(`bun test 'x  y' z`);
+  test("internal whitespace is part of the command", () => {
+    expect(normalizeCommand(`  bun   test  "test/a  b.test.ts"\t`)).toBe(`bun   test  "test/a  b.test.ts"`);
+    expect(detectStalls([cmd(1, 1, "bun  test", 1), cmd(2, 2, "bun test", 1)], [], opts)).toEqual([]);
     expect(detectStalls([cmd(1, 1, `bun test "test/a  b.ts"`, 1), cmd(2, 2, `bun test "test/a b.ts"`, 1)], [], opts)).toEqual([]);
   });
 
@@ -153,11 +153,11 @@ describe("review 6010139248: edit outcomes, run order, shell runs, argument boun
   const use = (id: string, name: string, input: Record<string, unknown>) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } });
   const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: isError ? "error" : "ok" }] } });
 
-  test("failed Claude edits are not applied changes", () => {
+  test("failed Claude edits remain in the file list and do not count as applied changes", () => {
     const records: unknown[] = [init];
     for (let i = 0; i < 6; i++) records.push(use(`e${i}`, "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }), result(`e${i}`, true));
     const { flags, files } = claude([...records, done]);
-    expect(files).toBe(0);
+    expect(files).toBe(6);
     expect(flags).toEqual([]);
   });
 
@@ -220,6 +220,116 @@ describe("review 6010139248: edit outcomes, run order, shell runs, argument boun
   test("an escaped quote or a newline keeps commands distinct", () => {
     expect(normalizeCommand('test -f "a\\" b"')).not.toBe(normalizeCommand('test -f "a\\"  b"'));
     expect(normalizeCommand("make\nclean")).not.toBe(normalizeCommand("make clean"));
-    expect(normalizeCommand("bun   test\t a.ts")).toBe("bun test a.ts");
+    expect(normalizeCommand(" bun   test\t a.ts \n")).toBe("bun   test\t a.ts");
+  });
+});
+
+describe("review round 5: applied edits, executed outcomes, exact commands", () => {
+  const ingest = (records: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const text = records.map((record) => JSON.stringify(record)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", text), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const flags = stallFlags(getRiskFlags(store, sessionId));
+    const files = (store.db.query("SELECT COUNT(*) AS n FROM file_changes WHERE session_id = $sid").get({ $sid: sessionId }) as { n: number }).n;
+    store.db.close();
+    return { flags, files };
+  };
+  const generic = (events: unknown[]) => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stalls-")), "agentops.db"));
+    const text = [{ schemaVersion: "agentops.event.v1", type: "session", id: "stall-r5" }, ...events].map((event) => JSON.stringify(event)).join("\n");
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("stall.jsonl", text), defaultConfig);
+    analyzeSession(store, sessionId, defaultConfig);
+    const flags = stallFlags(getRiskFlags(store, sessionId));
+    store.db.close();
+    return flags;
+  };
+  const init = { type: "system", subtype: "init", session_id: "stall-r5" };
+  const done = { type: "result", subtype: "success", session_id: "stall-r5", result: "Done." };
+  const use = (id: string, name: string, input: Record<string, unknown>) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } });
+  const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: isError ? "error" : "ok" }] } });
+  const editInput = { file_path: "src/a.ts", old_string: "a", new_string: "b" };
+  const run = (extra: Record<string, unknown>) => ({ schemaVersion: "agentops.event.v1", type: "command", command: "bun test", ...extra });
+  const failed = run({ exitCode: 1, status: "failed" });
+  const passed = run({ exitCode: 0, status: "completed" });
+
+  test("six unanswered Claude edits stay in the file list but are not repeated edits", () => {
+    const records: unknown[] = [init];
+    for (let i = 0; i < 6; i++) records.push(use(`e${i}`, "Edit", editInput));
+    const { flags, files } = ingest([...records, done]);
+    expect(files).toBe(6);
+    expect(flags).toEqual([]);
+  });
+
+  test("an unanswered Claude edit does not separate a retry", () => {
+    const { flags } = ingest([init, use("b1", "Bash", { command: "bun test" }), result("b1", true), use("e1", "Edit", editInput), use("b2", "Bash", { command: "bun test" }), result("b2", false), done]);
+    expect(flags).toEqual(["low:retry-without-change:Command re-run 1 time after failing, with no file change in between: bun test"]);
+  });
+
+  test("a skipped rerun, or one with no status and no exit code, is not a retry", () => {
+    expect(generic([failed, run({ status: "skipped" })])).toEqual([]);
+    expect(generic([failed, run({ status: "skipped", exitCode: 0 })])).toEqual([]);
+    expect(generic([failed, run({})])).toEqual([]);
+  });
+
+  test("a denied run with exit code 1 is not a failure", () => {
+    expect(generic([run({ status: "denied", exitCode: 1 }), passed])).toEqual([]);
+    expect(generic([failed, run({ status: "declined", exitCode: 1 })])).toEqual([]);
+  });
+
+  test("a timeout followed by a successful rerun is a retry", () => {
+    expect(generic([run({ status: "timed_out" }), passed])).toEqual(["low:retry-without-change:Command re-run 1 time after failing, with no file change in between: bun test"]);
+  });
+
+  test("here-doc bodies that differ by one space, or a nonbreaking space, are different commands", () => {
+    const heredoc = (body: string) => run({ command: `cat <<'EOF' > a.txt\n${body}\nEOF`, exitCode: 1, status: "failed" });
+    expect(generic([heredoc("a b"), heredoc("a  b")])).toEqual([]);
+    expect(generic([run({ command: "bun test a.ts", exitCode: 1, status: "failed" }), run({ command: "bun test\u00a0a.ts", exitCode: 0, status: "completed" })])).toEqual([]);
+  });
+});
+
+describe("stall evidence after privacy filtering and normalization", () => {
+  const command = (exitCode: number, text = "bun test") => ({ type: "command", command: text, exitCode });
+  const edit = (extra = {}) => ({ type: "file_edit", path: "src/a.ts", ...extra });
+  function categories(events: unknown[]) {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stall-evidence-")), "agentops.db"));
+    try {
+      const text = [{ type: "session", id: "stall-evidence" }, ...events].map(row => JSON.stringify(row)).join("\n");
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("session.jsonl", text), defaultConfig);
+      analyzeSession(store, sessionId, defaultConfig);
+      return getRiskFlags(store, sessionId).map(f => f.category).filter(c => ["repeated-edits", "retry-without-change"].includes(c));
+    } finally {
+      store.db.close();
+    }
+  }
+  test("redaction cannot establish identical paths or commands", () => {
+    const home = ["/home", "example"].join("/");
+    expect(categories(Array.from({ length: 6 }, (_, i) => edit({ path: home + "/file" + i })))).toEqual([]);
+    expect(categories([command(1, "test " + home + "/a"), command(0, "test " + home + "/b")])).toEqual([]);
+  });
+  test("an unconfirmed file change neither counts toward the threshold nor separates a retry", () => {
+    for (const extra of [{ status: "skipped" }, { status: "timed_out" }, { status: "no_result" }, { operation: "inferred edit" }]) {
+      expect(categories([command(1), ...Array.from({ length: 6 }, () => edit(extra)), command(0)])).toEqual(["retry-without-change"]);
+    }
+    expect(categories([command(1), ...Array.from({ length: 6 }, () => edit({ status: "completed" })), command(0)])).toEqual(["repeated-edits"]);
+  });
+  test("a failed sensitive-file edit is still evidence for the existing gate", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stall-gate-")), "agentops.db"));
+    try {
+      const session = [{ type: "session", id: "sensitive-attempt" }, edit({ path: ".env", status: "failed" }), command(0)];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("session.jsonl", session.map(row => JSON.stringify(row)).join("\n")), defaultConfig);
+      analyzeSession(store, sessionId, defaultConfig);
+      const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+      expect(gate.status).toBe("failed");
+      expect(gate.checks.find(check => check.id === "max-high-risks")?.observed).toBe(1);
+    } finally {
+      store.db.close();
+    }
+  });
+  test("an edit separates hook calls only if it precedes the second start", () => {
+    const start = (toolUseId: string) => ({ type: "tool_started", toolName: "Bash", toolUseId });
+    const finish = (toolUseId: string, exitCode: number) => ({ ...command(exitCode), type: "tool_call", toolName: "Bash", toolUseId });
+    expect(categories([start("a"), finish("a", 1), start("b"), edit(), finish("b", 0)])).toEqual(["retry-without-change"]);
+    expect(categories([start("a"), finish("a", 1), edit(), start("b"), finish("b", 0)])).toEqual([]);
   });
 });

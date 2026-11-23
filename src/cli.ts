@@ -1,7 +1,8 @@
 import { storeHookTranscript } from "./recorder/ingest";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isForgotten, spoolGeneration } from "./recorder/spool";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { demoFixtures } from "./demoFixtures";
 import { analyzeSession } from "./analyzer";
@@ -320,7 +321,7 @@ function runDemo(args: string[]): CliResult {
   });
   const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
   store.db.close();
-  const server = args.includes("--serve") ? startDashboardServer({ host, port }) : null;
+  const server = args.includes("--serve") ? startDashboardServer({ host, port, config }) : null;
 
   const lines = [
     "# AgentOps Demo",
@@ -359,7 +360,8 @@ function runAudit(args: string[]): CliResult {
   const config = loadConfig(configPath);
   const input = loadAdapterInput(sourcePath);
   const adapter = resolveAdapter(input, adapterId ?? undefined);
-  const store = openStore();
+  // A dashboard download can hold a read snapshot while the import commits.
+  const store = openStore(undefined, { busyTimeoutMs: 500 });
   const result = ingestInput(store, input, adapter.id, config);
 
   // --quiet ingests only (no inspection/gate), exits 0 — for scripting or loading
@@ -443,6 +445,9 @@ function runShow(args: string[]): CliResult {
 function runOpen(args: string[]): CliResult {
   const host = readOption(args, "--host") ?? "127.0.0.1";
   const port = parsePort(readOption(args, "--port"));
+  // Loaded before the preflight, so `open --check` rejects a configuration
+  // that `open` itself would refuse.
+  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
   if (args.includes("--check")) {
     const store = openStore();
     const databasePath = store.path;
@@ -452,7 +457,7 @@ function runOpen(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const server = startDashboardServer({ host, port });
+  const server = startDashboardServer({ host, port, config });
   return {
     stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,
     exitCode: 0,
@@ -638,12 +643,32 @@ function formatAuditImportSummary(sessionId: string, eventCount: number, adapter
 }
 
 function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
+  // The spool's real path, taken while the file just read still exists, so an
+  // audit through a symlink checks the same forgotten marker forget wrote.
+  const spoolFile = realPathOrSelf(input.sourcePath);
   const adapter = resolveAdapter(input, adapterId);
   const transcript = adapter.parse(input, config);
-  if (adapter.id === "claude-hooks") return storeHookTranscript(store, transcript, config, process.cwd());
+  if (adapter.id === "claude-hooks") {
+    // A recorder spool that `agentops recorder forget` removed (this generation,
+    // at this path) is not imported back, even by an audit that read it first.
+    const generation = spoolGeneration(input.content);
+    return storeHookTranscript(store, transcript, config, process.cwd(), () => {
+      if (generation !== null && isForgotten(spoolFile, generation)) {
+        throw new Error(`${input.sourcePath} was removed by agentops recorder forget; nothing imported.`);
+      }
+    });
+  }
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
   return result;
+}
+
+function realPathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 function doctorCheck(label: string, ok: boolean, detail: string, level: "error" | "warn" = "warn") {

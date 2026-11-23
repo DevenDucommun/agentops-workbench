@@ -4,7 +4,7 @@ import type { Store } from "./store";
 import type { CommandRecord } from "./types";
 import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
-import { getCommands, getEvents, getFileChanges, getSession } from "./store";
+import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 
 type RiskFlag = {
   eventId: number | null;
@@ -57,7 +57,8 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  const pairedStarts = startRowsWithOutcome(commands, getCommandContext(store, sessionId).toolUseIds);
+  const context = getCommandContext(store, sessionId);
+  const pairedStarts = startRowsWithOutcome(commands, context.invocationKeys);
   for (const command of commands) {
     // The start row of an invocation that also has an outcome row (Codex
     // item.started, then item.completed or a decline) is the same command, not
@@ -134,8 +135,9 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  // Retry and stall rules (spec R2.3).
-  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
+  const unconfirmed = getUnconfirmedFileEvents(store, sessionId);
+  const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
+  flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
   const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
@@ -259,7 +261,7 @@ const START_ROW_STATUSES = new Set(["in_progress"]);
  * of the same invocation completes. A start with no later outcome (an
  * interrupted run), or without an invocation id, is not paired: it may have run.
  */
-export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<number, string> = new Map()): Set<number> {
+export function startRowsWithOutcome(commands: CommandRecord[], invocationKeys: Map<number, string> = new Map()): Set<number> {
   const open = new Map<string, number[]>();
   const paired = new Set<number>();
   const ordered = [...commands].sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0) || a.id - b.id);
@@ -267,7 +269,7 @@ export function startRowsWithOutcome(commands: CommandRecord[], toolUseIds: Map<
   // are never paired: matching by command text could pair an interrupted run
   // with a later, unrelated decline and clear its risk.
   for (const command of ordered) {
-    const id = command.eventId === null ? undefined : toolUseIds.get(command.eventId);
+    const id = command.eventId === null ? undefined : invocationKeys.get(command.eventId);
     if (id === undefined) continue;
     // Same invocation id and same command: an id reused by another worker for a
     // different command never pairs.

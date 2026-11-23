@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -87,6 +87,15 @@ describe("normalization", () => {
     const { events } = parseClaudeHooksJsonl("f.jsonl", fixtureText("failing-test-session"), defaultConfig);
     const runs = events.filter((e) => e.command === "bun test");
     expect(runs.map((e) => [e.status, e.exitCode])).toEqual([["failed", 1], ["completed", 0]]);
+  });
+
+  test("review 6026938504: an interrupted Bash failure stays interrupted even with an exit code", () => {
+    const interrupted = { ...fixtureLines("failing-test-session").find((l) => l.hook_event_name === "PostToolUseFailure")! };
+    interrupted.is_interrupt = true;
+    interrupted.error = "Exit code 130\nInterrupted by user";
+    const { events } = parseClaudeHooksJsonl("i.jsonl", `${JSON.stringify(interrupted)}\n`, defaultConfig);
+    const run = events.find((e) => e.command === "bun test");
+    expect([run?.status, run?.exitCode]).toEqual(["interrupted", 130]);
   });
 
   test("subagent events point at the Agent call that ran them", () => {
@@ -187,6 +196,8 @@ describe("AC6: session-end ingest links the commit", () => {
     expect(chain.map((r) => r.seq)).toEqual(chain.map((_, i) => i + 1));
     const files = store.db.query("SELECT path FROM file_changes WHERE session_id = $sid ORDER BY path").all({ $sid: sid }) as Array<{ path: string }>;
     expect(files.map((f) => f.path)).toEqual(["NOTES.md", "math.js"]);
+    const session = store.db.query("SELECT repo FROM sessions WHERE id = $sid").get({ $sid: sid }) as { repo: string };
+    expect(session.repo).toBe("repo");
     store.db.close();
 
     const spoolFile = spoolPath(join(stateDir, "spool"), sid)!;
@@ -425,4 +436,76 @@ test("spools without a session id that share a file name stay separate, and repl
   expect(ingest(first)).toBe(a);
   expect(store.db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 2 });
   store.db.close();
+});
+
+test("review 6027364583: a session-end import waits out a dashboard's read snapshot", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-reader-")));
+  const dbPath = join(root, "store.db");
+  const spool = (id: string) => {
+    const file = join(root, `${id}.jsonl`);
+    const records = [
+      { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun test" }, tool_response: { exitCode: 0 } },
+      { hook_event_name: "Stop", last_assistant_message: "Done." }
+    ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: id })));
+    writeFileSync(file, records.join("\n"));
+    return file;
+  };
+  ingestSpoolFile(spool("session-a"), { repoRoot: root, dbPath });
+  // Another process holds a read transaction for 350 ms, as the dashboard does
+  // while building one session's evidence.
+  const ready = join(root, "reader-ready");
+  const reader = Bun.spawn([
+    process.execPath,
+    "-e",
+    `const { Database } = require("bun:sqlite"); const db = new Database(${JSON.stringify(dbPath)}); db.exec("BEGIN"); db.query("SELECT count(*) FROM sessions").get(); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); Bun.sleepSync(350); db.exec("ROLLBACK"); db.close();`
+  ]);
+  const deadline = Date.now() + 5000;
+  while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(10);
+  expect(existsSync(ready)).toBe(true);
+  ingestSpoolFile(spool("session-b"), { repoRoot: root, dbPath });
+  reader.kill();
+  const store = openStore(dbPath);
+  try {
+    const ids = (store.db.query("SELECT id FROM sessions ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual(["session-a", "session-b"]);
+  } finally {
+    store.db.close();
+  }
+});
+
+test("review 6027983530: the import waits from its first statement, migration included", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-writer-")));
+  const dbPath = join(root, "store.db");
+  const spool = (id: string) => {
+    const file = join(root, `${id}.jsonl`);
+    const records = [
+      { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun test" }, tool_response: { exitCode: 0 } },
+      { hook_event_name: "Stop", last_assistant_message: "Done." }
+    ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: id })));
+    writeFileSync(file, records.join("\n"));
+    return file;
+  };
+  ingestSpoolFile(spool("first"), { repoRoot: root, dbPath });
+  // Another process holds the write lock briefly, as a second session's import does.
+  const ready = join(root, "writer-ready");
+  const writer = Bun.spawn([
+    process.execPath,
+    "-e",
+    `const { Database } = require("bun:sqlite"); const db = new Database(${JSON.stringify(dbPath)}); db.exec("BEGIN EXCLUSIVE"); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); Bun.sleepSync(300); db.exec("ROLLBACK"); db.close();`
+  ]);
+  const deadline = Date.now() + 5000;
+  while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(10);
+  expect(existsSync(ready)).toBe(true);
+  const started = Date.now();
+  ingestSpoolFile(spool("second"), { repoRoot: root, dbPath });
+  const elapsed = Date.now() - started;
+  writer.kill();
+  const store = openStore(dbPath);
+  try {
+    const ids = (store.db.query("SELECT id FROM sessions ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual(["first", "second"]);
+  } finally {
+    store.db.close();
+  }
+  expect(elapsed).toBeLessThan(1000);
 });
