@@ -321,7 +321,7 @@ function runDemo(args: string[]): CliResult {
   });
   const sampleGate = evaluateQualityGate(store, "sample-session", config, { gitChanges: [] });
   store.db.close();
-  const server = args.includes("--serve") ? startDashboardServer({ host, port }) : null;
+  const server = args.includes("--serve") ? startDashboardServer({ host, port, config }) : null;
 
   const lines = [
     "# AgentOps Demo",
@@ -360,7 +360,8 @@ function runAudit(args: string[]): CliResult {
   const config = loadConfig(configPath);
   const input = loadAdapterInput(sourcePath);
   const adapter = resolveAdapter(input, adapterId ?? undefined);
-  const store = openStore();
+  // A dashboard download can hold a read snapshot while the import commits.
+  const store = openStore(undefined, { busyTimeoutMs: 500 });
   const result = ingestInput(store, input, adapter.id, config);
 
   // --quiet ingests only (no inspection/gate), exits 0 — for scripting or loading
@@ -444,6 +445,9 @@ function runShow(args: string[]): CliResult {
 function runOpen(args: string[]): CliResult {
   const host = readOption(args, "--host") ?? "127.0.0.1";
   const port = parsePort(readOption(args, "--port"));
+  // Loaded before the preflight, so `open --check` rejects a configuration
+  // that `open` itself would refuse.
+  const config = loadConfig(readOption(args, "--config") ?? "agentops.config.json");
   if (args.includes("--check")) {
     const store = openStore();
     const databasePath = store.path;
@@ -453,7 +457,7 @@ function runOpen(args: string[]): CliResult {
       exitCode: 0
     };
   }
-  const server = startDashboardServer({ host, port });
+  const server = startDashboardServer({ host, port, config });
   return {
     stdout: `AgentOps dashboard listening at ${server.url}\nPress Ctrl+C to stop.\n`,
     exitCode: 0,

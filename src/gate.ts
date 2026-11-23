@@ -1,4 +1,4 @@
-import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
+import { currentLedgerClaimFlags, isExecutedCommandStatus, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -32,6 +32,7 @@ const unsupportedClaimCategories = new Set([
   "missing-lint-evidence",
   "missing-typecheck-evidence",
   "missing-build-evidence",
+  "contradicted-claim",
   "inferred-verification-evidence"
 ]);
 
@@ -40,6 +41,17 @@ export function evaluateQualityGate(
   sessionId: string,
   config: AgentOpsConfig = defaultConfig,
   options: { gitChanges?: GitChange[] } = {}
+): GateResult {
+  // The whole decision reads one snapshot: a re-import committing mid-check can
+  // never mix the old session's commands with the replacement's claims.
+  return store.db.transaction(() => evaluateQualityGateSnapshot(store, sessionId, config, options))();
+}
+
+function evaluateQualityGateSnapshot(
+  store: Store,
+  sessionId: string,
+  config: AgentOpsConfig,
+  options: { gitChanges?: GitChange[] }
 ): GateResult {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -76,7 +88,12 @@ export function evaluateQualityGate(
   }
 
   if (!config.gates.allowUnsupportedFinalClaims) {
-    const unsupportedClaims = risks.filter((risk) => unsupportedClaimCategories.has(risk.category)).length;
+    // Ledger verdicts are judged under this check's config (not the audit's), so a
+    // stricter support list here, or an analysis that did not finish, cannot pass
+    // a claim the ledger rejects. Other claim flags come from the stored analysis.
+    const unsupportedClaims =
+      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
+      currentLedgerClaimFlags(store, sessionId, config).length;
     checks.push(checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0));
   }
 

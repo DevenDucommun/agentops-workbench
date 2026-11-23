@@ -1,4 +1,5 @@
 import { claimsFinalSuccess, evaluateEvidenceClaims, finalClaimTexts, isVerificationCommand } from "./analyzer";
+import { type ClaimsLedger, getClaimsLedger } from "./ledger";
 import type { AgentOpsConfig } from "./config";
 import {
   getCommands,
@@ -181,6 +182,10 @@ type DashboardPublicCommand = Omit<CommandRecord, "output">;
 type DashboardPublicEvent = Omit<StoredEvent, "rawJson" | "rawPayloadHash">;
 
 export function getDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
+  return store.db.transaction(() => readDashboardComparison(store, baseId, targetId, config))();
+}
+
+function readDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
   const base = getDashboardSession(store, baseId, config);
   const target = getDashboardSession(store, targetId, config);
   if (!base || !target) return null;
@@ -286,7 +291,16 @@ function severityRank(severity: RiskFlagRecord["severity"]): number {
   return 2;
 }
 
+/**
+ * A session's dashboard detail, read from one snapshot: a re-import committing
+ * mid-request can never mix the old session's rows with the replacement's
+ * claims ledger.
+ */
 export function getDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
+  return store.db.transaction(() => readDashboardSession(store, sessionId, config))();
+}
+
+function readDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
   const session = getSession(store, sessionId);
   if (!session) return null;
 
@@ -295,7 +309,7 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification);
+  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -439,11 +453,12 @@ function buildDashboardDecision(
   events: StoredEvent[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  ledger: ClaimsLedger
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification);
+  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, ledger);
   const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
@@ -491,12 +506,27 @@ function buildEvidenceRows(
   finalTexts: string[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
-  verification: CommandRecord[]
+  verification: CommandRecord[],
+  ledger: ClaimsLedger
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
-    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     const risk = risks.find((entry) => entry.category === claim.category) ?? null;
+    // No command mentions the kind, but the ledger supports the claim (a
+    // configured support command such as `bun run ci`): show the ledger's
+    // verdict and the run it cites, never another run of the same command.
+    const entry = claim.matchingCommand === null ? ledger.claims.find((item) => item.id === claim.id && item.verdict === "supported") : undefined;
+    if (entry?.cited) {
+      return toEvidenceRow({
+        id: claim.id,
+        label: titleCase(claim.label),
+        claimed: true,
+        evidenceFound: true,
+        command: { id: 0, eventId: entry.cited.eventRowId, command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode, output: null },
+        risk
+      });
+    }
+    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     return toEvidenceRow({
       id: claim.id,
       label: titleCase(claim.label),

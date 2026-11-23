@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,6 +220,37 @@ test("guides first-run setup with doctor and demo commands", async () => {
   expect(sessions.stdout).toContain("risky-session");
 });
 
+test("audit finishes an import when a concurrent reader releases its snapshot", async () => {
+  const path = process.env.AGENTOPS_DB!;
+  expect((await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"])).exitCode).toBe(0);
+  const reader = new Database(path, { readonly: true });
+  const count = reader.query("SELECT count(*) AS n FROM sessions");
+  let writer: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    expect(reader.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+    reader.exec("BEGIN");
+    expect(count.get()).toEqual({ n: 1 });
+    writer = Bun.spawn([process.execPath, "src/main.ts", "audit", "fixtures/risky-session.jsonl", "--quiet"], {
+      env: { ...process.env, AGENTOPS_DB: path },
+      stdout: "ignore", stderr: "pipe"
+    });
+    // The rollback journal appears when the importer starts writing. Keep the
+    // snapshot open briefly so the importer reaches its commit with a reader.
+    const deadline = performance.now() + 3000;
+    while (!existsSync(path + "-journal") && writer.exitCode === null && performance.now() < deadline) await Bun.sleep(2);
+    const observedWriter = existsSync(path + "-journal");
+    await Bun.sleep(50);
+    expect(count.get()).toEqual({ n: 1 });
+    reader.exec("COMMIT");
+    expect(await writer.exited).toBe(0);
+    expect(observedWriter).toBe(true);
+    expect(count.get()).toEqual({ n: 2 });
+  } finally {
+    reader.close();
+    if (writer) await writer.exited;
+  }
+});
+
 test("audits artifacts and creates PR-ready output with short commands", async () => {
   const audit = await runCli(["audit", "fixtures/sample-session.jsonl"]);
   expect(audit.exitCode).toBe(0);
@@ -418,4 +450,13 @@ test("check --save default filename matches the requested format", async () => {
   expect(readFileSync("agentops-gate-comment.md", "utf8")).toContain("AgentOps Quality Gate");
   // github output must not be written into the JSON default
   expect(readFileSync("agentops-gate.json", "utf8")).toContain("agentops.gate.v1");
+});
+
+test("review 6027053197: open --check rejects a configuration that open would refuse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-open-check-"));
+  const bad = join(dir, "agentops.config.json");
+  writeFileSync(bad, JSON.stringify({ schemaVersion: "agentops.config.v1", evidence: { supportCommands: { test: "bun test" } } }));
+  const result = await runCli(["open", "--check", "--config", bad]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stdout ?? "").not.toContain("Dashboard configuration OK");
 });

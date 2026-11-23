@@ -6,7 +6,49 @@ import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
 import { isForgotten, spoolGeneration } from "./spool";
-import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
+import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore as openStoreRaw, type SessionCommit, type Store } from "../store";
+
+/**
+ * How long, in total, one recorder import waits for other connections before
+ * giving up. Long enough for a dashboard or check that holds a read snapshot
+ * to finish, short enough that a store held by another writer still fails
+ * within a second, inside the hook's time budget, and is recorded for replay.
+ *
+ * SQLite's busy timeout applies per statement, so it cannot bound a whole
+ * import. Each statement waits at most STATEMENT_WAIT_MS; a "database is
+ * locked" failure retries the whole operation (a single transaction, safe to
+ * repeat) until the shared deadline, so the total stays near this budget.
+ */
+const IMPORT_BUSY_TIMEOUT_MS = 750;
+const STATEMENT_WAIT_MS = 50;
+let importDeadline: number | null = null;
+
+function isBusy(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown } | null;
+  return e?.code === "SQLITE_BUSY" || (typeof e?.message === "string" && /database is locked/i.test(e.message));
+}
+
+function withImportBudget<T>(run: () => T): T {
+  if (importDeadline !== null) return run();
+  importDeadline = Date.now() + IMPORT_BUSY_TIMEOUT_MS;
+  try {
+    for (;;) {
+      try {
+        return run();
+      } catch (error) {
+        if (!isBusy(error) || Date.now() >= importDeadline) throw error;
+        Bun.sleepSync(Math.min(25, Math.max(1, importDeadline - Date.now())));
+      }
+    }
+  } finally {
+    importDeadline = null;
+  }
+}
+
+function openStore(path: string): Store {
+  const remaining = importDeadline === null ? STATEMENT_WAIT_MS : Math.max(1, importDeadline - Date.now());
+  return openStoreRaw(path, { busyTimeoutMs: Math.min(STATEMENT_WAIT_MS, remaining) });
+}
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
 // claude-hooks adapter -> store -> analyzer, then link the session to the
@@ -31,6 +73,10 @@ export class SpoolGoneError extends Error {
 }
 
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
+  return withImportBudget(() => ingestSpoolFileWithin(spoolFile, options));
+}
+
+function ingestSpoolFileWithin(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
   let content: string;
   try {
@@ -48,9 +94,9 @@ export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions):
     // `recorder forget` records the generation it removes before deleting the
     // session's rows. Checking that record inside this write transaction orders
     // the two through SQLite's write lock: either forget's delete runs after this
-    // import commits, or the import sees the record and stores nothing. A busy
-    // store fails the import at once, as before, so a hook stays within its time
-    // budget and records the failure.
+    // import commits, or the import sees the record and stores nothing. A store
+    // busy past IMPORT_BUSY_TIMEOUT_MS fails the import, so a hook stays within
+    // its time budget and records the failure for replay.
     return storeHookTranscript(store, transcript, config, options.repoRoot, () => {
       if (generation !== null && isForgotten(spoolFile, generation)) throw new SpoolGoneError(`spool forgotten: ${spoolFile}`);
     });
@@ -111,6 +157,10 @@ export function storeHookTranscript(
  * SessionEnd hook output.
  */
 export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): string {
+  return withImportBudget(() => turnVerdictWithin(spoolFile, options));
+}
+
+function turnVerdictWithin(spoolFile: string, options: SpoolIngestOptions): string {
   // An invalid config must not be replaced by defaults here: that would report a
   // pass that `agentops check` rejects. Say the config is invalid instead.
   let config = options.config;
