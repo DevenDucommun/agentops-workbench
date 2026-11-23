@@ -180,11 +180,20 @@ function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: str
     base !== null && base !== "" && observed.some((spelling) => spelling === base || spelling.startsWith(`${base} `));
   const asWritten = normalizeCommand(command.replace(/\t/g, " "));
   if (configured.some((candidate) => normalizeCommand(candidate.replace(/\t/g, " ")) === asWritten)) return true;
-  // A run that is exactly another kind's configured command belongs to that
-  // kind: the looser spellings never let it contradict this one (a failed lint
-  // `node verify.cjs` is not a failed test `CHECK=unit node verify.cjs`).
+  // A run that, in any of the spellings above, is exactly another kind's
+  // configured command belongs to that kind: the looser spellings never let it
+  // contradict this one (a failed lint `node verify.cjs` or
+  // `env node verify.cjs` is not a failed test `CHECK=unit node verify.cjs`).
   const kinds = Object.keys({ ...DEFAULT_SUPPORT_COMMANDS, ...config.evidence.supportCommands }) as EvidenceClaimId[];
-  if (kinds.some((kind) => kind !== rule.id && isSupportCommand({ id: kind }, command, config))) return false;
+  const ownedElsewhere = kinds.some((kind) => {
+    if (kind === rule.id) return false;
+    const entries = config.evidence.supportCommands?.[kind] ?? DEFAULT_SUPPORT_COMMANDS[kind] ?? [];
+    return entries.some((entry) => {
+      const base = normalizeCommand(entry.replace(/\t/g, " "));
+      return base !== null && observed.includes(base);
+    });
+  });
+  if (ownedElsewhere) return false;
   return configured.some((candidate) => {
     const spaced = candidate.replace(/\t/g, " ");
     return matches(normalizeCommand(spaced)) || (bare && matches(normalizeCommand(stripLeadingAssignments(spaced))));
