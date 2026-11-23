@@ -90,6 +90,7 @@ describe("dashboard evidence rows", () => {
     );
     const [report, decision] = withSession(path, (store, sid) => [generateMarkdownReport(store, sid), getDashboardSession(store, sid, defaultConfig)?.decision] as const);
     expect(report).toContain("| test | Unsupported |");
+    expect(decision?.mergeReadiness.missingEvidenceCount).toBe(1);
     expect(decision?.evidence.find(row => row.id === "final-success")).toMatchObject({ status: "missing-evidence", command: null });
     expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "missing-evidence", command: null });
   });
@@ -101,12 +102,14 @@ describe("dashboard evidence rows", () => {
       [
         { type: "session", id: "ledger-inferred", agent: "synthetic-agent" },
         { type: "tool_call", toolName: "Bash", input: { cmd: "bun test" }, status: "inferred" },
-        { type: "final_response", role: "assistant", content: "All tests pass." }
+        { type: "final_response", role: "assistant", content: "Tests passed." }
       ]
         .map((record) => JSON.stringify({ schemaVersion: "agentops.event.v1", ...record }))
         .join("\n")
     );
-    expect(withSession(path, (store, sid) => getDashboardSession(store, sid, defaultConfig)?.decision)?.evidence.find((row) => row.id === "test")).toMatchObject({
+    const decision = withSession(path, (store, sid) => getDashboardSession(store, sid, defaultConfig)?.decision);
+    expect(decision?.mergeReadiness.reasons).toContain("1 claimed check has inferred command evidence.");
+    expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({
       status: "inferred-evidence",
       command: "bun test"
     });

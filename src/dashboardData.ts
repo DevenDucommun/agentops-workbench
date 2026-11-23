@@ -465,9 +465,11 @@ function buildDashboardDecision(
   const highRiskCount = gateHighRiskCount(commands, risks, config);
   const blockedAttempts = countBlockedAttempts(commands, config);
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
-  const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
-  const contradictedCount = evidence.filter((row) => row.id !== "final-success" && row.status === "contradicted").length;
-  const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
+  // A final-success summary that mirrors a ledger row is not another check.
+  const checks = evidence.filter(row => row.id !== "final-success" || !row.claimed || ledger.claims.length === 0);
+  const missingEvidenceCount = checks.filter((row) => row.status === "missing-evidence").length;
+  const contradictedCount = checks.filter((row) => row.status === "contradicted").length;
+  const inferredEvidenceCount = checks.filter((row) => row.status === "inferred-evidence").length;
   const reasons: string[] = [];
   let status: DashboardMergeReadiness["status"] = "ready";
 
