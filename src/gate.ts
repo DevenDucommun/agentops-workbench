@@ -1,6 +1,5 @@
-import { isExecutedCommandStatus, isVerificationCommand } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedExecution, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { evidenceClaimRules } from "./ledger";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
@@ -29,7 +28,10 @@ export type GateResult = {
 
 const unsupportedClaimCategories = new Set([
   "unsupported-success-claim",
-  ...evidenceClaimRules.map((rule) => rule.category),
+  "missing-test-evidence",
+  "missing-lint-evidence",
+  "missing-typecheck-evidence",
+  "missing-build-evidence",
   "contradicted-claim",
   "inferred-verification-evidence"
 ]);
@@ -40,18 +42,32 @@ export function evaluateQualityGate(
   config: AgentOpsConfig = defaultConfig,
   options: { gitChanges?: GitChange[] } = {}
 ): GateResult {
+  // The whole decision reads one snapshot: a re-import committing mid-check can
+  // never mix the old session's commands with the replacement's claims.
+  return store.db.transaction(() => evaluateQualityGateSnapshot(store, sessionId, config, options))();
+}
+
+function evaluateQualityGateSnapshot(
+  store: Store,
+  sessionId: string,
+  config: AgentOpsConfig,
+  options: { gitChanges?: GitChange[] }
+): GateResult {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isObservedExecution(command) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
-  checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));
+  const highRisks = gateHighRiskCount(commands, risks, config);
+  checks.push(checkAtMost("max-high-risks", "High-severity risks", highRisks, config.gates.maxHighSeverityRisks));
   // Blocked risky commands are informational one by one; repeated attempts fail the gate (spec R2.4).
-  checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", risks.filter((risk) => risk.category === "blocked-attempt").length, config.gates.maxBlockedAttempts));
+  // Counted from the stored commands, not flags, so a store analyzed before this
+  // rule existed (or an interrupted analysis) cannot hide them.
+  checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", countBlockedAttempts(commands, config), config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
     checks.push({
@@ -77,7 +93,12 @@ export function evaluateQualityGate(
   }
 
   if (!config.gates.allowUnsupportedFinalClaims) {
-    const unsupportedClaims = risks.filter((risk) => unsupportedClaimCategories.has(risk.category)).length;
+    // Ledger verdicts are judged under this check's config (not the audit's), so a
+    // stricter support list here, or an analysis that did not finish, cannot pass
+    // a claim the ledger rejects. Other claim flags come from the stored analysis.
+    const unsupportedClaims =
+      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
+      currentLedgerClaimFlags(store, sessionId, config).length;
     checks.push(checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0));
   }
 

@@ -1,6 +1,6 @@
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { eventHash, eventIdFor } from "../eventChain";
 import { redactValue, sha256 } from "../redaction";
 import type { RawEvent } from "../types";
@@ -26,6 +26,13 @@ export type SpoolOptions = {
   staleLockMs?: number;
   /** Clock override for tests. */
   now?: () => Date;
+  /**
+   * Repository roots (real path first, then any logical alias the agent used).
+   * Paths inside them are stored repo-relative, before redaction would replace
+   * an absolute home path with [REDACTED:local-path].
+   */
+  repoRoots?: string[];
+  gitCommit?: { sha: string; kind: string };
 };
 
 export type AppendResult =
@@ -65,9 +72,11 @@ export function spoolPath(dir: string, sessionId: string): string | null {
  * lifts the identifiers the adapter needs, computes content hashes, then
  * redacts and privacy-transforms the payload.
  */
-export function buildSpoolRecord(payload: Record<string, unknown>, options: SpoolOptions = {}): RawEvent {
+export function buildSpoolRecord(original: Record<string, unknown>, options: SpoolOptions = {}): RawEvent {
   const now = (options.now ?? (() => new Date()))();
   const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const roots = (options.repoRoots ?? []).filter((r) => r.startsWith("/") && r.length > 1);
+  const payload = roots.length > 0 ? (relativizePaths(original, roots) as Record<string, unknown>) : original;
   const toolInput = isRecord(payload.tool_input) ? payload.tool_input : undefined;
   const toolResponse = isRecord(payload.tool_response) ? payload.tool_response : undefined;
 
@@ -85,6 +94,7 @@ export function buildSpoolRecord(payload: Record<string, unknown>, options: Spoo
     cwd: str(payload.cwd)
   };
 
+  if (options.gitCommit) record.gitCommit = options.gitCommit;
   const exitCode = typeof payload.error === "string" ? /^Exit code (\d+)/.exec(payload.error)?.[1] : undefined;
   if (exitCode !== undefined) record.exitCode = Number(exitCode);
 
@@ -92,6 +102,11 @@ export function buildSpoolRecord(payload: Record<string, unknown>, options: Spoo
   if (written !== undefined) record.contentHash = sha256(written.content);
   const addedLines = written?.addedLines ?? [];
   if (addedLines.length > 0) record.addedLineHashes = addedLines.slice(0, MAX_LINE_HASHES).map((line) => sha256(line.replace(/\r$/, "")));
+  // Churn and the touched path are kept as plain fields: the patch lines and contents are hashed below.
+  const churn = lineChurn(toolInput, toolResponse);
+  if (churn) Object.assign(record, churn);
+  const path = str(toolInput?.file_path) ?? str(toolInput?.notebook_path) ?? str(toolInput?.path);
+  if (path) record.path = path;
 
   record.payload = transformPayload(payload, options.storeRawPayload === true, "");
   for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key];
@@ -149,7 +164,9 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
       line = JSON.stringify(linked);
       truncated = true;
     }
-    const prefix = tail && !tail.endsWithNewline ? "\n" : "";
+    // Torn bytes from a crashed writer may end the file even when no earlier line
+    // is a valid record; start a new line so this record stays readable.
+    const prefix = endsMidLine(path) ? "\n" : "";
     const fd = openSync(path, "a", 0o600);
     try {
       writeSync(fd, `${prefix}${line}\n`);
@@ -161,6 +178,96 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
     return fail(dir, sessionId, "write-failed", message(error));
   } finally {
     releaseLock(lockPath);
+  }
+}
+
+/**
+ * Runs `fn` while holding the session's spool lock, the same lock appendRecord
+ * takes, so no hook can append to the session meanwhile. A lock older than the
+ * stale limit is reclaimed as appendRecord does, unless `staleLockMs` is
+ * Infinity. Never throws for lock errors.
+ */
+export function withSpoolLock<T>(
+  dir: string,
+  sessionId: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed" | "invalid-session"; detail: string } {
+  const path = spoolPath(dir, sessionId);
+  if (!path) return { ok: false, reason: "invalid-session", detail: "empty session id" };
+  const settings = { ...DEFAULTS, ...options };
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return { ok: false, reason: "lock-failed", detail: `mkdir: ${message(error)}` };
+  }
+  return withSpoolFileLock(path, fn, settings);
+}
+
+/**
+ * Runs `fn` while holding the lock of the spool file at `spoolFile` (the lock
+ * appendRecord takes). Never throws for lock errors; `fn`'s own errors propagate.
+ */
+export function withSpoolFileLock<T>(
+  spoolFile: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed"; detail: string } {
+  const settings = { ...DEFAULTS, ...options };
+  const lockPath = `${spoolFile}.lock`;
+  const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
+  if (lock === "timeout") return { ok: false, reason: "lock-timeout", detail: `lock not acquired within ${settings.lockTimeoutMs} ms` };
+  if (lock !== "acquired") return { ok: false, reason: "lock-failed", detail: lock.error };
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
+/**
+ * Identifies one spool generation: the hash of its first record line. A spool
+ * started again after `recorder forget` begins with a different first record.
+ */
+export function spoolGeneration(content: string): string | null {
+  const first = content.split("\n").find((line) => line.trim() !== "");
+  return first === undefined ? null : sha256(first);
+}
+
+/**
+ * Generations of this spool that `recorder forget` removed; imports of them are
+ * skipped. Named by a hash of the spool's file name, so the marker that outlives
+ * the spool never carries the session id.
+ */
+export function forgottenPath(spoolFile: string): string {
+  // The folder's real path, so forget and an import that reached the spool
+  // through a symlinked state folder agree on one marker.
+  let dir = dirname(spoolFile);
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // Missing folder: keep the path as given.
+  }
+  return join(dir, `forgotten-${sha256(basename(spoolFile)).slice(0, 32)}`);
+}
+
+/** Removes one generation from a spool's forgotten marker (a forget that failed before deleting anything). */
+export function unforget(spoolFile: string, generation: string): void {
+  const path = forgottenPath(spoolFile);
+  try {
+    const kept = readFileSync(path, "utf8").split("\n").filter((line) => line !== "" && line !== generation);
+    if (kept.length === 0) unlinkSync(path);
+    else writeFileSync(path, `${kept.join("\n")}\n`, { mode: 0o600 });
+  } catch {
+    // Nothing recorded for it.
+  }
+}
+
+export function isForgotten(spoolFile: string, generation: string): boolean {
+  try {
+    return readFileSync(forgottenPath(spoolFile), "utf8").split("\n").includes(generation);
+  } catch {
+    return false;
   }
 }
 
@@ -211,6 +318,37 @@ function transformPayload(value: unknown, keepRaw: boolean, key: string): unknow
   return value;
 }
 
+const PATH_KEYS = new Set(["cwd", "file_path", "filePath", "notebook_path", "path"]);
+
+/** Rewrites path-valued fields inside any of `roots` as repo-relative ("." for the root itself). */
+function relativizePaths(value: unknown, roots: string[], key = ""): unknown {
+  if (Array.isArray(value)) return value.map((item) => relativizePaths(item, roots));
+  if (isRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = relativizePaths(v, roots, k);
+    return out;
+  }
+  if (typeof value === "string" && PATH_KEYS.has(key)) {
+    for (const root of roots) {
+      if (value === root) return ".";
+      if (value.startsWith(`${root}/`)) return value.slice(root.length + 1);
+    }
+  }
+  return value;
+}
+
+/** Lines added and removed by a Write or Edit, from its structured patch (or the written content for a new file). */
+function lineChurn(input: Record<string, unknown> | undefined, response: Record<string, unknown> | undefined): { linesAdded: number; linesRemoved: number } | undefined {
+  const patch = Array.isArray(response?.structuredPatch) ? response.structuredPatch : undefined;
+  if (patch === undefined) return undefined;
+  const lines = patch.flatMap((hunk) => (isRecord(hunk) && Array.isArray(hunk.lines) ? hunk.lines : [])).filter((l): l is string => typeof l === "string");
+  if (lines.length === 0 && response?.type === "create" && typeof input?.content === "string") {
+    const text = input.content;
+    return { linesAdded: text === "" ? 0 : text.replace(/\n$/, "").split("\n").length, linesRemoved: 0 };
+  }
+  return { linesAdded: lines.filter((l) => l.startsWith("+")).length, linesRemoved: lines.filter((l) => l.startsWith("-")).length };
+}
+
 function digest(text: string) {
   return { omitted: "content", bytes: Buffer.byteLength(text), sha256: sha256(text) };
 }
@@ -236,8 +374,27 @@ function writtenContent(input: Record<string, unknown> | undefined, response: Re
 
 // --- tail recovery -----------------------------------------------------------
 
+/** True when the file is non-empty and its last byte is not a newline. */
+function endsMidLine(path: string): boolean {
+  let fd: number;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Last chained record in the file (scanning back past torn or foreign lines). */
-function readTail(path: string): { seq: number; hash: string; endsWithNewline: boolean } | null {
+function readTail(path: string): { seq: number; hash: string } | null {
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -247,9 +404,6 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
   try {
     const size = fstatSync(fd).size;
     if (size === 0) return null;
-    const last = Buffer.alloc(1);
-    readSync(fd, last, 0, 1, size - 1);
-    const endsWithNewline = last[0] === 0x0a;
     for (let chunk = 64 * 1024; ; chunk *= 2) {
       const start = Math.max(0, size - chunk);
       const buf = Buffer.alloc(size - start);
@@ -262,7 +416,7 @@ function readTail(path: string): { seq: number; hash: string; endsWithNewline: b
         try {
           const parsed = JSON.parse(line);
           if (isRecord(parsed) && Number.isSafeInteger(parsed.seq) && typeof parsed.hash === "string") {
-            return { seq: parsed.seq as number, hash: parsed.hash, endsWithNewline };
+            return { seq: parsed.seq as number, hash: parsed.hash };
           }
         } catch {
           // Torn line from a crashed writer; keep scanning back.

@@ -1,7 +1,9 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import * as storeApi from "../src/store";
 import { runCli } from "../src/cli";
 import { startDashboardServer } from "../src/dashboard";
 
@@ -311,7 +313,7 @@ test("dashboard labels forensic text evidence quality", async () => {
 
   const server = startDashboardServer({ port: 0 });
   try {
-    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript`);
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164`);
     expect(detailResponse.status).toBe(200);
     const detailPayload = (await detailResponse.json()) as {
       evidenceQuality: {
@@ -343,7 +345,7 @@ test("dashboard labels forensic text evidence quality", async () => {
     expect(detailPayload.files).toContainEqual(expect.objectContaining({ path: "src/server.ts", operation: "inferred edit" }));
     expect(detailPayload.risks).toContainEqual(expect.objectContaining({ category: "forensic-import" }));
 
-    const evidenceResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript/evidence`);
+    const evidenceResponse = await fetch(`${server.url}/api/sessions/forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164/evidence`);
     expect(evidenceResponse.status).toBe(200);
     const evidencePayload = (await evidenceResponse.json()) as { evidenceQuality: { level: string; label: string } };
     expect(evidencePayload.evidenceQuality).toEqual(expect.objectContaining({ level: "forensic", label: "Forensic text" }));
@@ -358,7 +360,7 @@ test("dashboard distinguishes inferred forensic evidence from verified evidence"
 
   const server = startDashboardServer({ port: 0 });
   try {
-    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat`);
+    const detailResponse = await fetch(`${server.url}/api/sessions/forensic-copied-chat-031eb0e65c6914af5535e4a15e2fd566`);
     expect(detailResponse.status).toBe(200);
     const detailPayload = (await detailResponse.json()) as {
       evidenceQuality: {
@@ -469,6 +471,55 @@ test("dashboard serves markdown reports for sessions", async () => {
   }
 });
 
+test("agentops open reads the project config like check does", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentops-open-config-test-"));
+  const originalCwd = process.cwd();
+  const sessionPath = join(dir, "ci-session.jsonl");
+  writeFileSync(
+    join(dir, "agentops.config.json"),
+    JSON.stringify({ schemaVersion: "agentops.config.v1", evidence: { verificationCommands: ["ci"], supportCommands: { test: ["bun run ci"] } } })
+  );
+  writeFileSync(
+    sessionPath,
+    [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "configured-ci" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "bun run ci", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n")
+  );
+  process.chdir(dir);
+  try {
+    const audit = await runCli(["audit", sessionPath]);
+    expect(audit.exitCode).toBe(0);
+    const check = await runCli(["check", "configured-ci"]);
+    expect(check.exitCode).toBe(0);
+
+    // `open` refuses port 0, so borrow a free port from the OS first.
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("") });
+    const port = String(probe.port);
+    probe.stop(true);
+    const open = await runCli(["open", "--port", port]);
+    const url = /listening at (\S+)/.exec(open.stdout ?? "")?.[1];
+    expect(url).toBeDefined();
+    try {
+      type Detail = { decision: { evidence: Array<{ id: string; status: string; command: string | null }> } };
+      const detail = (await (await fetch(`${url}/api/sessions/configured-ci`)).json()) as Detail;
+      expect(detail.decision.evidence.find((row) => row.id === "test")).toMatchObject({ status: "verified", command: "bun run ci", commandExitCode: 0 });
+      expect(detail.decision.evidence.filter((row) => row.status === "missing-evidence")).toEqual([]);
+
+      const bundle = (await (await fetch(`${url}/api/sessions/configured-ci/evidence`)).json()) as Record<string, unknown>;
+      expect(JSON.stringify(bundle)).not.toContain("missing-evidence");
+    } finally {
+      process.emit("SIGTERM");
+      await open.keepAlive;
+    }
+  } finally {
+    process.chdir(originalCwd);
+  }
+});
+
 test("dashboard CLI check validates local configuration without starting a server", async () => {
   const result = await runCli(["open", "--check", "--port", "4930"]);
   expect(result.exitCode).toBe(0);
@@ -476,4 +527,123 @@ test("dashboard CLI check validates local configuration without starting a serve
   expect(result.stdout).toContain("Host: 127.0.0.1");
   expect(result.stdout).toContain("Port: 4930");
   expect(result.stdout).toContain("Database:");
+});
+
+test("an evidence download stays consistent while SessionEnd imports another session", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "agentops-overlap-"));
+  const state = join(repo, "state");
+  const main = join(import.meta.dir, "..", "src", "main.ts");
+  const env = { ...process.env, AGENTOPS_STATE_DIR: state };
+  expect(Bun.spawnSync(["git", "init", "-q", repo]).exitCode).toBe(0);
+  expect(Bun.spawnSync([process.execPath, main, "recorder", "enable"], { cwd: repo, env }).exitCode).toBe(0);
+  expect((await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"])).exitCode).toBe(0);
+  const db = new Database(process.env.AGENTOPS_DB!, { readonly: true });
+  const server = startDashboardServer({ port: 0 });
+  const evidence = async () => {
+    const response = await fetch(`${server.url}/api/sessions/sample-session/evidence`);
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const input = join(repo, "session-end.json");
+  writeFileSync(input, JSON.stringify({ session_id: "session-b", cwd: repo, hook_event_name: "SessionEnd" }));
+  const endSession = () => Bun.spawn([process.execPath, main, "hook", "SessionEnd"], {
+    cwd: repo, env, stdout: "ignore", stderr: "ignore",
+    stdin: Bun.file(input)
+  });
+  let writer: ReturnType<typeof endSession> | undefined;
+  const getFiles = storeApi.getFileChanges;
+  const readFiles = spyOn(storeApi, "getFileChanges");
+  try {
+    expect(db.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+    const original = await evidence();
+    readFiles.mockImplementationOnce((store, id) => {
+      const rows = getFiles(store, id);
+      writer = endSession();
+      // The hook appends SessionEnd before importing. Give the writer a short
+      // overlap, then finish this download independently of the import outcome.
+      const spool = join(state, "spool", "session-b.jsonl");
+      const until = performance.now() + 2000;
+      while (!existsSync(spool) && performance.now() < until) Bun.sleepSync(2);
+      expect(existsSync(spool)).toBe(true);
+      Bun.sleepSync(150);
+      return rows;
+    });
+    expect(await evidence()).toEqual(original);
+    expect(writer).toBeDefined();
+    expect(await writer!.exited).toBe(0);
+    expect(db.query("SELECT count(*) AS n FROM sessions WHERE id = 'session-b'").get()).toEqual({ n: 1 });
+    expect(existsSync(join(state, "spool", "session-b.errors.jsonl"))).toBe(false);
+  } finally {
+    readFiles.mockRestore();
+    server.stop();
+    if (writer) await writer.exited;
+    db.close();
+  }
+});
+
+/** WAL lets a replacement commit between two reads without stopping the reader. */
+function snapshotReimport(command: string | null, final: string) {
+  const path = process.env.AGENTOPS_DB!;
+  const db = new Database(path, { create: true });
+  try {
+    db.exec("PRAGMA journal_mode = WAL");
+  } finally {
+    db.close();
+  }
+  const trace = path + ".jsonl";
+  const rows = [
+    { type: "session", id: "reimport" },
+    ...(command ? [{ type: "command", command, status: "completed", exitCode: 0 }] : []),
+    { type: "final_response", role: "assistant", summary: final }
+  ];
+  writeFileSync(trace, rows.map((row) => JSON.stringify({ ...row, schemaVersion: "agentops.event.v1" })).join("\n"));
+  const result = Bun.spawnSync([process.execPath, join(import.meta.dir, "..", "src", "main.ts"), "audit", trace, "--quiet"], { env: { ...process.env } });
+  expect(result.exitCode).toBe(0);
+}
+
+test("a check overlapping reimport cannot pass by mixing two failing session versions", async () => {
+  snapshotReimport("bun run lint", "Tests passed.");
+  const check = () => runCli(["check", "reimport", "--format", "json"]);
+  expect((await check()).exitCode).toBe(1);
+  const risks = storeApi.getRiskFlags;
+  const read = spyOn(storeApi, "getRiskFlags").mockImplementationOnce((store, id) => {
+    const original = risks(store, id);
+    snapshotReimport(null, "Work recorded.");
+    return original;
+  });
+  try {
+    const result = await check();
+    expect(read).toHaveBeenCalled();
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout!).status).toBe("failed");
+  } finally {
+    read.mockRestore();
+  }
+  expect((await check()).exitCode).toBe(1);
+});
+
+test("an evidence download overlapping reimport contains one whole session version", async () => {
+  snapshotReimport("bun run lint", "Work recorded.");
+  const server = startDashboardServer({ port: 0 });
+  const bundle = async () => {
+    const response = await fetch(`${server.url}/api/sessions/reimport/evidence`);
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const files = storeApi.getFileChanges;
+  const read = spyOn(storeApi, "getFileChanges");
+  try {
+    const original = await bundle();
+    read.mockImplementationOnce((store, id) => {
+      const rows = files(store, id);
+      snapshotReimport("bun test", "Tests passed.");
+      return rows;
+    });
+    expect(await bundle()).toEqual(original);
+    const replacement = await bundle() as { decision: { evidence: unknown[] } };
+    expect(replacement.decision.evidence).toContainEqual(expect.objectContaining({ id: "test", status: "verified", command: "bun test" }));
+  } finally {
+    read.mockRestore();
+    server.stop();
+  }
 });

@@ -70,6 +70,24 @@ agentops check
 agentops open
 ```
 
+### Record Claude Code sessions automatically (preview)
+
+The v3.2.0 release binary predates the recorder. For the preview, follow
+[Run From Source](#run-from-source-development) and start Claude Code from a
+shell with the checkout’s `bin` directory on `PATH`. Install the recorder
+plugin once, then enable each repository you want recorded:
+
+```text
+/plugin install agentops-recorder --marketplace DevenDucommun/agentops-workbench
+```
+
+```bash
+agentops recorder enable
+```
+
+Every Claude Code session in that repository then appears in `agentops sessions`
+when it ends, with no wrapper command. See the [recorder guide](docs/RECORDER.md).
+
 ## Run From Source (development)
 
 Requirements: [Bun](https://bun.sh/) and Git.

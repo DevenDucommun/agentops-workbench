@@ -34,22 +34,21 @@ describe("session report (spec R2.5)", () => {
         "",
         "| Claim | Verdict | Evidence |",
         "| --- | --- | --- |",
-        "| test success | Supported | `bun test` (exit 0), step 4 (evt-0002-test-pass) |",
-        "| a fix | Supported | `bun test` (exit 0), step 4 (evt-0002-test-pass) |"
+        "| test | Supported | `bun test` (exit 0), [step 4](#event-step-4) (evt-0002-test-pass) |"
       ].join("\n")
     );
-    expect(report).toContain("- 4. **tool_call**");
+    expect(report).toContain('- <a id="event-step-4"></a>4. **tool_call**');
   });
 
   test("contradicted and unsupported claims say so", () => {
     const contradicted = withSession("fixtures/ledger/fail-then-claim.jsonl", (store, sid) => generateMarkdownReport(store, sid));
-    expect(contradicted).toContain("| test success | Contradicted | `bun test` (exit 1), step 3 |");
-    const unsupported = withSession("fixtures/ledger/callers-unsearched.jsonl", (store, sid) => generateMarkdownReport(store, sid));
-    expect(unsupported).toContain("| there are no other callers or usages | Unsupported | No observed search run before the final response. |");
+    expect(contradicted).toContain("| test | Contradicted | `bun test` (exit 1), [step 3](#event-step-3) |");
+    const unsupported = withSession("fixtures/ledger/no-run-then-claim.jsonl", (store, sid) => generateMarkdownReport(store, sid));
+    expect(unsupported).toContain("| test | Unsupported | No observed test command ran before the final response. |");
   });
 
   test("a final response without claims gets no ledger section", () => {
-    const report = withSession("fixtures/sample-session.jsonl", (store, sid) => generateMarkdownReport(store, sid));
+    const report = withSession("fixtures/stalls/retry-loop.jsonl", (store, sid) => generateMarkdownReport(store, sid));
     expect(report).not.toContain("## Claims Ledger");
   });
 });
@@ -57,7 +56,7 @@ describe("session report (spec R2.5)", () => {
 describe("PR comment", () => {
   test("includes the claims table", () => {
     const comment = withSession("fixtures/ledger/fail-then-claim.jsonl", (store, sid) => generateGithubRepoComment(store, sid, []));
-    expect(section(comment, "### Claims", "### Risk Flags")).toContain("| test success | Contradicted | `bun test` (exit 1), step 3 |");
+    expect(section(comment, "### Claims", "### Risk Flags")).toContain("| test | Contradicted | `bun test` (exit 1), step 3 |");
   });
 });
 
@@ -67,27 +66,14 @@ describe("dashboard evidence rows", () => {
   test("a contradicted claim shows as contradicted and needs review", () => {
     const decision = evidence("fixtures/ledger/fail-then-claim.jsonl");
     expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "contradicted", command: "bun test", commandExitCode: 1, riskCategory: "contradicted-claim" });
-    expect(decision?.evidence.find((row) => row.id === "fix")).toMatchObject({ label: "Fix verified", status: "contradicted" });
+    expect(decision?.evidence.find(row => row.id === "final-success")).toMatchObject({ status: "contradicted", eventStep: 3 });
     expect(decision?.mergeReadiness.status).toBe("needs-review");
-    expect(decision?.mergeReadiness.reasons).toContain("2 claimed checks are contradicted by a failing run.");
+    expect(decision?.mergeReadiness.reasons).toContain("1 claimed check is contradicted by a failing run.");
   });
 
   test("a supported claim cites the passing run, not the earlier failure", () => {
     const decision = evidence("fixtures/ledger/fail-then-pass-then-claim.jsonl");
-    expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "verified", command: "bun test", commandExitCode: 0 });
-  });
-
-  test("new claim kinds get their own rows, including tool-call evidence", () => {
-    expect(evidence("fixtures/ledger/browser-checked.jsonl")?.evidence.find((row) => row.id === "browser")).toMatchObject({
-      label: "In-browser check",
-      status: "verified",
-      command: "mcp__playwright__browser_take_screenshot"
-    });
-    expect(evidence("fixtures/ledger/callers-unsearched.jsonl")?.evidence.find((row) => row.id === "callers")).toMatchObject({
-      label: "No other callers",
-      status: "missing-evidence",
-      riskCategory: "missing-callers-evidence"
-    });
+    expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "verified", command: "bun test", commandExitCode: 0, eventStep: 4 });
   });
 
   test("a test that ran only after the final claim is unsupported on both surfaces", () => {
@@ -96,14 +82,15 @@ describe("dashboard evidence rows", () => {
       path,
       [
         { type: "session", id: "ledger-late-run", agent: "synthetic-agent" },
-        { type: "final_response", role: "assistant", content: "All tests pass." },
+        { type: "final_response", role: "assistant", content: "Tests passed." },
         { type: "tool_call", toolName: "Bash", input: { cmd: "bun test" }, status: "completed", exitCode: 0 }
       ]
         .map((record) => JSON.stringify({ schemaVersion: "agentops.event.v1", ...record }))
         .join("\n")
     );
     const [report, decision] = withSession(path, (store, sid) => [generateMarkdownReport(store, sid), getDashboardSession(store, sid, defaultConfig)?.decision] as const);
-    expect(report).toContain("| test success | Unsupported |");
+    expect(report).toContain("| test | Unsupported |");
+    expect(decision?.evidence.find(row => row.id === "final-success")).toMatchObject({ status: "missing-evidence", command: null });
     expect(decision?.evidence.find((row) => row.id === "test")).toMatchObject({ status: "missing-evidence", command: null });
   });
 

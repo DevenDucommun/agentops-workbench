@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
@@ -126,7 +126,7 @@ type DashboardMergeReadiness = {
 };
 
 type DashboardEvidenceRow = {
-  id: "test" | "lint" | "typecheck" | "build" | "callers" | "device" | "browser" | "fix" | "final-success";
+  id: "test" | "lint" | "typecheck" | "build" | "final-success";
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
@@ -134,6 +134,7 @@ type DashboardEvidenceRow = {
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
+  eventStep: number | null;
   riskCategory: string | null;
   riskMessage: string | null;
 };
@@ -182,6 +183,10 @@ type DashboardPublicCommand = Omit<CommandRecord, "output">;
 type DashboardPublicEvent = Omit<StoredEvent, "rawJson" | "rawPayloadHash">;
 
 export function getDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
+  return store.db.transaction(() => readDashboardComparison(store, baseId, targetId, config))();
+}
+
+function readDashboardComparison(store: Store, baseId: string, targetId: string, config: AgentOpsConfig): DashboardComparison | null {
   const base = getDashboardSession(store, baseId, config);
   const target = getDashboardSession(store, targetId, config);
   if (!base || !target) return null;
@@ -287,7 +292,16 @@ function severityRank(severity: RiskFlagRecord["severity"]): number {
   return 2;
 }
 
+/**
+ * A session's dashboard detail, read from one snapshot: a re-import committing
+ * mid-request can never mix the old session's rows with the replacement's
+ * claims ledger.
+ */
 export function getDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
+  return store.db.transaction(() => readDashboardSession(store, sessionId, config))();
+}
+
+function readDashboardSession(store: Store, sessionId: string, config: AgentOpsConfig): DashboardSessionDetail | null {
   const session = getSession(store, sessionId);
   if (!session) return null;
 
@@ -295,8 +309,8 @@ export function getDashboardSession(store: Store, sessionId: string, config: Age
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
+  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command.command, config));
+  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config), config);
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -441,14 +455,18 @@ function buildDashboardDecision(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  ledger: ClaimsLedger
+  ledger: ClaimsLedger,
+  config: AgentOpsConfig
 ): DashboardDecision {
-  const finalSummary = [...events].reverse().find((event) => event.type === "final_response")?.summary ?? "";
-  const evidence = buildEvidenceRows(finalSummary, commands, risks, verification, ledger);
-  const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
+  const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
+  const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
+  const evidence = buildEvidenceRows(finalTexts, commands.filter(dashboardEvidenceCandidate), risks, verification, ledger, events);
+  // The same counts the quality gate uses, so the dashboard and `agentops check` agree.
+  const highRiskCount = gateHighRiskCount(commands, risks, config);
+  const blockedAttempts = countBlockedAttempts(commands, config);
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
-  const contradictedCount = evidence.filter((row) => row.status === "contradicted").length;
+  const contradictedCount = evidence.filter((row) => row.id !== "final-success" && row.status === "contradicted").length;
   const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
   const reasons: string[] = [];
   let status: DashboardMergeReadiness["status"] = "ready";
@@ -456,6 +474,10 @@ function buildDashboardDecision(
   if (highRiskCount > 0) {
     status = "blocked";
     reasons.push(`${highRiskCount} high-severity risk${highRiskCount === 1 ? "" : "s"} detected.`);
+  }
+  if (blockedAttempts > config.gates.maxBlockedAttempts) {
+    status = "blocked";
+    reasons.push(`${blockedAttempts} blocked risky attempts (gate allows ${config.gates.maxBlockedAttempts}).`);
   }
   if (mediumRiskCount > 0) {
     if (status === "ready") status = "needs-review";
@@ -493,22 +515,22 @@ function buildDashboardDecision(
   };
 }
 
-const LEDGER_ROW_LABELS: Partial<Record<LedgerClaim["id"], string>> = {
-  callers: "No other callers",
-  device: "On-device check",
-  browser: "In-browser check",
-  fix: "Fix verified"
-};
+// Inferred commands are displayed as inferred; declined calls and bare starts
+// remain in the timeline but cannot substantiate a dashboard claim.
+function dashboardEvidenceCandidate(command: CommandRecord): boolean {
+  return command.status === "inferred" || isObservedExecution(command);
+}
 
 function buildEvidenceRows(
-  finalSummary: string,
+  finalTexts: string[],
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  ledger: ClaimsLedger
+  ledger: ClaimsLedger,
+  events: StoredEvent[]
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
-  const rows = evaluateEvidenceClaims(finalSummary, commandStrings).map((claim) => {
+  const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
     const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
     // A claimed check renders the ledger verdict, so the dashboard agrees with
     // the report: a run after the final response does not back it. The one
@@ -517,8 +539,12 @@ function buildEvidenceRows(
     const entry = ledger.claims.find((item) => item.id === claim.id);
     if (entry) {
       const pattern = evidenceClaimRules.find((rule) => rule.id === claim.id)?.commandPattern;
-      const inferred = entry.verdict === "unsupported" && pattern ? (commands.find((command) => command.status === "inferred" && pattern.test(command.command)) ?? null) : null;
-      if (!inferred) return ledgerRow(entry, titleCase(claim.label), risks);
+      const inferred = entry.verdict === "unsupported" && pattern ? (commands.find((command) => command.status === "inferred" && command.eventId !== null && ledger.finalEventRowId !== null && command.eventId < ledger.finalEventRowId && pattern.test(command.command)) ?? null) : null;
+      if (!inferred) {
+        const row = ledgerRow(entry, titleCase(claim.label), risks);
+        if (entry.cited) row.eventStep = events.find(event => event.id === entry.cited?.eventRowId)?.idx ?? null;
+        return row;
+      }
       return toEvidenceRow({
         id: claim.id,
         label: titleCase(claim.label),
@@ -538,12 +564,17 @@ function buildEvidenceRows(
       risk
     });
   });
-  for (const entry of ledger.claims) {
-    const label = LEDGER_ROW_LABELS[entry.id];
-    if (label) rows.push(ledgerRow(entry, label, risks));
-  }
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
-  const finalSuccessClaimed = claimsFinalSuccess(finalSummary) || successRisk !== null;
+  const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
+  // A final success claim cannot present stronger evidence than one of its
+  // specific ledger claims. Keep the same outcome and citation on both rows.
+  if (finalSuccessClaimed && ledger.claims.length) {
+    const claimed = rows.filter(row => ledger.claims.some(claim => claim.id === row.id));
+    for (const status of ["contradicted", "missing-evidence", "inferred-evidence", "verified"]) {
+      const source = claimed.find(row => row.status === status);
+      if (source) return [...rows, { ...source, id: "final-success", label: "Final success" }];
+    }
+  }
   rows.push(
     toEvidenceRow({
       id: "final-success",
@@ -560,7 +591,7 @@ function buildEvidenceRows(
 function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): DashboardEvidenceRow {
   const risk =
     entry.verdict === "contradicted"
-      ? (risks.find((item) => item.category === "contradicted-claim" && item.message.includes(entry.claimText)) ?? null)
+      ? (risks.find((item) => item.category === "contradicted-claim" && item.message.startsWith(`Final response claims ${entry.label} success,`)) ?? null)
       : (risks.find((item) => item.category === entry.category) ?? null);
   return toEvidenceRow({
     id: entry.id,
@@ -592,6 +623,7 @@ function toEvidenceRow(input: {
     command: input.command?.command ?? null,
     commandStatus: input.command?.status ?? null,
     commandExitCode: input.command?.exitCode ?? null,
+    eventStep: null,
     riskCategory: input.risk?.category ?? null,
     riskMessage: input.risk?.message ?? null
   };

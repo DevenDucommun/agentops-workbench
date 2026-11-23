@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Session | forensic-terminal-transcript |
+| Session | forensic-terminal-transcript-7c188a0d6c8148db717ea6ad15182164 |
 | Adapter | forensic-text |
 | Task | Forensic import from plain-text transcript |
 | Agent | Codex |
@@ -30,7 +30,7 @@
 - 3. **file_read**: Inferred file mention from plain text: src/server.ts
 - 4. **file_edit**: Inferred file change from plain text: src/server.ts
 - 5. **file_edit**: Inferred file change from plain text: test/server.test.ts
-- 6. **tool_call**: Observed shell command from plain text: bun test
+- <a id="event-step-6"></a>6. **tool_call**: Observed shell command from plain text: bun test
 - 7. **final_response** (assistant): Implemented the health endpoint and verified it with bun test.
 
 ## Files Touched
@@ -46,6 +46,12 @@
 ## Tests And Verification Evidence
 
 - `bun test` - observed, exit 0
+
+## Claims Ledger
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| test | Supported | `bun test` (exit 0), [step 6](#event-step-6) |
 
 ## Risk Flags
 

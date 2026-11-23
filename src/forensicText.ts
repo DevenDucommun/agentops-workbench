@@ -1,6 +1,7 @@
-import { basename, extname, resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
+import { fallbackSessionId } from "./parser";
 import { redactValue } from "./redaction";
 import type { ParsedTranscript, RawEvent } from "./types";
 
@@ -76,7 +77,7 @@ export function parseForensicTextTranscript(
   }
 
   const resolvedPath = resolve(sourcePath);
-  const fallbackId = basename(sourcePath).replace(/\.[^.]+$/, "") || "forensic-session";
+  const fallbackId = fallbackSessionId(sourcePath, input, "forensic-session");
   const events: RawEvent[] = [
     forensicNote(
       "Forensic plain-text import: evidence is lower-fidelity than provider JSONL. Commands from shell prompts are observed; commands and file changes from narrative text are inferred."
@@ -89,8 +90,10 @@ export function parseForensicTextTranscript(
   for (const entry of meaningfulLines) {
     const exitCode = extractExitCode(entry.line);
     if (exitCode !== null) {
-      const previous = [...commandEvents].reverse().find((candidate) => entry.lineNumber - candidate.lineNumber <= 8);
-      if (previous) {
+      // An exit code belongs to the most recent command, and only if that command
+      // has none yet; never to an earlier command past a newer prompt.
+      const previous = commandEvents.at(-1);
+      if (previous && entry.lineNumber - previous.lineNumber <= 8 && previous.event.exitCode === undefined) {
         previous.event.exitCode = exitCode;
         previous.event.status = previous.event.status === "inferred" ? "inferred" : "observed";
       }
@@ -100,7 +103,10 @@ export function parseForensicTextTranscript(
     const observedCommand = extractObservedCommand(entry.line);
     const inferredCommand = observedCommand ? null : extractInferredCommand(entry.line);
     const command = observedCommand ?? inferredCommand;
-    if (command && !seenCommands.has(command)) {
+    // Every shell prompt line is a separate execution, so observed commands are
+    // never merged. A command only mentioned in prose is recorded once, and not
+    // at all when it was also observed.
+    if (command && (observedCommand || !seenCommands.has(command))) {
       seenCommands.add(command);
       const event: RawEvent = {
         schemaVersion: "agentops.event.v1",
@@ -252,16 +258,33 @@ function extractFilePaths(line: string): string[] {
     .slice(0, 50);
 }
 
+/** A line that starts another speaker's turn in a pasted transcript. */
+const TURN_MARKER = /^(?:user|human|you|me|system|assistant|claude|codex|agent|final|summary|result)\s*:/i;
+
 function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>): string | null {
-  const marker = [...lines].reverse().find((entry) => /^(?:final|assistant|summary|result)\s*:/i.test(entry.line));
-  if (marker) return compact(marker.line.replace(/^(?:final|assistant|summary|result)\s*:\s*/i, ""));
+  const markerPattern = /^(?:final|assistant|summary|result)\s*:\s*/i;
+  let markerIndex = -1;
+  lines.forEach((entry, index) => {
+    if (markerPattern.test(entry.line)) markerIndex = index;
+  });
+  if (markerIndex >= 0) {
+    // The response runs from the marker to the next speaker turn or observed command,
+    // so a claim on a continuation line is checked and a later user turn is not. Prose
+    // that mentions an exit code is part of the response.
+    const parts = [(lines[markerIndex]?.line ?? "").replace(markerPattern, "")];
+    for (const entry of lines.slice(markerIndex + 1)) {
+      if (TURN_MARKER.test(entry.line) || extractObservedCommand(entry.line)) break;
+      parts.push(entry.line);
+    }
+    return collapse(parts.join(" ")) || null;
+  }
 
   const candidates = lines
     .filter((entry) => !extractObservedCommand(entry.line) && !extractExitCode(entry.line))
     .map((entry) => entry.line)
     .filter((line) => line.length > 20);
   const tail = candidates.slice(-3).join(" ");
-  return tail ? compact(tail) : null;
+  return tail ? collapse(tail) : null;
 }
 
 function inferAgent(input: string): string {
@@ -271,7 +294,7 @@ function inferAgent(input: string): string {
   return "Unknown";
 }
 
-function compact(value: string): string {
-  const oneLine = value.replace(/\s+/g, " ").trim();
-  return oneLine.length > 1000 ? `${oneLine.slice(0, 997)}...` : oneLine;
+/** Whitespace-collapsed but never clipped: claim checks read the whole final response. */
+function collapse(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }

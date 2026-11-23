@@ -55,9 +55,7 @@ The dashboard currently provides:
 - merge-readiness summary for a selected session
 - claim-vs-evidence matrix for tests, lint, typecheck, build, and final
   success, with separate labels for verified, inferred, contradicted, and
-  missing evidence. Rows for "no other callers", on-device, in-browser and
-  "fixed" claims appear when the final response makes them. Verdicts come from
-  the [claims ledger](QUALITY_GATES.md#claims-ledger)
+  missing evidence. Verification claim verdicts come from the [claims ledger](QUALITY_GATES.md#claims-ledger)
 - risk severity drilldown with linked event, command, file, and evidence context
 - run comparison between two sessions
 - session timeline
