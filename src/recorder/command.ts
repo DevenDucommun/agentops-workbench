@@ -95,8 +95,13 @@ async function forgetSession(sessionId: string, stores: string[], spoolDir: stri
       // either commits before the delete below or stores nothing.
       const generation = spoolExists ? spoolGeneration(readFileSync(spool, "utf8")) : null;
       if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
-      // Take the write lock on every store before deleting from any, so a busy
-      // store stops forget with every store unchanged.
+      // Take an exclusive lock on every store before deleting from any, so a busy
+      // store, or one a reader holds, stops forget with every store unchanged.
+      // EXCLUSIVE (not IMMEDIATE) also locks out readers, so no COMMIT below can
+      // wait on one after another store has committed. All stores share one wait
+      // budget, which keeps forget's hold on the spool lock under the hooks'
+      // stale-lock limit however many stores there are.
+      const deadline = Date.now() + FORGET_STORE_BUSY_TIMEOUT_MS;
       const open: InstanceType<typeof Database>[] = [];
       try {
         try {
@@ -104,9 +109,9 @@ async function forgetSession(sessionId: string, stores: string[], spoolDir: stri
             if (!storeExists(store)) continue;
             const db = new Database(store);
             open.push(db);
-            db.exec(`PRAGMA busy_timeout = ${FORGET_STORE_BUSY_TIMEOUT_MS}`);
+            db.exec(`PRAGMA busy_timeout = ${Math.max(1, deadline - Date.now())}`);
             db.exec("PRAGMA foreign_keys = ON");
-            db.exec("BEGIN IMMEDIATE");
+            db.exec("BEGIN EXCLUSIVE");
           }
           // Exact id only. A redacted id is shared by every id of its kind, so it
           // never identifies one session.
@@ -158,9 +163,9 @@ async function forgetSession(sessionId: string, stores: string[], spoolDir: stri
 /** How long forget waits for a hook to finish appending before giving up. */
 const FORGET_LOCK_TIMEOUT_MS = 2000;
 /**
- * How long forget waits for a running import to commit before giving up. Kept
- * well under the hooks' five-second stale-lock limit, so a hook never treats the
- * lock forget holds as abandoned.
+ * How long forget waits, in total across every store, for other connections to
+ * finish before giving up. Kept well under the hooks' five-second stale-lock
+ * limit, so a hook never treats the spool lock forget holds as abandoned.
  */
 const FORGET_STORE_BUSY_TIMEOUT_MS = 2500;
 

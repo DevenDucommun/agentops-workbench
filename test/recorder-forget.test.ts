@@ -386,3 +386,43 @@ test("review 6024679539: a busy second store makes forget remove nothing from an
   expect(sessionCount(subStore, COMMIT)).toBe(0);
   expect(existsSync(spool)).toBe(false);
 }, 10_000);
+
+test("review 6024993200: a reader on the second store makes forget remove nothing from any store", async () => {
+  const { repo, env, sub, subStore, spool } = await restoredInSubdirectory();
+  const mainStore = join(repo, ".agentops", "agentops.db");
+  const { Database } = await import("bun:sqlite");
+  const reader = new Database(subStore);
+  reader.exec("BEGIN");
+  reader.query("SELECT count(*) FROM sessions").get();
+  let out: Awaited<ReturnType<typeof runRecorderCommand>>;
+  try {
+    out = await runRecorderCommand(["forget", COMMIT], { cwd: sub, env });
+  } finally {
+    reader.exec("ROLLBACK");
+    reader.close();
+  }
+  expect(out.exitCode).toBe(1);
+  expect(sessionCount(mainStore, COMMIT)).toBe(1);
+  expect(sessionCount(subStore, COMMIT)).toBe(1);
+  expect(existsSync(spool)).toBe(true);
+}, 10_000);
+
+test("review 6024993200: two busy stores share one wait budget, under the hooks' stale-lock limit", async () => {
+  const { repo, env, sub, subStore } = await restoredInSubdirectory();
+  const mainStore = join(repo, ".agentops", "agentops.db");
+  const { Database } = await import("bun:sqlite");
+  const holders = [new Database(mainStore), new Database(subStore)];
+  for (const h of holders) h.exec("BEGIN IMMEDIATE");
+  const started = Date.now();
+  let out: Awaited<ReturnType<typeof runRecorderCommand>>;
+  try {
+    out = await runRecorderCommand(["forget", COMMIT], { cwd: sub, env });
+  } finally {
+    for (const h of holders) {
+      h.exec("ROLLBACK");
+      h.close();
+    }
+  }
+  expect(out.exitCode).toBe(1);
+  expect(Date.now() - started).toBeLessThan(4000);
+}, 15_000);
