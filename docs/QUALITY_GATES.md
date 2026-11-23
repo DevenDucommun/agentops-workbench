@@ -154,9 +154,9 @@ What counts:
   and are excluded from same-command and same-file counts.
 - Only file changes with evidence they landed count, both toward
   `repeated-edits` and as the change that separates a failure from its rerun.
-  Failed or denied edits are never recorded as changes. A Claude Code edit with
-  no recorded result (`no_result`) still appears in the session's file list,
-  but the stall rules ignore it.
+  Failed, denied, skipped, inferred and unanswered edits can still appear
+  in the session file list and inform existing gate checks. They do not count
+  as applied edits for either stall signal.
 
 Limit: a rerun counts only if it started after the failure's result was
 recorded. Hook calls with a matching invocation and agent ID use their recorded

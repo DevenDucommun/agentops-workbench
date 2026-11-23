@@ -153,11 +153,11 @@ describe("review 6010139248: edit outcomes, run order, shell runs, argument boun
   const use = (id: string, name: string, input: Record<string, unknown>) => ({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } });
   const result = (id: string, isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content: isError ? "error" : "ok" }] } });
 
-  test("failed Claude edits are not applied changes", () => {
+  test("failed Claude edits remain in the file list and do not count as applied changes", () => {
     const records: unknown[] = [init];
     for (let i = 0; i < 6; i++) records.push(use(`e${i}`, "Edit", { file_path: "src/a.ts", old_string: "a", new_string: "b" }), result(`e${i}`, true));
     const { flags, files } = claude([...records, done]);
-    expect(files).toBe(0);
+    expect(files).toBe(6);
     expect(flags).toEqual([]);
   });
 
@@ -312,6 +312,19 @@ describe("stall evidence after privacy filtering and normalization", () => {
       expect(categories([command(1), ...Array.from({ length: 6 }, () => edit(extra)), command(0)])).toEqual(["retry-without-change"]);
     }
     expect(categories([command(1), ...Array.from({ length: 6 }, () => edit({ status: "completed" })), command(0)])).toEqual(["repeated-edits"]);
+  });
+  test("a failed sensitive-file edit is still evidence for the existing gate", () => {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stall-gate-")), "agentops.db"));
+    try {
+      const session = [{ type: "session", id: "sensitive-attempt" }, edit({ path: ".env", status: "failed" }), command(0)];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("session.jsonl", session.map(row => JSON.stringify(row)).join("\n")), defaultConfig);
+      analyzeSession(store, sessionId, defaultConfig);
+      const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] });
+      expect(gate.status).toBe("failed");
+      expect(gate.checks.find(check => check.id === "max-high-risks")?.observed).toBe(1);
+    } finally {
+      store.db.close();
+    }
   });
   test("an edit separates hook calls only if it precedes the second start", () => {
     const start = (toolUseId: string) => ({ type: "tool_started", toolName: "Bash", toolUseId });

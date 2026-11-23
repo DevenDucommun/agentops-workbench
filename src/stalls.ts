@@ -28,11 +28,8 @@ const START_STATUSES = new Set(["started", "in_progress", "running"]);
  * result was recorded. Hook invocation IDs identify a recorded start; other
  * start rows are matched in order and overlapping runs may be paired wrongly.
  * `repeated-edits`: one file changed at least `repeatedEditThreshold` times.
- * File changes are applied changes only: ingest skips the start half of a
- * start/completion pair and failed or denied attempts (for Claude Code, an
- * edit whose linked result is an error). Callers pass only changes with
- * evidence they landed: the analyzer drops a Claude Code edit with no recorded
- * result (`no_result`), which still appears in the session's file list.
+ * The caller supplies only applied file changes. The store keeps attempts for
+ * session reports and existing gates, including sensitive-file checks.
  */
 export function detectStalls(
   commands: CommandRecord[],

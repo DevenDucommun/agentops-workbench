@@ -274,7 +274,7 @@ export function ingestTranscript(
       }
 
       const filePath = extractPath(event);
-      if (filePath && isFileChangeType(type) && isAppliedChange(event.status)) {
+      if (filePath && isFileChangeType(type)) {
         insertFileChange.run({
           $sessionId: session.id,
           $eventId: row.id,
@@ -460,16 +460,6 @@ function inferEventType(event: Record<string, unknown>): string {
 
 function isFileChangeType(type: string): boolean {
   return ["file_write", "file_edit", "write", "edit", "patch", "apply_patch"].includes(type);
-}
-
-// A file change counts once, when it lands: the start half of a start/completion
-// pair (Codex `item.started`) and failed or denied attempts changed nothing. An
-// edit with no recorded result (`no_result`) may have landed before the stream
-// ended, so it still counts, as it always has.
-const UNAPPLIED_CHANGE_STATUSES = new Set(["in_progress", "started", "running", "pending", "queued", "failed", "error", "denied", "declined", "rejected", "cancelled", "canceled"]);
-
-function isAppliedChange(status: unknown): boolean {
-  return typeof status !== "string" || !UNAPPLIED_CHANGE_STATUSES.has(status.toLowerCase());
 }
 
 function extractToolName(event: RawEvent, command: string | null): string | null {
