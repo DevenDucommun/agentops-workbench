@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -217,6 +218,37 @@ test("guides first-run setup with doctor and demo commands", async () => {
   expect(sessions.exitCode).toBe(0);
   expect(sessions.stdout).toContain("sample-session");
   expect(sessions.stdout).toContain("risky-session");
+});
+
+test("audit finishes an import when a concurrent reader releases its snapshot", async () => {
+  const path = process.env.AGENTOPS_DB!;
+  expect((await runCli(["audit", "fixtures/sample-session.jsonl", "--quiet"])).exitCode).toBe(0);
+  const reader = new Database(path, { readonly: true });
+  const count = reader.query("SELECT count(*) AS n FROM sessions");
+  let writer: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    expect(reader.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+    reader.exec("BEGIN");
+    expect(count.get()).toEqual({ n: 1 });
+    writer = Bun.spawn([process.execPath, "src/main.ts", "audit", "fixtures/risky-session.jsonl", "--quiet"], {
+      env: { ...process.env, AGENTOPS_DB: path },
+      stdout: "ignore", stderr: "pipe"
+    });
+    // The rollback journal appears when the importer starts writing. Keep the
+    // snapshot open briefly so the importer reaches its commit with a reader.
+    const deadline = performance.now() + 3000;
+    while (!existsSync(path + "-journal") && writer.exitCode === null && performance.now() < deadline) await Bun.sleep(2);
+    const observedWriter = existsSync(path + "-journal");
+    await Bun.sleep(50);
+    expect(count.get()).toEqual({ n: 1 });
+    reader.exec("COMMIT");
+    expect(await writer.exited).toBe(0);
+    expect(observedWriter).toBe(true);
+    expect(count.get()).toEqual({ n: 2 });
+  } finally {
+    reader.close();
+    if (writer) await writer.exited;
+  }
 });
 
 test("audits artifacts and creates PR-ready output with short commands", async () => {

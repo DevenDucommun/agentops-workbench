@@ -178,25 +178,27 @@ function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: str
   const bare = !LEADING_ASSIGNMENT.test(command.replace(/\t/g, " ").replace(/^\s*env\s+/, ""));
   const matches = (base: string | null) =>
     base !== null && base !== "" && observed.some((spelling) => spelling === base || spelling.startsWith(`${base} `));
-  const asWritten = normalizeCommand(command.replace(/\t/g, " "));
-  if (configured.some((candidate) => normalizeCommand(candidate.replace(/\t/g, " ")) === asWritten)) return true;
-  // A run that, in any of the spellings above, is exactly another kind's
-  // configured command belongs to that kind: the looser spellings never let it
-  // contradict this one (a failed lint `node verify.cjs` or
-  // `env node verify.cjs` is not a failed test `CHECK=unit node verify.cjs`).
-  const kinds = Object.keys({ ...DEFAULT_SUPPORT_COMMANDS, ...config.evidence.supportCommands }) as EvidenceClaimId[];
-  const ownedElsewhere = kinds.some((kind) => {
-    if (kind === rule.id) return false;
-    const entries = config.evidence.supportCommands?.[kind] ?? DEFAULT_SUPPORT_COMMANDS[kind] ?? [];
-    return entries.some((entry) => {
-      const base = normalizeCommand(entry.replace(/\t/g, " "));
-      return base !== null && observed.includes(base);
-    });
-  });
-  if (ownedElsewhere) return false;
+  // Keep environment selectors for as long as a configured command matches.
+  // Within each spelling the longest whole-word command owns a narrowed run.
+  const kinds = Object.keys(DEFAULT_SUPPORT_COMMANDS) as EvidenceClaimId[];
+  for (const spelling of observed) {
+    let longest = 0;
+    let matchesKind = false;
+    for (const kind of kinds) {
+      const entries = config.evidence.supportCommands?.[kind] ?? DEFAULT_SUPPORT_COMMANDS[kind];
+      for (const entry of entries) {
+        const base = normalizeCommand(entry.replace(/\t/g, " "));
+        if (!base || base.length < longest || (spelling !== base && !spelling.startsWith(`${base} `))) continue;
+        if (base.length > longest) matchesKind = false;
+        longest = base.length;
+        if (kind === rule.id) matchesKind = true;
+      }
+    }
+    if (longest > 0) return matchesKind;
+  }
   return configured.some((candidate) => {
     const spaced = candidate.replace(/\t/g, " ");
-    return matches(normalizeCommand(spaced)) || (bare && matches(normalizeCommand(stripLeadingAssignments(spaced))));
+    return bare && matches(normalizeCommand(stripLeadingAssignments(spaced)));
   });
 }
 
