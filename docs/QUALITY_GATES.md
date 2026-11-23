@@ -69,6 +69,10 @@ and still-running commands never count. The verdict cites the run it rests on
 by `eventId`, or by stored event row for sessions recorded without event IDs.
 A claim that fails, then passes on a re-run, is supported.
 
+The session report (`agentops save report`) and PR comment (`agentops save pr`)
+show each ledger verdict and cite its timeline step when evidence exists. The
+dashboard uses those verdicts for claimed checks. Inferred evidence has its own label.
+
 Evidence is asymmetric, so no rule can hide a failure:
 
 - **Against a claim:** any failed run whose command mentions the kind anywhere

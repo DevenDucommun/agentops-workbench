@@ -20,3 +20,4 @@ Artifacts:
 - `sample-quality-gate.json`: Machine-readable passing quality gate result.
 - `risky-quality-gate-comment.md`: GitHub-ready failing quality gate body for a risky session.
 - `forensic-transcript-report.md`: Lower-fidelity forensic transcript report with evidence-quality labels.
+- `contradicted-claim-report.md`: Report whose claims ledger marks "all tests pass" as contradicted by the failing test run before it.

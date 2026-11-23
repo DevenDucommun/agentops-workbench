@@ -25,7 +25,7 @@
 - 4. **file_read**: Read server route definitions.
 - 5. **file_edit**: Added GET /health route returning ok status.
 - 6. **file_edit**: Added test coverage for /health.
-- 7. **tool_call**: functions.exec_command
+- <a id="event-step-7"></a>7. **tool_call**: functions.exec_command
 - 8. **final_response** (assistant): Implemented the /health endpoint and verified it with bun test.
 
 ## Files Touched
@@ -41,6 +41,12 @@
 ## Tests And Verification Evidence
 
 - `bun test` - completed, exit 0
+
+## Claims Ledger
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| test | Supported | `bun test` (exit 0), [step 7](#event-step-7) |
 
 ## Risk Flags
 

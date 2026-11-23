@@ -1,6 +1,6 @@
 import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
-import { type ClaimsLedger, getClaimsLedger } from "./ledger";
 import type { AgentOpsConfig } from "./config";
+import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
   getEvents,
@@ -130,10 +130,11 @@ type DashboardEvidenceRow = {
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "inferred-evidence" | "missing-evidence" | "not-claimed";
+  status: "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
+  eventStep: number | null;
   riskCategory: string | null;
   riskMessage: string | null;
 };
@@ -459,13 +460,16 @@ function buildDashboardDecision(
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands.filter(dashboardEvidenceCandidate), risks, verification, ledger);
+  const evidence = buildEvidenceRows(finalTexts, commands.filter(dashboardEvidenceCandidate), risks, verification, ledger, events);
   // The same counts the quality gate uses, so the dashboard and `agentops check` agree.
   const highRiskCount = gateHighRiskCount(commands, risks, config);
   const blockedAttempts = countBlockedAttempts(commands, config);
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
-  const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
-  const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
+  // A final-success summary that mirrors a ledger row is not another check.
+  const checks = evidence.filter(row => row.id !== "final-success" || !row.claimed || ledger.claims.length === 0);
+  const missingEvidenceCount = checks.filter((row) => row.status === "missing-evidence").length;
+  const contradictedCount = checks.filter((row) => row.status === "contradicted").length;
+  const inferredEvidenceCount = checks.filter((row) => row.status === "inferred-evidence").length;
   const reasons: string[] = [];
   let status: DashboardMergeReadiness["status"] = "ready";
 
@@ -484,6 +488,10 @@ function buildDashboardDecision(
   if (missingEvidenceCount > 0) {
     if (status === "ready") status = "needs-review";
     reasons.push(`${missingEvidenceCount} claimed check${missingEvidenceCount === 1 ? "" : "s"} missing command evidence.`);
+  }
+  if (contradictedCount > 0) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(`${contradictedCount} claimed check${contradictedCount === 1 ? " is" : "s are"} contradicted by a failing run.`);
   }
   if (inferredEvidenceCount > 0) {
     if (status === "ready") status = "needs-review";
@@ -520,26 +528,35 @@ function buildEvidenceRows(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  ledger: ClaimsLedger
+  ledger: ClaimsLedger,
+  events: StoredEvent[]
 ): DashboardEvidenceRow[] {
   const commandStrings = commands.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
-    const risk = risks.find((entry) => entry.category === claim.category) ?? null;
-    // No command mentions the kind, but the ledger supports the claim (a
-    // configured support command such as `bun run ci`): show the ledger's
-    // verdict and the run it cites, never another run of the same command.
-    const entry = claim.matchingCommand === null ? ledger.claims.find((item) => item.id === claim.id && item.verdict === "supported") : undefined;
-    if (entry?.cited) {
+    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+    // A claimed check renders the ledger verdict, so the dashboard agrees with
+    // the report: a run after the final response does not back it. The one
+    // exception is inferred (forensic) evidence, which the ledger does not count:
+    // an unsupported claim with an inferred matching command keeps that row.
+    const entry = ledger.claims.find((item) => item.id === claim.id);
+    if (entry) {
+      const pattern = evidenceClaimRules.find((rule) => rule.id === claim.id)?.commandPattern;
+      const inferred = entry.verdict === "unsupported" && pattern ? (commands.find((command) => command.status === "inferred" && command.eventId !== null && ledger.finalEventRowId !== null && command.eventId < ledger.finalEventRowId && pattern.test(command.command)) ?? null) : null;
+      if (!inferred) {
+        const row = ledgerRow(entry, titleCase(claim.label), risks);
+        if (entry.cited) row.eventStep = events.find(event => event.id === entry.cited?.eventRowId)?.idx ?? null;
+        return row;
+      }
       return toEvidenceRow({
         id: claim.id,
         label: titleCase(claim.label),
         claimed: true,
         evidenceFound: true,
-        command: { id: 0, eventId: entry.cited.eventRowId, command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode, output: null },
-        risk
+        command: inferred,
+        risk: risks.find((item) => item.category === claim.category) ?? null
       });
     }
-    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+    const risk = risks.find((item) => item.category === claim.category) ?? null;
     return toEvidenceRow({
       id: claim.id,
       label: titleCase(claim.label),
@@ -551,6 +568,15 @@ function buildEvidenceRows(
   });
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
   const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
+  // A final success claim cannot present stronger evidence than one of its
+  // specific ledger claims. Keep the same outcome and citation on both rows.
+  if (finalSuccessClaimed && ledger.claims.length) {
+    const claimed = rows.filter(row => ledger.claims.some(claim => claim.id === row.id));
+    for (const status of ["contradicted", "missing-evidence", "inferred-evidence", "verified"]) {
+      const source = claimed.find(row => row.status === status);
+      if (source) return [...rows, { ...source, id: "final-success", label: "Final success" }];
+    }
+  }
   rows.push(
     toEvidenceRow({
       id: "final-success",
@@ -564,15 +590,32 @@ function buildEvidenceRows(
   return rows;
 }
 
+function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): DashboardEvidenceRow {
+  const risk =
+    entry.verdict === "contradicted"
+      ? (risks.find((item) => item.category === "contradicted-claim" && item.message.startsWith(`Final response claims ${entry.label} success,`)) ?? null)
+      : (risks.find((item) => item.category === entry.category) ?? null);
+  return toEvidenceRow({
+    id: entry.id,
+    label,
+    claimed: true,
+    evidenceFound: entry.verdict !== "unsupported",
+    contradicted: entry.verdict === "contradicted",
+    command: entry.cited ? { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode } : null,
+    risk
+  });
+}
+
 function toEvidenceRow(input: {
   id: DashboardEvidenceRow["id"];
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  command: CommandRecord | null;
+  contradicted?: boolean;
+  command: Pick<CommandRecord, "command" | "status" | "exitCode"> | null;
   risk: RiskFlagRecord | null;
 }): DashboardEvidenceRow {
-  const status = evidenceStatus(input.evidenceFound, input.claimed, input.command);
+  const status = input.contradicted ? "contradicted" : evidenceStatus(input.evidenceFound, input.claimed, input.command);
   return {
     id: input.id,
     label: input.label,
@@ -582,6 +625,7 @@ function toEvidenceRow(input: {
     command: input.command?.command ?? null,
     commandStatus: input.command?.status ?? null,
     commandExitCode: input.command?.exitCode ?? null,
+    eventStep: null,
     riskCategory: input.risk?.category ?? null,
     riskMessage: input.risk?.message ?? null
   };
@@ -590,7 +634,7 @@ function toEvidenceRow(input: {
 function evidenceStatus(
   evidenceFound: boolean,
   claimed: boolean,
-  command: CommandRecord | null
+  command: Pick<CommandRecord, "status"> | null
 ): DashboardEvidenceRow["status"] {
   if (!evidenceFound) return claimed ? "missing-evidence" : "not-claimed";
   return command?.status === "inferred" ? "inferred-evidence" : "verified";

@@ -120,7 +120,7 @@ describe("chainEvents and checkChain", () => {
   });
 });
 
-test("chain fields leave the session report byte-identical to the golden output", () => {
+test("the chained report matches the golden output with its source event ID in the ledger citation", () => {
   const dir = mkdtempSync(join(tmpdir(), "agentops-chain-golden-"));
   const store = openStore(join(dir, "agentops.db"));
   const transcript = parseJsonlTranscript("fixtures/sample-session.jsonl", readFileSync("fixtures/sample-session.jsonl", "utf8"));
@@ -137,6 +137,9 @@ test("chain fields leave the session report byte-identical to the golden output"
   expect(stored.length).toBe(chained.events.length);
   expect(stored.every((row) => row.rawJson.includes('"prevHash"') && row.rawJson.includes('"hash"'))).toBe(true);
 
-  expect(generateMarkdownReport(store, "sample-session", config)).toBe(readFileSync("fixtures/golden/sample-report.md", "utf8"));
+  const golden = readFileSync("fixtures/golden/sample-report.md", "utf8");
+  const citation = "[step 7](#event-step-7)";
+  expect(golden).toContain(citation);
+  expect(generateMarkdownReport(store, "sample-session", config)).toBe(golden.replace(citation, citation + " (sample-session:7)"));
   store.db.close();
 });

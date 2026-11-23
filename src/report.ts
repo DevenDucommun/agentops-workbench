@@ -2,6 +2,7 @@ import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { isVerificationCommand } from "./analyzer";
 import { evaluateQualityGate, formatGateGithub } from "./gate";
+import { type ClaimsLedger, getClaimsLedger, type LedgerEvidence } from "./ledger";
 import { getCommands, getEvents, getFileChanges, getRiskFlags, getSession, getUsageSummary, type Store } from "./store";
 import { displayGitPath, type GitChange } from "./git";
 import type { UsageSummary } from "./types";
@@ -20,6 +21,10 @@ type RepoReportData = {
 };
 
 export function generateMarkdownReport(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): string {
+  return store.db.transaction(() => renderMarkdownReport(store, sessionId, config))();
+}
+
+function renderMarkdownReport(store: Store, sessionId: string, config: AgentOpsConfig): string {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
@@ -30,6 +35,8 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
   const usage = getUsageSummary(store, sessionId);
   const verification = commands.filter((command) => isVerificationCommand(command.command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
+  const ledger = getClaimsLedger(store, sessionId, config);
+  const citedEvents = new Set(ledger.claims.map(claim => claim.cited?.eventRowId));
 
   const sections = [
     "# AgentOps Session Report",
@@ -52,7 +59,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
     ...(hasUsage(usage) ? ["## Usage", usageTable(usage)] : []),
     "## Timeline",
     events.length
-      ? events.map((event) => `- ${event.idx}. **${event.type}**${event.role ? ` (${event.role})` : ""}: ${event.summary}`).join("\n")
+      ? events.map((event) => `- ${citedEvents.has(event.id) ? `<a id="event-step-${event.idx}"></a>` : ""}${event.idx}. **${event.type}**${event.role ? ` (${event.role})` : ""}: ${event.summary}`).join("\n")
       : "- No events recorded.",
     "## Files Touched",
     files.length
@@ -77,6 +84,7 @@ export function generateMarkdownReport(store: Store, sessionId: string, config: 
     verification.length
       ? verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}${formatExit(command.exitCode)}`).join("\n")
       : "- No test, lint, typecheck, or verification command recorded.",
+    ...(ledger.claims.length ? ["## Claims Ledger", formatLedger(ledger, events, true)] : []),
     "## Risk Flags",
     formatRiskFlags(risks),
     "## Final Outcome",
@@ -148,7 +156,12 @@ export function generateGithubRepoComment(
   gitChanges: GitChange[],
   config: AgentOpsConfig = defaultConfig
 ): string {
+  return store.db.transaction(() => renderGithubRepoComment(store, sessionId, gitChanges, config))();
+}
+
+function renderGithubRepoComment(store: Store, sessionId: string, gitChanges: GitChange[], config: AgentOpsConfig): string {
   const data = buildRepoReportData(store, sessionId, gitChanges, config);
+  const ledger = getClaimsLedger(store, sessionId, config);
   const status = data.risks.some((risk) => risk.severity === "high")
     ? "High-risk findings present"
     : data.risks.length > 0
@@ -173,6 +186,7 @@ export function generateGithubRepoComment(
     data.verification.length
       ? data.verification.map((command) => `- \`${command.command}\` - ${command.status ?? "unknown"}`).join("\n")
       : "- No verification command recorded.",
+    ...(ledger.claims.length ? ["### Claims", formatLedger(ledger, getEvents(store, sessionId), false)] : []),
     "### Risk Flags",
     formatRiskFlags(data.risks, 4),
     "### Git Changes Not Observed In Session",
@@ -186,6 +200,27 @@ export function generateGithubRepoComment(
   ];
 
   return `${sections.join("\n\n")}\n`;
+}
+
+const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported" } as const;
+
+/** One row per claim in the final response: its verdict and the run it rests on (spec R2.5). */
+function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: number }>, linkTimeline: boolean): string {
+  const steps = new Map(events.map((event) => [event.id, event.idx]));
+  const rows = ledger.claims.map((claim) => {
+    const evidence = claim.cited
+      ? `\`${claim.cited.command}\`${claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`}, ${stepRef(claim.cited, steps, linkTimeline)}`
+      : claim.reason;
+    return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(evidence)} |`;
+  });
+  return ["| Claim | Verdict | Evidence |", "| --- | --- | --- |", ...rows].join("\n");
+}
+
+/** The timeline step that recorded a run, plus its source eventId when there is one. */
+function stepRef(evidence: LedgerEvidence, steps: Map<number, number>, linkTimeline: boolean): string {
+  const step = evidence.eventRowId === null ? undefined : steps.get(evidence.eventRowId);
+  const label = step === undefined ? "unlinked event" : linkTimeline ? `[step ${step}](#event-step-${step})` : `step ${step}`;
+  return evidence.eventId ? `${label} (${evidence.eventId})` : label;
 }
 
 function table(rows: Array<[string, string]>): string {

@@ -54,7 +54,8 @@ The dashboard currently provides:
 - evidence-quality summary for structured JSONL and forensic text imports
 - merge-readiness summary for a selected session
 - claim-vs-evidence matrix for tests, lint, typecheck, build, and final
-  success, with separate labels for verified, inferred, and missing evidence
+  success, with separate labels for verified, inferred, contradicted, and
+  missing evidence. Verification claim verdicts come from the [claims ledger](QUALITY_GATES.md#claims-ledger)
 - risk severity drilldown with linked event, command, file, and evidence context
 - run comparison between two sessions
 - session timeline

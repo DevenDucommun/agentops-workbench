@@ -279,11 +279,12 @@
         ? '<code>' + escapeHtml(row.command) + '</code><div class="evidence-detail">' + escapeHtml(row.commandStatus || "unknown") + formatExit(row.commandExitCode) + '</div>'
         : row.riskMessage
           ? '<div class="evidence-detail">' + escapeHtml(row.riskMessage) + '</div>'
-          : '<div class="evidence-detail">No claim recorded.</div>';
+          : '<div class="evidence-detail">' + (row.claimed ? 'No supporting evidence recorded.' : 'No claim recorded.') + '</div>';
+      const citation = Number.isInteger(row.eventStep) ? '<a href="#event-step-' + row.eventStep + '">Step ' + row.eventStep + '</a>' : '';
       return '<div class="evidence-row">' +
         '<div><strong>' + escapeHtml(row.label) + '</strong><div class="evidence-detail">' + (row.claimed ? 'Claimed' : 'Not claimed') + '</div></div>' +
         '<div><span class="pill ' + evidencePillClass(row.status) + '">' + escapeHtml(formatEvidenceStatus(row.status)) + '</span></div>' +
-        '<div>' + detail + '</div>' +
+        '<div>' + detail + citation + '</div>' +
       '</div>';
     }
 
@@ -294,7 +295,7 @@
         return;
       }
       container.innerHTML = events.map((event) =>
-        '<div class="event">' +
+        '<div class="event" id="event-step-' + event.idx + '">' +
           '<div class="event-index">' + event.idx + '</div>' +
           '<div><div class="event-type">' + escapeHtml(event.type) + (event.role ? ' <span class="subtle">(' + escapeHtml(event.role) + ')</span>' : '') + '</div>' +
           '<div class="subtle">' + escapeHtml(event.summary) + '</div></div>' +
@@ -388,7 +389,7 @@
     function evidencePillClass(status) {
       if (status === "verified") return "ok";
       if (status === "inferred-evidence") return "neutral";
-      if (status === "missing-evidence") return "missing";
+      if (status === "missing-evidence" || status === "contradicted") return "missing";
       return "neutral";
     }
 
@@ -396,6 +397,7 @@
       if (status === "verified") return "Evidence found";
       if (status === "inferred-evidence") return "Inferred evidence";
       if (status === "missing-evidence") return "Missing evidence";
+      if (status === "contradicted") return "Contradicted";
       return "Not claimed";
     }
 
