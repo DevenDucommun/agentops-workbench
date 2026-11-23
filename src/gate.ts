@@ -1,4 +1,4 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isExecutedCommandStatus, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedExecution, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -59,7 +59,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isObservedExecution(command) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);

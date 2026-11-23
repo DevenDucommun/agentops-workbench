@@ -176,7 +176,9 @@ rule or the user) or declined (by the agent runtime's approval policy) never
 ran. It raises a low `blocked-attempt` flag instead of `destructive-command`
 (high) or `permission-change` (medium). One blocked attempt is information:
 the guardrail worked. Repeated attempts fail the `max-blocked-attempts` gate
-once they exceed `gates.maxBlockedAttempts`.
+once they exceed `gates.maxBlockedAttempts`. A Codex command start without an
+exit code does not count as observed verification. A declined invocation
+cannot satisfy either the general or a configured required-command check.
 
 Commands that ran are unchanged: an executed `rm -rf` is still a high
 `destructive-command`. To count blocked commands as if they had run, as v3.2

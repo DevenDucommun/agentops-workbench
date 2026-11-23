@@ -140,7 +140,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
-  const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
+  const observedCommands = commands.filter(isObservedExecution);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -218,6 +218,12 @@ const NOT_EXECUTED_COMMAND_STATUSES = new Set(["inferred", "denied", "declined"]
 
 export function isExecutedCommandStatus(status: string | null | undefined): boolean {
   return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
+}
+
+/** A Codex start is emitted before approval and can be followed by a decline. */
+export function isObservedExecution(command: CommandRecord): boolean {
+  const status = command.status?.toLowerCase();
+  return isExecutedCommandStatus(status) && !(status === "in_progress" && command.exitCode === null);
 }
 
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {

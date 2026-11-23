@@ -146,6 +146,25 @@ describe("review 6010235387: invocation identity, start-row output, check-time p
     expect(check("max-blocked-attempts")?.observed).toBe(1);
   });
 
+  test("a declined verification invocation cannot satisfy either verification gate", () => {
+    const config = withConfig({ gates: { requiredVerificationCommands: ["test"] } });
+    const declined = (status: string) => ({ ...item("blocked", status), command: "rm -rf ./coverage && bun test" });
+    const blocked = [
+      { type: "item.started", item: declined("in_progress") },
+      { type: "item.completed", item: declined("declined") }
+    ];
+    const completed = (command: string) => ({ type: "item.completed", item: { ...item("ran", "completed"), command, exit_code: 0 } });
+    const onlyDecline = codex(blocked, config);
+    expect(onlyDecline.gate.status).toBe("failed");
+    expect(onlyDecline.check("required-verification")?.observed).toBe(0);
+    const lint = codex([...blocked, completed("bun run lint")], config);
+    expect(lint.check("required-verification")?.observed).toBe(1);
+    expect(lint.check("required-command:test")?.status).toBe("failed");
+    const testRun = codex([...blocked, completed("bun test")], config);
+    expect(testRun.gate.status).toBe("passed");
+    expect(testRun.check("required-verification")?.observed).toBe(1);
+  });
+
   test("a paired start row's output is still checked for secrets", () => {
     const { flags } = codex([{ type: "item.started", item: item("c1", "in_progress", "[REDACTED:aws-access-key]") }, { type: "item.completed", item: item("c1", "declined") }]);
     expect(flags.map((f) => f.category)).toContain("secret-redaction");

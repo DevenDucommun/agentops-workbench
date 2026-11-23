@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
 import { type ClaimsLedger, getClaimsLedger } from "./ledger";
 import type { AgentOpsConfig } from "./config";
 import {
@@ -308,7 +308,7 @@ function readDashboardSession(store: Store, sessionId: string, config: AgentOpsC
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command.command, config));
   const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config), config);
   return {
     session: toDashboardSessionRecord(session),
@@ -459,7 +459,7 @@ function buildDashboardDecision(
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, ledger);
+  const evidence = buildEvidenceRows(finalTexts, commands.filter(dashboardEvidenceCandidate), risks, verification, ledger);
   // The same counts the quality gate uses, so the dashboard and `agentops check` agree.
   const highRiskCount = gateHighRiskCount(commands, risks, config);
   const blockedAttempts = countBlockedAttempts(commands, config);
@@ -507,6 +507,12 @@ function buildDashboardDecision(
     },
     evidence
   };
+}
+
+// Inferred commands are displayed as inferred; declined calls and bare starts
+// remain in the timeline but cannot substantiate a dashboard claim.
+function dashboardEvidenceCandidate(command: CommandRecord): boolean {
+  return command.status === "inferred" || isObservedExecution(command);
 }
 
 function buildEvidenceRows(
