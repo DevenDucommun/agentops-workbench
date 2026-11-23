@@ -419,6 +419,15 @@ function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
   return failed ? "failed" : "completed";
 }
 
+function editStatus(block: ClaudeContentBlock, results: ToolResults): string {
+  const result = results.get(block);
+  if (result === "interrupted") return "interrupted";
+  if (result === "background") return "started";
+  if (result === true) return "failed";
+  if (result === undefined) return "no_result";
+  return "completed";
+}
+
 function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawEvent {
   const name = block.name ?? "claude_tool";
   const input = block.input;
@@ -449,7 +458,9 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
       path,
       operation: name.toLowerCase(),
       toolInput: input,
-      status: "completed",
+      // An edit landed only when its tool_result says so: an error result is a
+      // failed attempt and a missing result proves nothing.
+      status: editStatus(block, results),
       summary: path ?? `Claude Code ${name} tool use.`
     };
   }

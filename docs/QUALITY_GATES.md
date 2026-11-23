@@ -128,6 +128,46 @@ restore parts of that behavior, and each restores only its own part:
   ([CONFIGURATION.md](CONFIGURATION.md)), for example
   `{ "evidence": { "supportCommands": { "test": ["bun test", "bun test a.test.ts"] } } }`.
 
+## Retry And Stall Signals
+
+Two review signals flag a session that went in circles. They never fail a gate
+on their own (neither is high severity or a claim category), but they show up
+with the other risks:
+
+| Flag | When | Severity |
+| --- | --- | --- |
+| `retry-without-change` | The same shell command started again after a run of it failed (non-zero exit code or a failed status such as `failed` or `timed_out`), with no applied file change in between | low for one retry, medium for two or more |
+| `repeated-edits` | One file had at least `risk.repeatedEditThreshold` applied changes (default 6) | medium |
+
+What counts:
+
+- Both runs need an executed status and a recorded outcome: an exit code, or
+  a failed or success status. Denied, declined, skipped, inferred, started,
+  in-progress and unanswered (`no_result`) runs never count, even when they
+  carry an exit code. A run with neither a status nor an exit code does not
+  count. A timeout is a failure, so a timeout followed by a successful rerun is
+  a retry. Tool calls other than shell runs do not count.
+- Two runs are the same command when their command strings match exactly
+  after trimming leading and trailing whitespace. Internal whitespace is not
+  collapsed, so `bun  test` and `bun test` are different commands. Commands
+  and file paths containing a redaction placeholder cannot establish identity
+  and are excluded from same-command and same-file counts.
+- Only file changes with evidence they landed count, both toward
+  `repeated-edits` and as the change that separates a failure from its rerun.
+  Failed, denied, skipped, inferred and unanswered edits can still appear
+  in the session file list and inform existing gate checks. They do not count
+  as applied edits for either stall signal.
+
+Limit: a rerun counts only if it started after the failure's result was
+recorded. Hook calls with a matching invocation and agent ID use their recorded
+start. For unlinked starts, rows are matched in recorded order. When such runs
+of the same command overlap (a second start before the first result, or interleaved Codex
+start and completion rows), they are not told apart and the rule may miss or
+misreport a retry.
+
+A failing test that is never re-run before a success claim is the ledger's
+`contradicted` verdict above.
+
 ## Configuration
 
 Configure gates in `agentops.config.json`:

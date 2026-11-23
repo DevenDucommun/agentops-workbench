@@ -1,8 +1,9 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
-import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, mentionsRuleCommand } from "./ledger";
-import { getCommands, getEvents, getFileChanges, getSession } from "./store";
+import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
+import { detectStalls } from "./stalls";
+import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 
 type RiskFlag = {
   eventId: number | null;
@@ -125,6 +126,10 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   }
+
+  const unconfirmed = getUnconfirmedFileEvents(store, sessionId);
+  const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
+  flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
   const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));

@@ -167,6 +167,7 @@ export function ingestTranscript(
   // events.text is added when a store is first written, never when it is opened, so a
   // read of a store from an earlier version never writes (read-only or locked stores).
   addColumnIfMissing(db, "events", "text", "TEXT");
+  addColumnIfMissing(db, "file_changes", "status", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -196,8 +197,8 @@ export function ingestTranscript(
     VALUES ($sessionId, $eventId, $command, $status, $exitCode, $output)
   `);
   const insertFileChange = db.query(`
-    INSERT INTO file_changes (session_id, event_id, path, operation, lines_added, lines_removed)
-    VALUES ($sessionId, $eventId, $path, $operation, $linesAdded, $linesRemoved)
+    INSERT INTO file_changes (session_id, event_id, path, operation, status, lines_added, lines_removed)
+    VALUES ($sessionId, $eventId, $path, $operation, $status, $linesAdded, $linesRemoved)
   `);
   const insertToolCall = db.query(`
     INSERT INTO tool_calls (session_id, event_id, tool_name, category, status)
@@ -278,6 +279,7 @@ export function ingestTranscript(
           $sessionId: session.id,
           $eventId: row.id,
           $path: filePath,
+          $status: typeof event.status === "string" ? event.status : null,
           $operation: typeof event.operation === "string" ? event.operation : type,
           $linesAdded: typeof event.linesAdded === "number" ? event.linesAdded : null,
           $linesRemoved: typeof event.linesRemoved === "number" ? event.linesRemoved : null
@@ -405,6 +407,21 @@ export function getFileChanges(store: Store, sessionId: string): FileChangeRecor
       "SELECT id, event_id as eventId, path, operation, lines_added as linesAdded, lines_removed as linesRemoved FROM file_changes WHERE session_id = $sessionId ORDER BY path"
     )
     .all({ $sessionId: sessionId }) as FileChangeRecord[];
+}
+
+/** Older imports may have captured an edit outcome only on the tool call. */
+export function getUnconfirmedFileEvents(store: Store, sessionId: string): Set<number> {
+  const status = hasColumn(store.db, "file_changes", "status") ? "COALESCE(f.status, t.status)" : "t.status";
+  const rows = store.db.query(`
+    SELECT f.event_id AS eventId FROM file_changes f
+    LEFT JOIN tool_calls t ON t.session_id = f.session_id AND t.event_id = f.event_id
+    WHERE f.session_id = $sid AND f.event_id IS NOT NULL
+      AND (LOWER(${status}) IN ('skipped', 'timed_out', 'timeout', 'no_result', 'interrupted', 'inferred',
+            'failed', 'error', 'denied', 'declined', 'rejected', 'cancelled', 'canceled',
+            'started', 'running', 'in_progress', 'pending', 'queued')
+           OR LOWER(f.operation) = 'inferred edit')
+  `).all({ $sid: sessionId }) as Array<{ eventId: number }>;
+  return new Set(rows.map(row => row.eventId));
 }
 
 export function getRiskFlags(store: Store, sessionId: string): RiskFlagRecord[] {
