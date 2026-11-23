@@ -77,8 +77,9 @@ redaction review.
 
 This section is the authoritative description of what the recorder stores.
 
-Every record is redacted before it is written, wherever the text appears.
-Redaction is pattern-based and best-effort. It replaces emails, paths under
+Every string value in a record is redacted before it is written, wherever
+it appears; JSON property names are not redacted. Redaction is pattern-based
+and best-effort. It replaces emails, paths under
 `/Users/`, `/home/` or `/Volumes/` (up to the first space or quote), and a
 fixed set of secret formats: AWS access keys, OpenAI-style and GitHub tokens,
 Slack tokens and PEM private keys. Anything else is kept as written, including
@@ -121,9 +122,11 @@ column as text too (still redacted). Claude Code's `transcript_path` fields are
 dropped, and transcript files are never read.
 
 Fields the table doesn't name are kept in the spool as they arrive, after
-redaction. `agentops audit` and the session-end import store only the fields
-the adapter reads, so other fields stay in the spool and never reach the
-SQLite store, even with `privacy.storeRawPayload: true`.
+redaction. `agentops audit` and the session-end import store only the top-level
+fields the adapter reads, so other top-level fields stay in the spool only.
+Fields nested inside an object the adapter does store (such as commit
+metadata) can reach the SQLite store when `privacy.storeRawPayload` is
+`true`.
 
 ### Where It Lives
 
