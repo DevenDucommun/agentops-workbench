@@ -1,0 +1,14 @@
+{
+  "name": "agentops-workbench",
+  "description": "Claude Code plugins from AgentOps Workbench.",
+  "owner": {
+    "name": "AgentOps Workbench"
+  },
+  "plugins": [
+    {
+      "name": "agentops-recorder",
+      "source": "./plugin",
+      "description": "Records Claude Code sessions in enrolled repositories for agentops look, check and the dashboard."
+    }
+  ]
+}
