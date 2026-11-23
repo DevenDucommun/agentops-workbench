@@ -130,7 +130,7 @@ type DashboardEvidenceRow = {
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
+  status: "stale" | "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
@@ -497,6 +497,12 @@ function buildDashboardDecision(
     if (status === "ready") status = "needs-review";
     reasons.push(`${inferredEvidenceCount} claimed check${inferredEvidenceCount === 1 ? " has" : "s have"} inferred command evidence.`);
   }
+  for (const claim of ledger.claims) {
+    if (claim.verdict === "stale") {
+      if (status === "ready") status = "needs-review";
+      reasons.push(claim.reason);
+    }
+  }
   if (verification.length === 0) {
     if (status === "ready") status = "needs-review";
     reasons.push("No verification command was recorded.");
@@ -567,12 +573,12 @@ function buildEvidenceRows(
     });
   });
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
-  const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
+  const finalSuccessClaimed = ledger.claims.length > 0 || claimsFinalSuccess(finalTexts) || successRisk !== null;
   // A final success claim cannot present stronger evidence than one of its
   // specific ledger claims. Keep the same outcome and citation on both rows.
   if (finalSuccessClaimed && ledger.claims.length) {
     const claimed = rows.filter(row => ledger.claims.some(claim => claim.id === row.id));
-    for (const status of ["contradicted", "missing-evidence", "inferred-evidence", "verified"]) {
+    for (const status of ["contradicted", "stale", "missing-evidence", "inferred-evidence", "verified"]) {
       const source = claimed.find(row => row.status === status);
       if (source) return [...rows, { ...source, id: "final-success", label: "Final success" }];
     }
@@ -595,7 +601,7 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     entry.verdict === "contradicted"
       ? (risks.find((item) => item.category === "contradicted-claim" && item.message.startsWith(`Final response claims ${entry.label} success,`)) ?? null)
       : (risks.find((item) => item.category === entry.category) ?? null);
-  return toEvidenceRow({
+  const row = toEvidenceRow({
     id: entry.id,
     label,
     claimed: true,
@@ -604,6 +610,12 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     command: entry.cited ? { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode } : null,
     risk
   });
+  if (entry.verdict === "stale") {
+    row.status = "stale";
+    row.riskMessage = entry.reason;
+    row.riskCategory = "stale-verification";
+  }
+  return row;
 }
 
 function toEvidenceRow(input: {

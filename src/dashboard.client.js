@@ -284,7 +284,7 @@
       return '<div class="evidence-row">' +
         '<div><strong>' + escapeHtml(row.label) + '</strong><div class="evidence-detail">' + (row.claimed ? 'Claimed' : 'Not claimed') + '</div></div>' +
         '<div><span class="pill ' + evidencePillClass(row.status) + '">' + escapeHtml(formatEvidenceStatus(row.status)) + '</span></div>' +
-        '<div>' + detail + citation + '</div>' +
+        '<div>' + detail + citation + (row.status === 'stale' ? '<div class="evidence-detail">' + escapeHtml(row.riskMessage) + '</div>' : '') + '</div>' +
       '</div>';
     }
 
@@ -389,7 +389,7 @@
     function evidencePillClass(status) {
       if (status === "verified") return "ok";
       if (status === "inferred-evidence") return "neutral";
-      if (status === "missing-evidence" || status === "contradicted") return "missing";
+      if (status === "missing-evidence" || status === "contradicted" || status === "stale") return "missing";
       return "neutral";
     }
 
@@ -398,6 +398,7 @@
       if (status === "inferred-evidence") return "Inferred evidence";
       if (status === "missing-evidence") return "Missing evidence";
       if (status === "contradicted") return "Contradicted";
+      if (status === "stale") return "Rerun needed";
       return "Not claimed";
     }
 
