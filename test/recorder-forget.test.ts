@@ -53,7 +53,7 @@ test("forget removes one session from the store and its spool files, and leaves 
   expect(existsSync(spool.replace(/\.jsonl$/, ".errors.jsonl"))).toBe(false);
   expect(existsSync(spoolPath(spoolDir, CLEAN) as string)).toBe(true);
 
-  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).stdout).toBe(`Nothing recorded for session ${COMMIT}.\n`);
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: repo, env })).stdout).toContain(`Nothing recorded for session ${COMMIT} in the checked locations.`);
 });
 
 test("forget needs exactly one session id", async () => {
@@ -172,7 +172,7 @@ test("review 6010207714: another spelling of a session id removes nothing", asyn
   const { repo, stateDir, env } = await recordedRepo();
   const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
   const out = await runRecorderCommand(["forget", COMMIT.toUpperCase()], { cwd: repo, env });
-  expect(out.stdout).toBe(`Nothing recorded for session ${COMMIT.toUpperCase()}.\n`);
+  expect(out.stdout).toContain(`Nothing recorded for session ${COMMIT.toUpperCase()} in the checked locations.`);
   expect(existsSync(spool)).toBe(true);
   const store = openStore(join(repo, ".agentops", "agentops.db"));
   expect(store.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 1 });
@@ -197,7 +197,7 @@ test("review 6010295645: a never-recorded id never removes another session that 
   };
   const before = count();
   const out = await runRecorderCommand(["forget", other], { cwd: repo, env });
-  expect(out.stdout).toBe(`Nothing recorded for session ${other}.\n`);
+  expect(out.stdout).toContain(`Nothing recorded for session ${other} in the checked locations.`);
   expect(count()).toBe(before);
   expect(existsSync(spoolPath(join(stateDir, "spool"), recorded) as string)).toBe(true);
 });
@@ -426,3 +426,19 @@ test("review 6024993200: two busy stores share one wait budget, under the hooks'
   expect(out.exitCode).toBe(1);
   expect(Date.now() - started).toBeLessThan(4000);
 }, 15_000);
+
+test("forget names its search scope when another directory still has a restored copy", async () => {
+  const { repo, env, sub, subStore } = await restoredInSubdirectory();
+  const mainStore = join(repo, ".agentops", "agentops.db");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await runRecorderCommand(["forget", COMMIT], { cwd: repo, env });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`Store paths checked:\n- ${mainStore}\n`);
+    expect(result.stdout).not.toContain(subStore);
+    expect(sessionCount(subStore, COMMIT)).toBe(1);
+  }
+  const result = await runRecorderCommand(["forget", COMMIT], { cwd: sub, env });
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain(`Store paths checked:\n- ${mainStore}\n- ${subStore}\n`);
+  expect(sessionCount(subStore, COMMIT)).toBe(0);
+});
