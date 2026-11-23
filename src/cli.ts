@@ -1,7 +1,8 @@
 import { storeHookTranscript } from "./recorder/ingest";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isForgotten, spoolGeneration } from "./recorder/spool";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { adapters, detectAdapters, loadAdapterInput, resolveAdapter } from "./adapters";
 import { demoFixtures } from "./demoFixtures";
 import { analyzeSession } from "./analyzer";
@@ -641,12 +642,32 @@ function formatAuditImportSummary(sessionId: string, eventCount: number, adapter
 }
 
 function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, adapterId: string, config: ReturnType<typeof loadConfig>) {
+  // The spool's real path, taken while the file just read still exists, so an
+  // audit through a symlink checks the same forgotten marker forget wrote.
+  const spoolFile = realPathOrSelf(input.sourcePath);
   const adapter = resolveAdapter(input, adapterId);
   const transcript = adapter.parse(input, config);
-  if (adapter.id === "claude-hooks") return storeHookTranscript(store, transcript, config, process.cwd());
+  if (adapter.id === "claude-hooks") {
+    // A recorder spool that `agentops recorder forget` removed (this generation,
+    // at this path) is not imported back, even by an audit that read it first.
+    const generation = spoolGeneration(input.content);
+    return storeHookTranscript(store, transcript, config, process.cwd(), () => {
+      if (generation !== null && isForgotten(spoolFile, generation)) {
+        throw new Error(`${input.sourcePath} was removed by agentops recorder forget; nothing imported.`);
+      }
+    });
+  }
   const result = ingestTranscript(store, transcript, config);
   analyzeSession(store, result.sessionId, config);
   return result;
+}
+
+function realPathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 function doctorCheck(label: string, ok: boolean, detail: string, level: "error" | "warn" = "warn") {

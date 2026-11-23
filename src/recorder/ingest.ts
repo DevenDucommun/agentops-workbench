@@ -5,6 +5,7 @@ import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
+import { isForgotten, spoolGeneration } from "./spool";
 import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore as openStoreRaw, type SessionCommit, type Store } from "../store";
 
 /**
@@ -38,21 +39,49 @@ export type SpoolIngestOptions = {
 
 export type SpoolIngestResult = { sessionId: string; eventCount: number; commits: SessionCommit[] };
 
+/** The spool was removed (by `recorder forget`) before it could be imported. */
+export class SpoolGoneError extends Error {
+  readonly code = "SPOOL_GONE";
+}
+
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
-  const transcript = parseClaudeHooksJsonl(spoolFile, readFileSync(spoolFile, "utf8"), config);
+  let content: string;
+  try {
+    content = readFileSync(spoolFile, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new SpoolGoneError(`spool removed: ${spoolFile}`);
+    throw error;
+  }
+  const generation = spoolGeneration(content);
+  const transcript = parseClaudeHooksJsonl(spoolFile, content, config);
   // Hook payloads name no repository; the enrolled root's folder name stands in, as in other adapters.
   transcript.session.repo ??= basename(options.repoRoot);
   const store = openStore(options.dbPath ?? process.env.AGENTOPS_DB ?? join(options.repoRoot, ".agentops", "agentops.db"));
   try {
-    return storeHookTranscript(store, transcript, config, options.repoRoot);
+    // `recorder forget` records the generation it removes before deleting the
+    // session's rows. Checking that record inside this write transaction orders
+    // the two through SQLite's write lock: either forget's delete runs after this
+    // import commits, or the import sees the record and stores nothing. A store
+    // busy past IMPORT_BUSY_TIMEOUT_MS fails the import, so a hook stays within
+    // its time budget and records the failure for replay.
+    return storeHookTranscript(store, transcript, config, options.repoRoot, () => {
+      if (generation !== null && isForgotten(spoolFile, generation)) throw new SpoolGoneError(`spool forgotten: ${spoolFile}`);
+    });
   } finally {
     store.db.close();
   }
 }
 
-export function storeHookTranscript(store: Store, transcript: ParsedTranscript, config: AgentOpsConfig, repoRoot: string): SpoolIngestResult {
-  return store.db.transaction(() => {
+export function storeHookTranscript(
+  store: Store,
+  transcript: ParsedTranscript,
+  config: AgentOpsConfig,
+  repoRoot: string,
+  guard: () => void = () => {}
+): SpoolIngestResult {
+  const run = store.db.transaction(() => {
+    guard();
     // Full SHAs already known for this session (an earlier import, or a push record in this
     // transcript) resolve a short SHA the same way wherever the re-import runs.
     const isFull = (sha: string) => sha.length === 40 || sha.length === 64;
@@ -84,7 +113,9 @@ export function storeHookTranscript(store: Store, transcript: ParsedTranscript, 
       linkSessionCommit(store, link);
     }
     return { sessionId, eventCount, commits: getSessionCommits(store, sessionId) };
-  })();
+  });
+  // Immediate: the write lock is taken before the guard runs.
+  return run.immediate();
 }
 
 /**
