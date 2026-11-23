@@ -472,3 +472,40 @@ test("review 6027364583: a session-end import waits out a dashboard's read snaps
     store.db.close();
   }
 });
+
+test("review 6027983530: the import waits from its first statement, migration included", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-writer-")));
+  const dbPath = join(root, "store.db");
+  const spool = (id: string) => {
+    const file = join(root, `${id}.jsonl`);
+    const records = [
+      { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun test" }, tool_response: { exitCode: 0 } },
+      { hook_event_name: "Stop", last_assistant_message: "Done." }
+    ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: id })));
+    writeFileSync(file, records.join("\n"));
+    return file;
+  };
+  ingestSpoolFile(spool("first"), { repoRoot: root, dbPath });
+  // Another process holds the write lock briefly, as a second session's import does.
+  const ready = join(root, "writer-ready");
+  const writer = Bun.spawn([
+    process.execPath,
+    "-e",
+    `const { Database } = require("bun:sqlite"); const db = new Database(${JSON.stringify(dbPath)}); db.exec("BEGIN EXCLUSIVE"); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); Bun.sleepSync(300); db.exec("ROLLBACK"); db.close();`
+  ]);
+  const deadline = Date.now() + 5000;
+  while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(10);
+  expect(existsSync(ready)).toBe(true);
+  const started = Date.now();
+  ingestSpoolFile(spool("second"), { repoRoot: root, dbPath });
+  const elapsed = Date.now() - started;
+  writer.kill();
+  const store = openStore(dbPath);
+  try {
+    const ids = (store.db.query("SELECT id FROM sessions ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual(["first", "second"]);
+  } finally {
+    store.db.close();
+  }
+  expect(elapsed).toBeLessThan(1000);
+});

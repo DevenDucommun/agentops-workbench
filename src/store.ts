@@ -34,10 +34,12 @@ export function defaultStorePath(cwd = process.cwd()): string {
   return main && existsSync(join(main, local)) ? join(main, local) : local;
 }
 
-export function openStore(path = defaultStorePath()): Store {
+export function openStore(path = defaultStorePath(), options: { busyTimeoutMs?: number } = {}): Store {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
+  // Set before migrate: the migration is the first statement that can meet a lock.
+  if (options.busyTimeoutMs !== undefined) db.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.floor(options.busyTimeoutMs))}`);
   migrate(db);
   return { db, path: resolved };
 }

@@ -9,17 +9,29 @@ import { isForgotten, spoolGeneration } from "./spool";
 import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore as openStoreRaw, type SessionCommit, type Store } from "../store";
 
 /**
- * How long a recorder import waits for another connection before giving up.
- * Long enough for a dashboard or check that holds a read snapshot to finish,
- * short enough that a store held by another writer still fails within a
- * second and is recorded for replay.
+ * How long, in total, one recorder import waits for other connections before
+ * giving up. Long enough for a dashboard or check that holds a read snapshot
+ * to finish, short enough that a store held by another writer still fails
+ * within a second, inside the hook's time budget, and is recorded for replay.
+ * Every store one operation opens (the import and the gate after it) shares
+ * this budget.
  */
 const IMPORT_BUSY_TIMEOUT_MS = 750;
+let importDeadline: number | null = null;
+
+function withImportBudget<T>(run: () => T): T {
+  if (importDeadline !== null) return run();
+  importDeadline = Date.now() + IMPORT_BUSY_TIMEOUT_MS;
+  try {
+    return run();
+  } finally {
+    importDeadline = null;
+  }
+}
 
 function openStore(path: string): Store {
-  const store = openStoreRaw(path);
-  store.db.exec(`PRAGMA busy_timeout = ${IMPORT_BUSY_TIMEOUT_MS}`);
-  return store;
+  const remaining = importDeadline === null ? IMPORT_BUSY_TIMEOUT_MS : Math.max(1, importDeadline - Date.now());
+  return openStoreRaw(path, { busyTimeoutMs: remaining });
 }
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
@@ -45,6 +57,10 @@ export class SpoolGoneError extends Error {
 }
 
 export function ingestSpoolFile(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
+  return withImportBudget(() => ingestSpoolFileWithin(spoolFile, options));
+}
+
+function ingestSpoolFileWithin(spoolFile: string, options: SpoolIngestOptions): SpoolIngestResult {
   const config = options.config ?? repoConfig(options.repoRoot);
   let content: string;
   try {
@@ -125,6 +141,10 @@ export function storeHookTranscript(
  * SessionEnd hook output.
  */
 export function turnVerdict(spoolFile: string, options: SpoolIngestOptions): string {
+  return withImportBudget(() => turnVerdictWithin(spoolFile, options));
+}
+
+function turnVerdictWithin(spoolFile: string, options: SpoolIngestOptions): string {
   // An invalid config must not be replaced by defaults here: that would report a
   // pass that `agentops check` rejects. Say the config is invalid instead.
   let config = options.config;
