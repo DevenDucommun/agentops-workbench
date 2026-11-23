@@ -162,7 +162,8 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
 function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
   // The command as written is compared first, so a configured entry that
   // itself carries an assignment (`CI=1 node --test`) still matches its own
-  // failed run. Then, for failures only, tabs count as spaces, leading
+  // failed run. Then, for failures only, tabs count as spaces (with the
+  // assignments kept, then without them), leading
   // VAR=value assignments are ignored, and a leading `env` wrapper is dropped
   // (with and without its assignments), so `CI=1 node --test x` and
   // `env CI=1 node --test x` still count against a configured `node --test`
@@ -172,6 +173,7 @@ function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: str
   const envWrapper = /^\s*env\s+/;
   const spellings = [
     normalizeCommand(command),
+    normalizeCommand(spaced),
     normalizeCommand(spaced.replace(assignments, "")),
     ...(envWrapper.test(spaced) ? [normalizeCommand(spaced.replace(envWrapper, "")), normalizeCommand(spaced.replace(envWrapper, "").replace(assignments, ""))] : [])
   ].filter((spelling): spelling is string => spelling !== null);

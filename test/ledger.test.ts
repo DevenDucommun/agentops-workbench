@@ -1171,7 +1171,7 @@ describe("review 6010483073: interruption beats background; failure spellings", 
 describe("review on 82ca3f39: an exact configured command with an assignment", () => {
   const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { lint: ["bun run lint"], test: ["CI=1 node --test"] } } };
 
-  for (const failed of ["CI=1 node --test", "CI=1 node --test runner.test.cjs", "env CI=1 node --test runner.test.cjs"]) {
+  for (const failed of ["CI=1 node --test", "CI=1 node --test runner.test.cjs", "env CI=1 node --test runner.test.cjs", "CI=1 node\t--test runner.test.cjs"]) {
     test(`a failed retry of \`${failed}\` contradicts the earlier pass`, () => {
       const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
       const lines = [
