@@ -197,7 +197,9 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
       toolName: name,
       command,
       input: command === undefined ? undefined : { command },
-      status: response?.interrupted === true ? "interrupted" : reported !== undefined && reported !== 0 ? "failed" : status,
+      // A reported nonzero exit only upgrades the hook's generic success; an
+      // explicit interruption or failure keeps its own status.
+      status: response?.interrupted === true || status === "interrupted" ? "interrupted" : status === "completed" && reported !== undefined && reported !== 0 ? "failed" : status,
       exitCode: reported ?? (failed ? undefined : 0),
       output: stdout,
       gitCommit: !failed && response?.interrupted !== true ? (r.gitCommit ?? commit) : undefined,

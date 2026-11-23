@@ -89,6 +89,15 @@ describe("normalization", () => {
     expect(runs.map((e) => [e.status, e.exitCode])).toEqual([["failed", 1], ["completed", 0]]);
   });
 
+  test("review 6026938504: an interrupted Bash failure stays interrupted even with an exit code", () => {
+    const interrupted = { ...fixtureLines("failing-test-session").find((l) => l.hook_event_name === "PostToolUseFailure")! };
+    interrupted.is_interrupt = true;
+    interrupted.error = "Exit code 130\nInterrupted by user";
+    const { events } = parseClaudeHooksJsonl("i.jsonl", `${JSON.stringify(interrupted)}\n`, defaultConfig);
+    const run = events.find((e) => e.command === "bun test");
+    expect([run?.status, run?.exitCode]).toEqual(["interrupted", 130]);
+  });
+
   test("subagent events point at the Agent call that ran them", () => {
     const { events } = parseClaudeHooksJsonl("s.jsonl", fixtureText("subagent-session"), defaultConfig);
     const agentCall = events.find((e) => e.hookEventName === "PostToolUse" && e.toolName === "Agent");

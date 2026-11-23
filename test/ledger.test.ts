@@ -1230,3 +1230,19 @@ describe("review 6026429058: a failed run of another kind's exact command does n
     expect(claim).toMatchObject({ verdict: "supported", cited: { command: "CHECK=unit node verify.cjs", outcome: "passed" } });
   });
 });
+
+describe("review 6026938504: default-config adapter regressions", () => {
+  test("a Claude PowerShell call keeps its command in the stored session", () => {
+    const stream = [
+      { type: "system", subtype: "init", session_id: "claude-ps" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_ps", name: "PowerShell", input: { command: "git status --short" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_ps", is_error: false, content: "" }] } },
+      { type: "result", subtype: "success", session_id: "claude-ps", result: "Done." }
+    ].map((r) => JSON.stringify(r)).join("\n");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const commands = store.db.query("SELECT command, status FROM commands WHERE session_id = $id").all({ $id: sessionId }) as { command: string; status: string }[];
+    store.db.close();
+    expect(commands).toEqual([{ command: "git status --short", status: "completed" }]);
+  });
+});

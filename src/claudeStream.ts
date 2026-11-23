@@ -425,7 +425,8 @@ function normalizeToolUse(block: ClaudeContentBlock, results: ToolResults): RawE
   const command = typeof input?.command === "string" ? input.command : undefined;
   const path = pathFromInput(input);
 
-  if (name === "Bash") {
+  // Shell tools: their `command` is a shell command, unlike other tools' arguments.
+  if (name === "Bash" || name === "PowerShell") {
     return {
       schemaVersion: "agentops.event.v1",
       type: "tool_call",
