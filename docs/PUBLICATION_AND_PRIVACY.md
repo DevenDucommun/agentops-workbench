@@ -156,14 +156,39 @@ Sessions stay in the store until you remove it.
 | --- | --- |
 | Stop recording a repository | `agentops recorder disable` |
 | Stop recording everywhere | `claude plugin uninstall agentops-recorder` |
-| Delete one session's spool | remove `<state>/spool/<session-id>.jsonl` and its `.errors.jsonl` |
+| Delete one session everywhere | `agentops recorder forget <session-id>`, from inside the repository |
 | Delete all spools | remove `<state>/spool/` |
 | Delete imported sessions for a repository | remove the store `agentops recorder status` names (`$AGENTOPS_DB` when set, else `<repository>/.agentops/agentops.db`) |
 | Remove all recorder state | remove `<state>/recorder/` and `<state>/spool/`, then the store of every repository you recorded. `<state>/recorder/enrolled.json` lists only repositories still enabled (disabling one removes it from the list), so include disabled ones too. Repositories that point `AGENTOPS_DB` at the same file share one store, and deleting it removes all of their sessions. A shared `AGENTOPS_STATE_DIR` may hold other files, so remove only those two folders |
 
-No command deletes a single session from the store yet. The store can hold
-every imported session, including other tools' imports, so removing it removes
-all of them. To keep some, re-import their spools afterwards with
+`agentops recorder forget` deletes the session from every store that hooks,
+`agentops audit` and `agentops check` would use from the directory you run it
+in, whether or not recording is enabled at that moment: `AGENTOPS_DB` when set,
+otherwise both the repository's store and the current directory's
+`.agentops/agentops.db`. Its events, commands, file changes, risk flags and
+commit links go with it. Forget then removes the session's spool and error
+files. Other sessions are untouched. Pass the session id as
+Claude Code reports it, spelled exactly; forget matches it exactly. An id that
+looks like a secret is stored in redacted form, which is shared by every id of
+its kind, so forget removes only that session's spool and leaves the shared
+row; remove such a row by resetting the store.
+
+Forget takes the session's spool lock, the lock a hook holds while it appends a
+record: if a hook is appending at that moment, forget waits up to two seconds,
+then gives up without removing anything. It never takes over a held lock, so if
+no session is running and forget still reports the session busy, a crashed hook
+left the lock file it names; delete that file and retry. Before deleting the
+rows, forget records which spool it removed (in a `forgotten-<hash>` file beside
+it that does not name the session), so an import of that spool that is already
+running, by a hook or by `agentops audit`, either finishes before the delete or
+stores nothing. Forget locks every one of those stores before it
+deletes from any of them. If it cannot delete (a store stays busy or the spool
+folder cannot be listed), it removes nothing from any store or the spool, says
+so, and later imports work as before; run it again. Forget a session after it has ended; a hook that fires
+later starts a new spool for it, which imports normally.
+
+If you remove the whole store instead, every session in it goes, including
+other tools' imports. To keep some, re-import their spools afterwards with
 `agentops audit <state>/spool/<session-id>.jsonl`, run from the recorded
 repository. That restores each session's events, tool calls, commands, file
 changes and commit links. Risk flags are recomputed under the configuration in

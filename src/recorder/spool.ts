@@ -1,6 +1,6 @@
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { eventHash, eventIdFor } from "../eventChain";
 import { redactValue, sha256 } from "../redaction";
 import type { RawEvent } from "../types";
@@ -178,6 +178,96 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
     return fail(dir, sessionId, "write-failed", message(error));
   } finally {
     releaseLock(lockPath);
+  }
+}
+
+/**
+ * Runs `fn` while holding the session's spool lock, the same lock appendRecord
+ * takes, so no hook can append to the session meanwhile. A lock older than the
+ * stale limit is reclaimed as appendRecord does, unless `staleLockMs` is
+ * Infinity. Never throws for lock errors.
+ */
+export function withSpoolLock<T>(
+  dir: string,
+  sessionId: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed" | "invalid-session"; detail: string } {
+  const path = spoolPath(dir, sessionId);
+  if (!path) return { ok: false, reason: "invalid-session", detail: "empty session id" };
+  const settings = { ...DEFAULTS, ...options };
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return { ok: false, reason: "lock-failed", detail: `mkdir: ${message(error)}` };
+  }
+  return withSpoolFileLock(path, fn, settings);
+}
+
+/**
+ * Runs `fn` while holding the lock of the spool file at `spoolFile` (the lock
+ * appendRecord takes). Never throws for lock errors; `fn`'s own errors propagate.
+ */
+export function withSpoolFileLock<T>(
+  spoolFile: string,
+  fn: () => T,
+  options: Pick<SpoolOptions, "lockTimeoutMs" | "staleLockMs"> = {}
+): { ok: true; value: T } | { ok: false; reason: "lock-timeout" | "lock-failed"; detail: string } {
+  const settings = { ...DEFAULTS, ...options };
+  const lockPath = `${spoolFile}.lock`;
+  const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
+  if (lock === "timeout") return { ok: false, reason: "lock-timeout", detail: `lock not acquired within ${settings.lockTimeoutMs} ms` };
+  if (lock !== "acquired") return { ok: false, reason: "lock-failed", detail: lock.error };
+  try {
+    return { ok: true, value: fn() };
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
+/**
+ * Identifies one spool generation: the hash of its first record line. A spool
+ * started again after `recorder forget` begins with a different first record.
+ */
+export function spoolGeneration(content: string): string | null {
+  const first = content.split("\n").find((line) => line.trim() !== "");
+  return first === undefined ? null : sha256(first);
+}
+
+/**
+ * Generations of this spool that `recorder forget` removed; imports of them are
+ * skipped. Named by a hash of the spool's file name, so the marker that outlives
+ * the spool never carries the session id.
+ */
+export function forgottenPath(spoolFile: string): string {
+  // The folder's real path, so forget and an import that reached the spool
+  // through a symlinked state folder agree on one marker.
+  let dir = dirname(spoolFile);
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // Missing folder: keep the path as given.
+  }
+  return join(dir, `forgotten-${sha256(basename(spoolFile)).slice(0, 32)}`);
+}
+
+/** Removes one generation from a spool's forgotten marker (a forget that failed before deleting anything). */
+export function unforget(spoolFile: string, generation: string): void {
+  const path = forgottenPath(spoolFile);
+  try {
+    const kept = readFileSync(path, "utf8").split("\n").filter((line) => line !== "" && line !== generation);
+    if (kept.length === 0) unlinkSync(path);
+    else writeFileSync(path, `${kept.join("\n")}\n`, { mode: 0o600 });
+  } catch {
+    // Nothing recorded for it.
+  }
+}
+
+export function isForgotten(spoolFile: string, generation: string): boolean {
+  try {
+    return readFileSync(forgottenPath(spoolFile), "utf8").split("\n").includes(generation);
+  } catch {
+    return false;
   }
 }
 

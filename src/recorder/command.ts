@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, existsSync, readdirSync, statSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { defaultStateDir, enrolledRepository, enrollRepository, findRepositoryRoots, unenrollRepository } from "./enrollment";
+import { forgottenPath, spoolGeneration, spoolPath, unforget, withSpoolLock } from "./spool";
 
-// `agentops recorder enable|disable|status` (spec R1.7). Dispatched from
+// `agentops recorder enable|disable|status|forget` (spec R1.7). Dispatched from
 // src/main.ts like `hook`, so it works in the release binary and `bun run
 // agentops`. Enrollment is per repository and lives in the user state dir.
 
@@ -11,7 +12,7 @@ export const PLUGIN_INSTALL = "/plugin install agentops-recorder --marketplace D
 export type CommandResult = { stdout: string; stderr?: string; exitCode: number };
 export type RecorderCommandOptions = { cwd?: string; env?: NodeJS.ProcessEnv };
 
-const USAGE = "Usage: agentops recorder enable|disable|status\n";
+const USAGE = "Usage: agentops recorder enable|disable|status\n       agentops recorder forget <session-id>\n";
 
 export async function runRecorderCommand(args: string[], options: RecorderCommandOptions = {}): Promise<CommandResult> {
   const cwd = options.cwd ?? process.cwd();
@@ -20,7 +21,8 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
   const roots = findRepositoryRoots(cwd);
   const [sub] = args;
 
-  if (sub !== "enable" && sub !== "disable" && sub !== "status") return { stdout: "", stderr: USAGE, exitCode: 1 };
+  if (sub !== "enable" && sub !== "disable" && sub !== "status" && sub !== "forget") return { stdout: "", stderr: USAGE, exitCode: 1 };
+  if (sub === "forget" && (args.length !== 2 || !args[1])) return { stdout: "", stderr: USAGE, exitCode: 1 };
   if (!roots) return { stdout: "", stderr: `Not inside a git repository: ${cwd}\nThe recorder is enabled per repository; run this from the repository you want recorded.\n`, exitCode: 1 };
 
   if (sub === "enable") {
@@ -33,6 +35,8 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
     if (!gitignoresAgentops(repo)) lines.push("Warning: .agentops/ is not in .gitignore; recorded sessions are stored there. Run `agentops init` or add it.");
     return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
   }
+
+  if (sub === "forget") return forgetSession(args[1] as string, forgetStores(cwd, env, roots.main), join(stateDir, "spool"));
 
   if (sub === "disable") {
     const removed = unenrollRepository(cwd, stateDir);
@@ -60,6 +64,134 @@ export async function runRecorderCommand(args: string[], options: RecorderComman
     `Plugin install: ${PLUGIN_INSTALL}`
   ];
   return { stdout: `${lines.join("\n")}\n`, exitCode: 0 };
+}
+
+/**
+ * Removes one recorded session: its rows in the repository's store (events,
+ * commands, files, flags and commit links cascade) and its spool and error
+ * files, under the session's spool lock. Nothing else is touched, so other
+ * sessions keep verifying.
+ */
+async function forgetSession(sessionId: string, stores: string[], spoolDir: string): Promise<CommandResult> {
+  const { Database } = await import("bun:sqlite");
+  // Hold the session's spool lock for the whole removal: a hook appending at
+  // the same moment would otherwise recreate the spool mid-chain after it was
+  // deleted. A held lock is never reclaimed, however old (a slow writer may still
+  // be running); forget waits briefly, then gives up and deletes nothing.
+  let locked: ReturnType<typeof withSpoolLock<string[]>>;
+  try {
+  locked = withSpoolLock(
+    spoolDir,
+    sessionId,
+    () => {
+      const removed: string[] = [];
+      const spool = spoolPath(spoolDir, sessionId) as string;
+      // Exact names only: on a case-insensitive volume another spelling of the id
+      // would otherwise reach this session's spool while SQLite matches exactly.
+      const present = existingExactly(spoolDir);
+      const spoolExists = present.has(basename(spool));
+      // Record the generation being removed before the rows go: an import of it
+      // that is already running checks this inside its write transaction, so it
+      // either commits before the delete below or stores nothing.
+      const generation = spoolExists ? spoolGeneration(readFileSync(spool, "utf8")) : null;
+      if (generation !== null) appendFileSync(forgottenPath(spool), `${generation}\n`, { mode: 0o600 });
+      // Take an exclusive lock on every store before deleting from any, so a busy
+      // store, or one a reader holds, stops forget with every store unchanged.
+      // EXCLUSIVE (not IMMEDIATE) also locks out readers, so no COMMIT below can
+      // wait on one after another store has committed. All stores share one wait
+      // budget, which keeps forget's hold on the spool lock under the hooks'
+      // stale-lock limit however many stores there are.
+      const deadline = Date.now() + FORGET_STORE_BUSY_TIMEOUT_MS;
+      const open: InstanceType<typeof Database>[] = [];
+      try {
+        try {
+          for (const store of stores) {
+            if (!storeExists(store)) continue;
+            const db = new Database(store);
+            open.push(db);
+            db.exec(`PRAGMA busy_timeout = ${Math.max(1, deadline - Date.now())}`);
+            db.exec("PRAGMA foreign_keys = ON");
+            db.exec("BEGIN EXCLUSIVE");
+          }
+          // Exact id only. A redacted id is shared by every id of its kind, so it
+          // never identifies one session.
+          const changes = open.map((db) => db.query("DELETE FROM sessions WHERE id = $id").run({ $id: sessionId }).changes);
+          for (const db of open) db.exec("COMMIT");
+          open.forEach((db, i) => {
+            if ((changes[i] ?? 0) > 0) removed.push(`session ${sessionId} from ${db.filename}`);
+          });
+        } catch (error) {
+          for (const db of open) if (db.inTransaction) db.exec("ROLLBACK");
+          throw error;
+        } finally {
+          for (const db of open) db.close();
+        }
+      } catch (error) {
+        // Nothing was deleted: later imports of this spool must still happen.
+        if (generation !== null) unforget(spool, generation);
+        throw error;
+      }
+      for (const file of [spool, spool.replace(/\.jsonl$/, ".errors.jsonl")]) {
+        if (!present.has(basename(file))) continue;
+        rmSync(file, { force: true });
+        removed.push(file);
+      }
+      return removed;
+    },
+    { lockTimeoutMs: FORGET_LOCK_TIMEOUT_MS, staleLockMs: Number.POSITIVE_INFINITY }
+  );
+  } catch (error) {
+    // Listing, reading and the store delete fail before anything is removed; run
+    // forget again once the cause is fixed to finish.
+    return { stdout: "", stderr: `Could not forget session ${sessionId}: ${error instanceof Error ? error.message : String(error)}. Run it again once this is fixed.\n`, exitCode: 1 };
+  }
+  if (!locked.ok) {
+    const busy = locked.reason === "lock-timeout";
+    return {
+      stdout: "",
+      stderr: busy
+        ? `Session ${sessionId} is being recorded right now (its spool is locked). Nothing was removed; try again when the session has ended. If no session is running, a crashed hook left ${spoolPath(spoolDir, sessionId)}.lock behind; delete it and retry.\n`
+        : `Could not lock session ${sessionId}: ${locked.detail}. Nothing was removed.\n`,
+      exitCode: 1
+    };
+  }
+  const removed = locked.value;
+  if (!removed.length) return { stdout: `Nothing recorded for session ${sessionId}.\n`, exitCode: 0 };
+  return { stdout: `Removed:\n${removed.map((item) => `- ${item}`).join("\n")}\n`, exitCode: 0 };
+}
+
+/** How long forget waits for a hook to finish appending before giving up. */
+const FORGET_LOCK_TIMEOUT_MS = 2000;
+/**
+ * How long forget waits, in total across every store, for other connections to
+ * finish before giving up. Kept well under the hooks' five-second stale-lock
+ * limit, so a hook never treats the spool lock forget holds as abandoned.
+ */
+const FORGET_STORE_BUSY_TIMEOUT_MS = 2500;
+
+/**
+ * Whether the store exists. Only a missing file means there is none; a store
+ * that cannot be reached (a directory without permission) is an error, so
+ * forget stops before removing the spool instead of reporting success.
+ */
+function storeExists(path: string): boolean {
+  try {
+    statSync(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** File names in a directory, exactly as stored. A missing directory has none; any other error propagates. */
+function existingExactly(dir: string): Set<string> {
+  try {
+    return new Set(readdirSync(dir));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Set();
+    throw error;
+  }
 }
 
 function binaryOnPath(env: NodeJS.ProcessEnv): boolean {
@@ -98,7 +230,28 @@ async function recordedSessions(store: string): Promise<number> {
   }
 }
 
-/** The store the hook and `agentops check` use from `cwd`: AGENTOPS_DB resolved against the real directory, else the repository's shared store. */
+/**
+ * Every store the session can be in from this directory, whether or not the
+ * repository is enrolled now. With AGENTOPS_DB set, hooks, audit and check all
+ * use it. Otherwise store.ts defaultStorePath picks the repository's store when
+ * enrolled, and this directory's `.agentops/agentops.db` or the repository's
+ * when not; enrollment can change between a restore and forget, so both count.
+ * Deduplicated by real path.
+ */
+function forgetStores(cwd: string, env: NodeJS.ProcessEnv, mainRoot: string): string[] {
+  const here = realDirectory(cwd) ?? cwd;
+  const candidates = env.AGENTOPS_DB !== undefined
+    ? [recorderStore(cwd, env, mainRoot)]
+    : [join(mainRoot, ".agentops", "agentops.db"), join(here, ".agentops", "agentops.db")];
+  const byRealPath = new Map<string, string>();
+  for (const store of candidates) {
+    const real = realDirectory(store) ?? store;
+    if (!byRealPath.has(real)) byRealPath.set(real, store);
+  }
+  return [...byRealPath.values()];
+}
+
+/** The store the hook imports into from `cwd`: AGENTOPS_DB resolved against the real directory, else the repository's shared store. */
 function recorderStore(cwd: string, env: NodeJS.ProcessEnv, mainRoot: string): string {
   return env.AGENTOPS_DB !== undefined ? resolve(realDirectory(cwd) ?? cwd, env.AGENTOPS_DB) : join(mainRoot, ".agentops", "agentops.db");
 }

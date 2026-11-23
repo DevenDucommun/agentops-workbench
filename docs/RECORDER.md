@@ -50,7 +50,8 @@ Status: preview, targeted at v3.3.0. Design:
    ```
 
 Check the setup at any time with `agentops recorder status`. Stop recording a
-repository with `agentops recorder disable`.
+repository with `agentops recorder disable`. Delete one recorded session, from
+the store and the spool, with `agentops recorder forget <session-id>`.
 
 ## What Gets Recorded
 
