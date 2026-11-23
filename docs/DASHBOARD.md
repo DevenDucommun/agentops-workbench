@@ -52,7 +52,7 @@ The dashboard currently provides:
 - session list
 - session text and adapter filtering
 - evidence-quality summary for structured JSONL and forensic text imports
-- merge-readiness summary for a selected session
+- merge-readiness summary for a selected session, including a blocked verdict that names each missing command in `gates.requiredVerificationCommands`
 - claim-vs-evidence matrix for tests, lint, typecheck, build, and final
   success, with separate labels for verified, inferred, contradicted, and
   missing evidence. Verification claim verdicts come from the [claims ledger](QUALITY_GATES.md#claims-ledger)

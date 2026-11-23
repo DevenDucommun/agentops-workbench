@@ -1,5 +1,6 @@
 import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
+import { requiredCommandChecks } from "./gate";
 import { type ClaimsLedger, commandOutcome, hasRecordedOutcome, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
@@ -480,6 +481,13 @@ function buildDashboardDecision(
   if (blockedAttempts > config.gates.maxBlockedAttempts) {
     status = "blocked";
     reasons.push(`${blockedAttempts} blocked risky attempts (gate allows ${config.gates.maxBlockedAttempts}).`);
+  }
+  const requiredChecks = requiredCommandChecks(verification.filter(hasRecordedOutcome), config.gates.requiredVerificationCommands);
+  for (const check of requiredChecks) {
+    if (check.status === "failed") {
+      status = "blocked";
+      reasons.push(check.message);
+    }
   }
   if (mediumRiskCount > 0) {
     if (status === "ready") status = "needs-review";

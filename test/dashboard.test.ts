@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import * as storeApi from "../src/store";
+import { defaultConfig } from "../src/config";
+import { evaluateQualityGate } from "../src/gate";
 import { runCli } from "../src/cli";
 import { startDashboardServer } from "../src/dashboard";
 
@@ -645,5 +647,42 @@ test("an evidence download overlapping reimport contains one whole session versi
   } finally {
     read.mockRestore();
     server.stop();
+  }
+});
+
+test("dashboard enforces the same named verification requirements as the gate", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "agentops-required-command-")), "capture.jsonl");
+  const testRun = { type: "command", command: "bun test", status: "completed", exitCode: 0 };
+  const lint = { type: "command", command: "bun run lint" };
+  const cases = [
+    { required: [], runs: [], missing: [] },
+    { required: ["lint"], runs: [], missing: ["lint"] },
+    { required: ["LINT"], runs: [{ ...lint, status: "completed", exitCode: 0 }], missing: [] },
+    { required: ["lint", "typecheck"], runs: [{ ...lint, status: "completed", exitCode: 0 }], missing: ["typecheck"] },
+    { required: ["lint"], runs: [{ ...lint, status: "inferred" }], missing: ["lint"] },
+    { required: ["lint"], runs: [{ ...lint, status: "no_result" }], missing: ["lint"] }
+  ];
+  for (const { required, runs, missing } of cases) {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requireVerification: false, requiredVerificationCommands: required } };
+    writeFileSync(path, [{ type: "session", id: "command-policy" }, testRun, ...runs].map(event => JSON.stringify(event)).join("\n"));
+    expect((await runCli(["audit", path, "--quiet"])).exitCode).toBe(0);
+    const store = storeApi.openStore();
+    const server = startDashboardServer({ port: 0, config });
+    try {
+      const gate = evaluateQualityGate(store, "command-policy", config);
+      expect(gate.status).toBe(missing.length ? "failed" : "passed");
+      const failures = gate.checks.filter(check => check.id.startsWith("required-command:") && check.status === "failed");
+      expect(failures.map(check => check.id)).toEqual(missing.map(name => `required-command:${name}`));
+      for (const suffix of ["", "/evidence"]) {
+        const result = await fetch(`${server.url}/api/sessions/command-policy${suffix}`);
+        expect(result.status).toBe(200);
+        const { decision } = await result.json() as { decision: { mergeReadiness: { status: string; reasons: string[] } } };
+        expect(decision.mergeReadiness.status).toBe(missing.length ? "blocked" : "ready");
+        for (const check of failures) expect(decision.mergeReadiness.reasons).toContain(check.message);
+      }
+    } finally {
+      server.stop();
+      store.db.close();
+    }
   }
 });

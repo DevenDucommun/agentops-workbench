@@ -2,6 +2,7 @@ import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVer
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
+import type { CommandRecord } from "./types";
 import { commandOutcome, hasRecordedOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
@@ -83,17 +84,7 @@ function evaluateQualityGateSnapshot(
     });
   }
 
-  for (const required of config.gates.requiredVerificationCommands) {
-    const matched = verification.some((command) => command.command.toLowerCase().includes(required.toLowerCase()));
-    checks.push({
-      id: `required-command:${required}`,
-      label: `Required command: ${required}`,
-      status: matched ? "passed" : "failed",
-      message: matched ? `Observed required verification command containing "${required}".` : `No observed verification command containing "${required}" was recorded.`,
-      observed: matched ? 1 : 0,
-      threshold: ">= 1"
-    });
-  }
+  checks.push(...requiredCommandChecks(verification, config.gates.requiredVerificationCommands));
 
   if (!config.gates.allowUnsupportedFinalClaims) {
     // Ledger verdicts are judged under this check's config (not the audit's), so a
@@ -124,6 +115,21 @@ function evaluateQualityGateSnapshot(
       changedFiles: options.gitChanges?.length ?? 0
     }
   };
+}
+
+/** Evaluate named requirements against observed verification commands, using the current repository policy. */
+export function requiredCommandChecks(observedVerification: readonly CommandRecord[], requiredCommands: readonly string[]): GateCheck[] {
+  return requiredCommands.map(required => {
+    const matched = observedVerification.some(command => command.command.toLowerCase().includes(required.toLowerCase()));
+    return {
+      id: `required-command:${required}`,
+      label: `Required command: ${required}`,
+      status: matched ? "passed" : "failed",
+      message: matched ? `Observed required verification command containing "${required}".` : `No observed verification command containing "${required}" was recorded.`,
+      observed: matched ? 1 : 0,
+      threshold: ">= 1"
+    };
+  });
 }
 
 export function formatGateText(result: GateResult): string {

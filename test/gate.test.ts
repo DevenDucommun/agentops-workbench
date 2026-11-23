@@ -111,7 +111,9 @@ for (const fixture of ["claude-code-stream-partial-session", "codex-exec-partial
       }
       const detail = getDashboardSession(store, sessionId, config)!;
       expect(detail.commands.map(command => command.command)).toContain("bun test");
-      expect(detail.decision.mergeReadiness).toMatchObject({ status: "needs-review", verificationCount: 0 });
+      expect(detail.decision.mergeReadiness).toMatchObject({ status: "blocked", verificationCount: 0 });
+      expect(detail.decision.mergeReadiness.reasons).toContain('No observed verification command containing "test" was recorded.');
+      expect(getDashboardSession(store, sessionId, defaultConfig)?.decision.mergeReadiness.status).toBe("needs-review");
       expect(detail.decision.evidence.find(row => row.id === "test")?.evidenceFound).toBe(false);
     } finally {
       store.db.close();
