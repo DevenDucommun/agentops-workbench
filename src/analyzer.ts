@@ -127,8 +127,18 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  // Retry and stall rules (spec R2.3).
-  flags.push(...detectStalls(commands, fileChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
+  // Retry and stall rules (spec R2.3). An edit with no recorded result
+  // (`no_result`) stays in the file list, but without evidence it landed it
+  // neither counts toward repeated edits nor separates a retry.
+  const unanswered = new Set(
+    (
+      store.db
+        .query("SELECT event_id AS eventId FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL AND LOWER(status) = 'no_result'")
+        .all({ $sid: sessionId }) as Array<{ eventId: number }>
+    ).map((row) => row.eventId)
+  );
+  const appliedChanges = fileChanges.filter((file) => file.eventId === null || !unanswered.has(file.eventId));
+  flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
   const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
