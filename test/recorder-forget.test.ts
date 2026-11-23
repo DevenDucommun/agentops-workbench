@@ -426,3 +426,44 @@ test("review 6024993200: two busy stores share one wait budget, under the hooks'
   expect(out.exitCode).toBe(1);
   expect(Date.now() - started).toBeLessThan(4000);
 }, 15_000);
+
+test("SessionEnd spends one lock budget across begin and commit and preserves the spool for replay", async () => {
+  const { repo, stateDir } = await recordedRepo();
+  const { Database } = await import("bun:sqlite");
+  const dbPath = join(repo, ".agentops", "agentops.db");
+  const reader = new Database(dbPath);
+  const writer = new Database(dbPath);
+  const id = "concurrent-end";
+  const spool = spoolPath(join(stateDir, "spool"), id) as string;
+  const bin = join(import.meta.dir, "..", "bin", "agentops");
+  const hooks = JSON.parse(readFileSync(join(import.meta.dir, "..", "plugin", "hooks", "hooks.json"), "utf8"));
+  const env = { ...process.env, AGENTOPS_DB: dbPath, AGENTOPS_STATE_DIR: stateDir, AGENTOPS_BIN: bin };
+  try {
+    reader.exec("BEGIN");
+    reader.query("SELECT id FROM sessions LIMIT 1").get();
+    writer.exec("BEGIN IMMEDIATE");
+    const hook = Bun.spawn(["sh", "-c", hooks.hooks.SessionEnd[0].hooks[0].command], {
+      cwd: repo, env, timeout: 1500,
+      stdin: new TextEncoder().encode(JSON.stringify({ session_id: id, cwd: repo, hook_event_name: "SessionEnd" }))
+    });
+    // Start measuring once capture has reached the spool. Release the writer
+    // late enough that a fresh 750 ms wait at COMMIT would exceed the budget.
+    const readyBy = performance.now() + 1500;
+    while (!existsSync(spool) && performance.now() < readyBy) await Bun.sleep(5);
+    expect(existsSync(spool)).toBe(true);
+    const started = performance.now();
+    await Bun.sleep(600);
+    writer.exec("ROLLBACK");
+    expect(await hook.exited).toBe(0);
+    expect(performance.now() - started).toBeLessThan(1200);
+    expect(readFileSync(spool.replace(/\.jsonl$/, ".errors.jsonl"), "utf8")).toContain("ingest-failed");
+  } finally {
+    writer.close();
+    reader.close();
+  }
+  expect(sessionCount(dbPath, id)).toBe(0);
+  for (let replay = 0; replay < 2; replay++) {
+    expect(Bun.spawnSync([bin, "audit", spool, "--quiet"], { cwd: repo, env }).exitCode).toBe(0);
+    expect(sessionCount(dbPath, id)).toBe(1);
+  }
+});
