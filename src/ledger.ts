@@ -161,26 +161,55 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
  */
 function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
   // Failures only, so every spelling below can only add contradictions.
-  // The command as written is compared first. Then both sides are reduced to
-  // one canonical form (tabs as spaces, a leading `env` wrapper and leading
-  // VAR=value assignments dropped), so a failed `CI=1 node --test x`,
-  // `env CI=1 node --test x`, `A=1 CI=1 node<TAB>--test x` or `node --test x`
-  // counts against a configured `node --test` or `CI=1 node --test` alike.
+  // Configured entries are compared as written (tabs read as spaces), so two
+  // entries that differ only in an assignment (`CHECK=unit node verify.cjs`
+  // and `CHECK=lint node verify.cjs`) never match each other's runs. Only the
+  // observed command is varied: tabs as spaces, a leading `env` wrapper
+  // dropped, and leading VAR=value assignments dropped one at a time. So a
+  // failed `CI=1 node --test x`, `env CI=1 node --test x`,
+  // `A=1 CI=1 node<TAB>--test x` or `node --test x` still counts against a
+  // configured `CI=1 node --test` or `node --test`.
+  // An observed command with no assignments of its own (`node --test x`) is
+  // also compared with the configured entry's assignments removed; one that
+  // carries assignments must match them as written.
   const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
-  const matches = (observed: string | null, base: string | null) =>
-    observed !== null && base !== null && base !== "" && (observed === base || observed.startsWith(`${base} `));
-  const asWritten = normalizeCommand(command);
-  const canonical = canonicalFailureSpelling(command);
-  return configured.some(
-    (candidate) => matches(asWritten, normalizeCommand(candidate)) || matches(canonical, canonicalFailureSpelling(candidate))
-  );
+  const observed = observedFailureSpellings(command);
+  if (observed.length === 0) return false;
+  const bare = !LEADING_ASSIGNMENT.test(command.replace(/\t/g, " ").replace(/^\s*env\s+/, ""));
+  const matches = (base: string | null) =>
+    base !== null && base !== "" && observed.some((spelling) => spelling === base || spelling.startsWith(`${base} `));
+  return configured.some((candidate) => {
+    const spaced = candidate.replace(/\t/g, " ");
+    return matches(normalizeCommand(spaced)) || (bare && matches(normalizeCommand(stripLeadingAssignments(spaced))));
+  });
 }
 
-/** Tabs as spaces, then a leading `env` wrapper and leading VAR=value assignments removed; null if not plain ASCII. */
-function canonicalFailureSpelling(command: string): string | null {
+const LEADING_ASSIGNMENT = /^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
+
+function stripLeadingAssignments(command: string): string {
+  let rest = command;
+  while (LEADING_ASSIGNMENT.test(rest)) rest = rest.replace(LEADING_ASSIGNMENT, "");
+  return rest;
+}
+
+/** The observed command as written, then with tabs as spaces, a leading `env` dropped, and each count of leading assignments dropped. */
+function observedFailureSpellings(command: string): string[] {
+  const spellings = new Set<string>();
+  const add = (value: string) => {
+    const normalized = normalizeCommand(value);
+    if (normalized !== null) spellings.add(normalized);
+  };
+  add(command);
   const spaced = command.replace(/\t/g, " ");
-  const stripped = spaced.replace(/^\s*env\s+/, "").replace(/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
-  return normalizeCommand(stripped);
+  for (const start of [spaced, spaced.replace(/^\s*env\s+/, "")]) {
+    let rest = start;
+    add(rest);
+    while (LEADING_ASSIGNMENT.test(rest)) {
+      rest = rest.replace(LEADING_ASSIGNMENT, "");
+      add(rest);
+    }
+  }
+  return [...spellings];
 }
 
 /** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */
