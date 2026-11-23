@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -436,4 +436,39 @@ test("spools without a session id that share a file name stay separate, and repl
   expect(ingest(first)).toBe(a);
   expect(store.db.query("SELECT COUNT(*) AS n FROM sessions").get()).toEqual({ n: 2 });
   store.db.close();
+});
+
+test("review 6027364583: a session-end import waits out a dashboard's read snapshot", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "agentops-reader-")));
+  const dbPath = join(root, "store.db");
+  const spool = (id: string) => {
+    const file = join(root, `${id}.jsonl`);
+    const records = [
+      { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "bun test" }, tool_response: { exitCode: 0 } },
+      { hook_event_name: "Stop", last_assistant_message: "Done." }
+    ].map((event) => JSON.stringify(buildSpoolRecord({ ...event, session_id: id })));
+    writeFileSync(file, records.join("\n"));
+    return file;
+  };
+  ingestSpoolFile(spool("session-a"), { repoRoot: root, dbPath });
+  // Another process holds a read transaction for 350 ms, as the dashboard does
+  // while building one session's evidence.
+  const ready = join(root, "reader-ready");
+  const reader = Bun.spawn([
+    process.execPath,
+    "-e",
+    `const { Database } = require("bun:sqlite"); const db = new Database(${JSON.stringify(dbPath)}); db.exec("BEGIN"); db.query("SELECT count(*) FROM sessions").get(); require("node:fs").writeFileSync(${JSON.stringify(ready)}, "1"); Bun.sleepSync(350); db.exec("ROLLBACK"); db.close();`
+  ]);
+  const deadline = Date.now() + 5000;
+  while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(10);
+  expect(existsSync(ready)).toBe(true);
+  ingestSpoolFile(spool("session-b"), { repoRoot: root, dbPath });
+  reader.kill();
+  const store = openStore(dbPath);
+  try {
+    const ids = (store.db.query("SELECT id FROM sessions ORDER BY id").all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual(["session-a", "session-b"]);
+  } finally {
+    store.db.close();
+  }
 });

@@ -5,7 +5,21 @@ import { analyzeSession } from "../analyzer";
 import { parseClaudeHooksJsonl } from "../claudeHooks";
 import { type AgentOpsConfig, defaultConfig, loadConfig, validateConfigFile } from "../config";
 import { evaluateQualityGate } from "../gate";
-import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore, type SessionCommit, type Store } from "../store";
+import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, openStore as openStoreRaw, type SessionCommit, type Store } from "../store";
+
+/**
+ * How long a recorder import waits for another connection before giving up.
+ * Long enough for a dashboard or check that holds a read snapshot to finish,
+ * short enough that a store held by another writer still fails within a
+ * second and is recorded for replay.
+ */
+const IMPORT_BUSY_TIMEOUT_MS = 750;
+
+function openStore(path: string): Store {
+  const store = openStoreRaw(path);
+  store.db.exec(`PRAGMA busy_timeout = ${IMPORT_BUSY_TIMEOUT_MS}`);
+  return store;
+}
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
 // claude-hooks adapter -> store -> analyzer, then link the session to the
