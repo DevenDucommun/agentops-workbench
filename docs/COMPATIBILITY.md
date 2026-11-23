@@ -141,6 +141,11 @@ Supported in `v3.0.0`:
 | `claude-code-stream-json` | Explicit `claude -p --output-format stream-json` JSONL capture | Supported native stream |
 | `codex-exec-jsonl` | Explicit `codex exec --json` JSONL capture | Supported native stream |
 | `forensic-text` | Saved terminal transcript or copied coding-agent text | Experimental forensic import |
+| `claude-hooks` | Recorder spool or raw Claude Code hook payloads, one JSON object per line (unreleased; ships in v3.3.0) | Preview |
+
+`claude-hooks` payload shapes were checked against Claude Code 2.1.328 in
+[spike S1](specs/forensic-recorder/spike-s1.md). Fixtures:
+`fixtures/claude-hooks/`. Unknown fields are kept and ignored.
 
 Native stream schemas last checked on 2026-11-02:
 

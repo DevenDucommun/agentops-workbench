@@ -69,42 +69,33 @@ the session can be found from the commit later.
 
 ## Privacy
 
-- **Redaction before writing.** Records go through the same secret and
-  local-path redaction as every other import, before they touch disk.
-- **Contents are hashed, not stored.** File contents and command output are
-  kept as their length and sha256 only. Set `privacy.storeRawPayload: true` in
-  `agentops.config.json` to keep them (still redacted).
-- **Paths are repository-relative.** File paths inside the repository are
-  stored relative to it; paths outside it are redacted.
-- **No transcripts.** Claude Code's private transcript files are never read or
-  copied.
-- **Local only.** Nothing is uploaded.
+Recorded data is real session data: keep it private and never commit it.
+In short, records pass through best-effort, pattern-based redaction before
+they are written, some fields (such as
+written file contents and command output) are reduced to a length and sha256,
+and most other text, including prompts and Bash commands, is kept after
+redaction. Claude Code's transcript files are never read, and nothing is
+uploaded.
+
+Exactly which fields are kept, how paths are handled, what happens to records
+over 1 MiB, where everything is stored and how to remove it are described in
+one place: [forensic recorder data](PUBLICATION_AND_PRIVACY.md#forensic-recorder-data).
 
 ## Where Data Lives
 
-| What | Where |
-| --- | --- |
-| Enrolled repositories | `<state>/recorder/enrolled.json` |
-| Spools, one JSONL file per session | `<state>/spool/<session-id>.jsonl` |
-| Recorder errors, if any | `<state>/spool/<session-id>.errors.jsonl` |
-| Imported sessions | `<repository>/.agentops/agentops.db` |
-
-`<state>` is `$AGENTOPS_STATE_DIR`, else `$XDG_STATE_HOME/agentops`, else
-`~/.local/state/agentops`. Nothing is written inside the repository except
-`.agentops/`, which should be in `.gitignore` (`agentops init` adds it).
+The recorder keeps a registry and per-session spools in a state directory,
+`<state>` below, and imports sessions into the repository's store.
+`agentops recorder status` prints both locations. How `<state>` and the store
+are chosen, and how to keep them out of version control, are in
+[where it lives](PUBLICATION_AND_PRIVACY.md#where-it-lives). Nothing is
+deleted automatically.
 
 ### Removing recorded data
 
 `agentops recorder disable` stops new capture only; nothing already recorded is
-deleted. To remove recorded data:
-
-- **One session's raw capture:** delete `<state>/spool/<session-id>.jsonl` and
-  its `.errors.jsonl`, if any.
-- **All raw captures:** delete `<state>/spool/`.
-- **Imported sessions:** the store (`<repository>/.agentops/agentops.db`, or
-  the file `AGENTOPS_DB` points to) holds every imported session, including
-  ones imported from other tools. Deleting it removes all of them, and
-  re-importing spools restores only the recorded ones.
+deleted. The steps to remove spools, imported sessions or all recorder state,
+and their caveats, are in
+[removal](PUBLICATION_AND_PRIVACY.md#removal).
 
 ## Turn-End Verdict (optional)
 
@@ -141,4 +132,8 @@ so the summary appears at turn end instead.
   and enabled (`claude plugin list`).
 - **Recorder errors:** see `<state>/spool/*.errors.jsonl`. Each line names the
   reason (`lock-timeout`, `write-failed`, `ingest-failed`, `verdict-failed`).
-- **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`.
+- **Import an old spool by hand:** `agentops audit <state>/spool/<session-id>.jsonl`,
+  from the recorded repository. This restores the session's events and its
+  commit links, and recomputes risk flags under the current configuration. An
+  abbreviated commit SHA resolves to the full SHA when the spool also records
+  it in full (a push) or the commit exists in the repository the import runs in.
