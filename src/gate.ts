@@ -42,6 +42,17 @@ export function evaluateQualityGate(
   config: AgentOpsConfig = defaultConfig,
   options: { gitChanges?: GitChange[] } = {}
 ): GateResult {
+  // The whole decision reads one snapshot: a re-import committing mid-check can
+  // never mix the old session's commands with the replacement's claims.
+  return store.db.transaction(() => evaluateQualityGateSnapshot(store, sessionId, config, options))();
+}
+
+function evaluateQualityGateSnapshot(
+  store: Store,
+  sessionId: string,
+  config: AgentOpsConfig,
+  options: { gitChanges?: GitChange[] }
+): GateResult {
   const session = getSession(store, sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
