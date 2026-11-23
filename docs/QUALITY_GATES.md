@@ -37,12 +37,14 @@ The GitHub format is stdout/file only. The CLI does not post comments; the
 
 Default gates fail when:
 
-- no observed verification command is recorded
+- no verification command has a recorded outcome
 - any high-severity risk is present
 - more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
   contradicted, or only inferred from forensic text
 - generated-file churn is above the configured threshold
+
+An unfinished command, including a Claude tool call without a result or a Codex start without a completion, cannot satisfy a verification requirement. A recorded failure proves the check ran. The verification gate reports its failure count, and a later success claim is checked against the ledger.
 
 Forensic inferred commands are review evidence, not observed proof.
 

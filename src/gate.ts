@@ -1,7 +1,8 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedExecution, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
+import { commandOutcome, hasRecordedOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
@@ -59,7 +60,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isObservedExecution(command) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -70,11 +71,13 @@ function evaluateQualityGateSnapshot(
   checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", countBlockedAttempts(commands, config), config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
+    const failed = verification.filter(command => commandOutcome(command) === "failed").length;
+    const outcomes = failed ? ` ${failed} failed.` : "";
     checks.push({
       id: "required-verification",
       label: "Verification evidence",
       status: verification.length > 0 ? "passed" : "failed",
-      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.` : "No observed verification command recorded.",
+      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.${outcomes}` : "No observed verification command recorded.",
       observed: verification.length,
       threshold: ">= 1"
     });

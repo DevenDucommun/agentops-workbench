@@ -318,9 +318,9 @@ const SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "passed",
  * all) proves nothing and is never cited: unknown is never a pass.
  */
 export function hasRecordedOutcome(command: Pick<CommandRecord, "status" | "exitCode">): boolean {
-  if (typeof command.exitCode === "number") return true;
   const status = (command.status ?? "").toLowerCase();
-  return FAILED_STATUSES.has(status) || SUCCESS_STATUSES.has(status);
+  if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || status === "skipped") return false;
+  return typeof command.exitCode === "number" || FAILED_STATUSES.has(status) || SUCCESS_STATUSES.has(status);
 }
 
 /** A run failed when it reported a non-zero exit code or a failed status; otherwise it passed. Callers check `hasRecordedOutcome` first. */

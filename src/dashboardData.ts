@@ -1,6 +1,6 @@
-import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
+import { type ClaimsLedger, commandOutcome, hasRecordedOutcome, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
   getEvents,
@@ -130,7 +130,7 @@ type DashboardEvidenceRow = {
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
+  status: "verified" | "failed" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
@@ -497,9 +497,13 @@ function buildDashboardDecision(
     if (status === "ready") status = "needs-review";
     reasons.push(`${inferredEvidenceCount} claimed check${inferredEvidenceCount === 1 ? " has" : "s have"} inferred command evidence.`);
   }
+  if (checks.some(row => row.status === "failed")) {
+    if (status === "ready") status = "needs-review";
+    reasons.push("Verification recorded a failed run.");
+  }
   if (verification.length === 0) {
     if (status === "ready") status = "needs-review";
-    reasons.push("No verification command was recorded.");
+    reasons.push("No verification command with a recorded outcome was found.");
   }
   if (!reasons.length) reasons.push("No blocking risks or missing evidence detected.");
 
@@ -520,7 +524,7 @@ function buildDashboardDecision(
 // Inferred commands are displayed as inferred; declined calls and bare starts
 // remain in the timeline but cannot substantiate a dashboard claim.
 function dashboardEvidenceCandidate(command: CommandRecord): boolean {
-  return command.status === "inferred" || isObservedExecution(command);
+  return command.status === "inferred" || hasRecordedOutcome(command);
 }
 
 function buildEvidenceRows(
@@ -531,9 +535,10 @@ function buildEvidenceRows(
   ledger: ClaimsLedger,
   events: StoredEvent[]
 ): DashboardEvidenceRow[] {
-  const commandStrings = commands.map((command) => command.command);
+  const newestFirst = [...commands].reverse();
+  const commandStrings = newestFirst.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
-    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+    const matchingCommand = claim.matchingCommand ? newestFirst.find((command) => command.command === claim.matchingCommand) ?? null : null;
     // A claimed check renders the ledger verdict, so the dashboard agrees with
     // the report: a run after the final response does not back it. The one
     // exception is inferred (forensic) evidence, which the ledger does not count:
@@ -583,7 +588,7 @@ function buildEvidenceRows(
       label: "Final success",
       claimed: finalSuccessClaimed,
       evidenceFound: verification.length > 0,
-      command: verification[0] ?? null,
+      command: verification.at(-1) ?? null,
       risk: successRisk
     })
   );
@@ -634,10 +639,11 @@ function toEvidenceRow(input: {
 function evidenceStatus(
   evidenceFound: boolean,
   claimed: boolean,
-  command: Pick<CommandRecord, "status"> | null
+  command: Pick<CommandRecord, "status" | "exitCode"> | null
 ): DashboardEvidenceRow["status"] {
   if (!evidenceFound) return claimed ? "missing-evidence" : "not-claimed";
-  return command?.status === "inferred" ? "inferred-evidence" : "verified";
+  if (command?.status === "inferred") return "inferred-evidence";
+  return command && commandOutcome(command) === "failed" ? "failed" : "verified";
 }
 
 function titleCase(value: string): string {
