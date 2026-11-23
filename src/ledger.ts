@@ -160,31 +160,27 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
  * still counts against the claim, while support stays word for word.
  */
 function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  // The command as written is compared first, so a configured entry that
-  // itself carries an assignment (`CI=1 node --test`) still matches its own
-  // failed run. Then, for failures only, tabs count as spaces (with the
-  // assignments kept, then without them), leading
-  // VAR=value assignments are ignored, and a leading `env` wrapper is dropped
-  // (with and without its assignments), so `CI=1 node --test x` and
-  // `env CI=1 node --test x` still count against a configured `node --test`
-  // or `CI=1 node --test`. Every spelling only adds contradictions.
-  const spaced = command.replace(/\t/g, " ");
-  const assignments = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/;
-  const envWrapper = /^\s*env\s+/;
-  const spellings = [
-    normalizeCommand(command),
-    normalizeCommand(spaced),
-    normalizeCommand(spaced.replace(assignments, "")),
-    ...(envWrapper.test(spaced) ? [normalizeCommand(spaced.replace(envWrapper, "")), normalizeCommand(spaced.replace(envWrapper, "").replace(assignments, ""))] : [])
-  ].filter((spelling): spelling is string => spelling !== null);
-  if (spellings.length === 0) return false;
+  // Failures only, so every spelling below can only add contradictions.
+  // The command as written is compared first. Then both sides are reduced to
+  // one canonical form (tabs as spaces, a leading `env` wrapper and leading
+  // VAR=value assignments dropped), so a failed `CI=1 node --test x`,
+  // `env CI=1 node --test x`, `A=1 CI=1 node<TAB>--test x` or `node --test x`
+  // counts against a configured `node --test` or `CI=1 node --test` alike.
   const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
-  return spellings.some((normalized) =>
-    configured.some((candidate) => {
-      const base = normalizeCommand(candidate);
-      return base !== null && (normalized === base || normalized.startsWith(`${base} `));
-    })
+  const matches = (observed: string | null, base: string | null) =>
+    observed !== null && base !== null && base !== "" && (observed === base || observed.startsWith(`${base} `));
+  const asWritten = normalizeCommand(command);
+  const canonical = canonicalFailureSpelling(command);
+  return configured.some(
+    (candidate) => matches(asWritten, normalizeCommand(candidate)) || matches(canonical, canonicalFailureSpelling(candidate))
   );
+}
+
+/** Tabs as spaces, then a leading `env` wrapper and leading VAR=value assignments removed; null if not plain ASCII. */
+function canonicalFailureSpelling(command: string): string | null {
+  const spaced = command.replace(/\t/g, " ");
+  const stripped = spaced.replace(/^\s*env\s+/, "").replace(/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
+  return normalizeCommand(stripped);
 }
 
 /** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */
