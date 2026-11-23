@@ -75,11 +75,27 @@ redaction review.
 
 ### What Is Kept
 
-Records are redacted (secrets, emails, and paths under `/Users/`, `/home/` or `/Volumes/`)
-before they are written; paths inside the recorded repository are made
-relative. Other absolute paths (such as `/opt/...`) are kept as written. A
-single hook record larger than 1 MiB is not stored as text: the oversized
-field, including a very long prompt, is kept as its length and sha256 only.
+This section is the authoritative description of what the recorder stores.
+
+Every record is redacted before it is written: secrets, emails, and any path
+under `/Users/`, `/home/` or `/Volumes/`, wherever it appears. Before that,
+path fields (`cwd`, `file_path`, `filePath`, `notebook_path`, `path`) that
+point inside the recorded checkout are made relative to it. Paths elsewhere in
+the text, such as in a command or a prompt, are not made relative, and
+absolute paths outside those three prefixes (such as `/opt/...`) are kept as
+written.
+
+A record whose serialized line would exceed 1 MiB is truncated as a whole: its
+entire payload, after redaction and the digests below, is replaced by a single
+length and sha256 of that payload, and the record is marked `truncated`. This
+depends on the size of the whole record, not of any one field, so several
+large fields that each stay under 1 MiB can trigger it together. Everything in
+the payload is then lost as text, including the prompt or command it carried.
+Record metadata outside the payload is kept: the hook event, tool name,
+tool-use, prompt and agent IDs, agent type, working directory, file path, line
+counts, exit code, content hashes and a pushed commit. The session ID is part
+of the payload, so the record itself no longer carries it; the spool file it is
+in still belongs to that session.
 
 | Kept as text, after redaction | Kept as length + sha256 only |
 | --- | --- |
