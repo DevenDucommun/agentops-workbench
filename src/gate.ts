@@ -99,10 +99,15 @@ function evaluateQualityGateSnapshot(
     // Ledger verdicts are judged under this check's config (not the audit's), so a
     // stricter support list here, or an analysis that did not finish, cannot pass
     // a claim the ledger rejects. Other claim flags come from the stored analysis.
+    const ledgerFlags = currentLedgerClaimFlags(store, sessionId, config);
     const unsupportedClaims =
       risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
-      currentLedgerClaimFlags(store, sessionId, config).length;
-    checks.push(checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0));
+      ledgerFlags.length;
+    const check = checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0);
+    for (const flag of ledgerFlags) {
+      if (flag.category === "stale-verification") check.message += ` ${flag.message}`;
+    }
+    checks.push(check);
   }
 
   const generatedChurn = files.filter((file) => isGeneratedPath(file.path, config.gates.generatedFilePatterns)).reduce((total, file) => total + (file.linesAdded ?? 0) + (file.linesRemoved ?? 0), 0);

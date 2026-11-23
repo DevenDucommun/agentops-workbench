@@ -202,7 +202,7 @@ function renderGithubRepoComment(store: Store, sessionId: string, gitChanges: Gi
   return `${sections.join("\n\n")}\n`;
 }
 
-const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported" } as const;
+const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported", stale: "Rerun needed" } as const;
 
 /** One row per claim in the final response: its verdict and the run it rests on (spec R2.5). */
 function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: number }>, linkTimeline: boolean): string {
@@ -211,7 +211,7 @@ function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: num
     const evidence = claim.cited
       ? `\`${claim.cited.command}\`${claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`}, ${stepRef(claim.cited, steps, linkTimeline)}`
       : claim.reason;
-    return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(evidence)} |`;
+    return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(claim.verdict === "stale" ? `${evidence}. ${claim.reason}` : evidence)} |`;
   });
   return ["| Claim | Verdict | Evidence |", "| --- | --- | --- |", ...rows].join("\n");
 }

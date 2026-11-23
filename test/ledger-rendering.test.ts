@@ -2,7 +2,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import { resolveAdapter } from "../src/adapters";
 import { analyzeSession } from "../src/analyzer";
+import { evaluateQualityGate, formatGateGithub } from "../src/gate";
 import { defaultConfig } from "../src/config";
 import { getDashboardSession } from "../src/dashboardData";
 import { parseJsonlTranscript } from "../src/parser";
@@ -118,4 +120,62 @@ describe("dashboard evidence rows", () => {
   test("sessions without new claim kinds keep the same rows", () => {
     expect(evidence("fixtures/sample-session.jsonl")?.evidence.map((row) => row.id)).toEqual(["test", "lint", "typecheck", "build", "final-success"]);
   });
+});
+
+describe("freshness of a claimed verification run", () => {
+  const pass = { type: "command", command: "bun test", status: "completed", exitCode: 0 };
+  const edit = { type: "file_edit", path: "src/math.ts", operation: "edit" };
+  const final = { type: "final_response", content: "All tests pass." };
+
+  function check(events: object[]) {
+    const path = join(mkdtempSync(join(tmpdir(), "agentops-freshness-")), "capture.jsonl");
+    writeFileSync(path, [{ type: "session", id: "freshness" }, ...events].map(event => JSON.stringify(event)).join("\n"));
+    return withSession(path, (store, id) => ({
+      gate: evaluateQualityGate(store, id),
+      decision: getDashboardSession(store, id, defaultConfig)!.decision,
+      markdown: generateGithubRepoComment(store, id, [])
+    }));
+  }
+
+  test("a pass followed by an edit cites the historical run and requests a rerun on every surface", () => {
+    const { gate, decision, markdown } = check([pass, edit, final]);
+    expect(gate.status).toBe("failed");
+    expect(formatGateGithub(gate)).toContain("Rerun bun test: src/math.ts changed at step 2");
+    expect(markdown).toContain("| test | Rerun needed | `bun test` (exit 0), step 1.");
+    expect(decision.mergeReadiness.status).toBe("needs-review");
+    for (const id of ["test", "final-success"]) {
+      expect(decision.evidence.find(row => row.id === id)).toMatchObject({ status: "stale", eventStep: 1, commandExitCode: 0 });
+    }
+  });
+
+  test("only a rerun before the claim resolves stale evidence, using its actual outcome", () => {
+    expect(check([pass, edit, pass, final]).markdown).toContain("| test | Supported | `bun test` (exit 0), step 3");
+    expect(check([pass, edit, { ...pass, exitCode: 1 }, final]).markdown).toContain("| test | Contradicted | `bun test` (exit 1), step 3");
+    expect(check([pass, edit, final, pass]).gate.status).toBe("failed");
+    expect(check([pass, final, edit]).gate.status).toBe("passed");
+  });
+
+  test("reads and changes without an applied outcome do not invalidate the run", () => {
+    const attempts = ["denied", "failed", "no_result", "inferred", "killed"].map(status => ({ ...edit, status }));
+    expect(check([pass, ...attempts, { ...edit, type: "file_read" }, final]).gate.status).toBe("passed");
+  });
+});
+
+test("a native Codex test that overlaps an edit requires a rerun started after the edit", () => {
+  const command = { type: "command_execution", id: "check", command: "bun test" };
+  const start = { type: "item.started", item: { ...command, status: "in_progress" } };
+  const end = { type: "item.completed", item: { ...command, status: "completed", exit_code: 0 } };
+  const change = { type: "item.completed", item: { id: "edit", type: "file_change", status: "completed", changes: [{ kind: "update", path: "src/math.ts" }] } };
+  for (const [events, expected] of [[[start, change, end], "failed"], [[change, start, end], "passed"]] as const) {
+    const records = [{ type: "thread.started", thread_id: "overlap" }, ...events,
+      { type: "item.completed", item: { id: "answer", type: "agent_message", text: "All tests pass." } }, { type: "turn.completed", usage: {} }];
+    const input = { sourcePath: "overlap.jsonl", content: records.map(record => JSON.stringify(record)).join("\n") };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-overlap-")), "session.db"));
+    try {
+      const { sessionId } = ingestTranscript(store, resolveAdapter(input).parse(input, defaultConfig), defaultConfig);
+      expect(evaluateQualityGate(store, sessionId).status).toBe(expected);
+    } finally {
+      store.db.close();
+    }
+  }
 });

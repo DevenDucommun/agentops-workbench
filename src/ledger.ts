@@ -1,17 +1,17 @@
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { getCommands } from "./store";
+import { getCommands, getFileChanges, getUnconfirmedFileEvents } from "./store";
 import { type AgentOpsConfig, defaultConfig } from "./config";
 
 // Claims ledger (forensic recorder spec R2.1, R2.2). Every verification claim
 // in the final response gets a verdict backed by the commands that ran before
 // it: `supported` (the latest matching run passed), `contradicted` (the latest
-// matching run failed and no later run passed) or `unsupported` (no matching
+// matching run failed), `stale` (a later change needs a rerun), or `unsupported` (no matching
 // run). Claims cite events by `eventId` (`agentops.event.v1`) and fall back to
 // the stored event row ID for legacy sessions that have none.
 
 export type EvidenceClaimId = "test" | "lint" | "typecheck" | "build";
-export type ClaimVerdict = "supported" | "unsupported" | "contradicted";
+export type ClaimVerdict = "supported" | "unsupported" | "contradicted" | "stale";
 
 export type EvidenceClaimRule = {
   id: EvidenceClaimId;
@@ -329,7 +329,11 @@ export function commandOutcome(command: Pick<CommandRecord, "status" | "exitCode
   return FAILED_STATUSES.has((command.status ?? "").toLowerCase()) ? "failed" : "passed";
 }
 
+type AppliedChange = { rowId: number; step: number; path: string };
+
 export type LedgerInput = {
+  latestChange?: AppliedChange;
+  runStarts?: Map<number, number>;
   sessionId: string;
   /** `text` is the full final response when stored; `summary` is a producer's or display summary, checked as well. */
   finalEvent: { rowId: number; eventId: string | null; text: string; summary?: string | null } | null;
@@ -443,7 +447,14 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
         outcome: commandOutcome(command)
       }));
     const cited = evidence.at(-1) ?? null;
-    ledger.claims.push({ id: rule.id, label: rule.label, category: rule.category, verdict: verdictFor(cited), reason: reasonFor(rule.label, cited, evidence.length), evidence, cited });
+    const start = cited?.eventRowId == null ? null : input.runStarts?.get(cited.eventRowId) ?? cited.eventRowId;
+    const change = input.latestChange;
+    const stale = cited?.outcome === "passed" && change && (start === null || change.rowId > start);
+    const verdict = stale ? "stale" : verdictFor(cited);
+    const reason = stale
+      ? `Rerun ${cited.command}: ${change.path} changed at step ${change.step} without a subsequent passing run.`
+      : reasonFor(rule.label, cited, evidence.length);
+    ledger.claims.push({ id: rule.id, label: rule.label, category: rule.category, verdict, reason, evidence, cited });
   }
   return ledger;
 }
@@ -463,19 +474,56 @@ function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfi
       `SELECT id, event_uid AS eventUid, ${hasEventText(store) ? "text" : "NULL AS text"}, summary FROM events WHERE session_id = $sid AND type = 'final_response' ORDER BY idx DESC LIMIT 1`
     )
     .get({ $sid: sessionId }) as { id: number; eventUid: string | null; text: string | null; summary: string | null } | null;
-  const uids = store.db.query("SELECT id, event_uid AS eventUid FROM events WHERE session_id = $sid AND event_uid IS NOT NULL").all({ $sid: sessionId }) as Array<{
-    id: number;
-    eventUid: string;
+  if (!final) return { sessionId, finalEventRowId: null, finalEventId: null, claims: [] };
+  const rows = store.db.query("SELECT id, idx, event_uid AS eventUid FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{
+    id: number; idx: number; eventUid: string | null;
   }>;
-  const { resultRowIds, toolNames, eventTypes } = getCommandContext(store, sessionId);
+  const steps = new Map(rows.map(row => [row.id, row.idx]));
+  const eventIds = new Map<number, string>();
+  for (const row of rows) {
+    if (row.eventUid !== null) eventIds.set(row.id, row.eventUid);
+  }
+  const { resultRowIds, toolNames, eventTypes, hookStartRows, invocationKeys } = getCommandContext(store, sessionId);
   const adapter = store.db.query("SELECT source_adapter AS sourceAdapter FROM sessions WHERE id = $sid").get({ $sid: sessionId }) as { sourceAdapter: string | null } | null;
+  const linkedStatusIsOutcome = adapter?.sourceAdapter === "claude-code-stream-json";
+  const commands = getCommands(store, sessionId);
+  const unconfirmed = getUnconfirmedFileEvents(store, sessionId);
+  let latestChange: AppliedChange | undefined;
+  for (const file of getFileChanges(store, sessionId)) {
+    if (file.eventId === null || unconfirmed.has(file.eventId)) continue;
+    const rowId = (linkedStatusIsOutcome ? resultRowIds.get(file.eventId) : undefined) ?? file.eventId;
+    const step = steps.get(rowId);
+    if (step !== undefined && rowId < final.id && (!latestChange || rowId > latestChange.rowId)) {
+      latestChange = { rowId, step, path: file.path };
+    }
+  }
+  // Codex emits separate start and completion rows for an invocation. A pass
+  // that overlaps an edit cannot establish which version was tested.
+  const runStarts = hookStartRows;
+  if (latestChange && adapter?.sourceAdapter === "codex-exec-jsonl") {
+    const pending = new Map<string, number>();
+    for (const command of commands) {
+      if (command.eventId === null) continue;
+      const key = invocationKeys.get(command.eventId);
+      if (!key) continue;
+      if (command.status === "in_progress") {
+        if (!pending.has(key)) pending.set(key, command.eventId);
+      } else {
+        const start = pending.get(key);
+        if (start !== undefined) runStarts.set(command.eventId, start);
+        pending.delete(key);
+      }
+    }
+  }
   return buildClaimsLedger({
     sessionId,
-    finalEvent: final ? { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary } : null,
-    commands: getCommands(store, sessionId),
-    linkedStatusIsOutcome: adapter?.sourceAdapter === "claude-code-stream-json",
+    finalEvent: { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary },
+    latestChange,
+    runStarts,
+    commands,
+    linkedStatusIsOutcome,
     config,
-    eventIds: new Map(uids.map((row) => [row.id, row.eventUid])),
+    eventIds,
     resultRowIds,
     toolNames,
     eventTypes

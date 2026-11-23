@@ -366,6 +366,8 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
         category: claim.category,
         message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
       });
+    } else if (claim.verdict === "stale") {
+      flags.push({ eventId: finalEventId, severity: "medium", category: "stale-verification", message: claim.reason });
     } else if (claim.verdict === "contradicted" && claim.cited) {
       const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
       flags.push({
@@ -380,7 +382,7 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
 }
 
 /** Categories that only ledger verdicts raise. */
-export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim"]);
+export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification"]);
 
 /**
  * The ledger's claim flags for a stored session under `config`, after its
