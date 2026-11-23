@@ -13,25 +13,41 @@ import { getEventChain, getSessionCommits, ingestTranscript, linkSessionCommit, 
  * giving up. Long enough for a dashboard or check that holds a read snapshot
  * to finish, short enough that a store held by another writer still fails
  * within a second, inside the hook's time budget, and is recorded for replay.
- * Every store one operation opens (the import and the gate after it) shares
- * this budget.
+ *
+ * SQLite's busy timeout applies per statement, so it cannot bound a whole
+ * import. Each statement waits at most STATEMENT_WAIT_MS; a "database is
+ * locked" failure retries the whole operation (a single transaction, safe to
+ * repeat) until the shared deadline, so the total stays near this budget.
  */
 const IMPORT_BUSY_TIMEOUT_MS = 750;
+const STATEMENT_WAIT_MS = 50;
 let importDeadline: number | null = null;
+
+function isBusy(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown } | null;
+  return e?.code === "SQLITE_BUSY" || (typeof e?.message === "string" && /database is locked/i.test(e.message));
+}
 
 function withImportBudget<T>(run: () => T): T {
   if (importDeadline !== null) return run();
   importDeadline = Date.now() + IMPORT_BUSY_TIMEOUT_MS;
   try {
-    return run();
+    for (;;) {
+      try {
+        return run();
+      } catch (error) {
+        if (!isBusy(error) || Date.now() >= importDeadline) throw error;
+        Bun.sleepSync(Math.min(25, Math.max(1, importDeadline - Date.now())));
+      }
+    }
   } finally {
     importDeadline = null;
   }
 }
 
 function openStore(path: string): Store {
-  const remaining = importDeadline === null ? IMPORT_BUSY_TIMEOUT_MS : Math.max(1, importDeadline - Date.now());
-  return openStoreRaw(path, { busyTimeoutMs: remaining });
+  const remaining = importDeadline === null ? STATEMENT_WAIT_MS : Math.max(1, importDeadline - Date.now());
+  return openStoreRaw(path, { busyTimeoutMs: Math.min(STATEMENT_WAIT_MS, remaining) });
 }
 
 // Session-end ingest for the forensic recorder (spec R1.6, R1.8): spool ->
