@@ -318,3 +318,71 @@ test("review 6010509317: after a restore from a subdirectory, forget removes the
   expect(db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: COMMIT })).toEqual({ n: 0 });
   db.db.close();
 });
+
+/** A store in `sub/.agentops/` holding the commit session, restored by `agentops audit` while the recorder was disabled. */
+async function restoredInSubdirectory() {
+  const recorded = await recordedRepo();
+  const { repo, stateDir, env } = recorded;
+  expect((await runRecorderCommand(["disable"], { cwd: repo, env })).exitCode).toBe(0);
+  const sub = join(repo, "sub");
+  mkdirSync(sub);
+  // An existing subdirectory store is the one audit and check pick from there while disabled.
+  const subStore = join(sub, ".agentops", "agentops.db");
+  openStore(subStore).db.close();
+  const spool = spoolPath(join(stateDir, "spool"), COMMIT) as string;
+  const main = join(import.meta.dir, "..", "src", "main.ts");
+  const restore = Bun.spawnSync([process.execPath, main, "audit", spool, "--quiet"], { cwd: sub, env: { ...process.env, ...env } });
+  expect(restore.exitCode).toBe(0);
+  return { ...recorded, sub, subStore, spool };
+}
+
+function sessionCount(path: string, id: string): number {
+  const db = openStore(path);
+  try {
+    return (db.db.query("SELECT COUNT(*) AS n FROM sessions WHERE id = $s").get({ $s: id }) as { n: number }).n;
+  } finally {
+    db.db.close();
+  }
+}
+
+test("review 6024679539: forget after re-enabling still removes the session from the store restored while disabled", async () => {
+  const { repo, env, sub, subStore, spool } = await restoredInSubdirectory();
+  const mainStore = join(repo, ".agentops", "agentops.db");
+  expect(sessionCount(subStore, COMMIT)).toBe(1);
+  expect((await runRecorderCommand(["enable"], { cwd: repo, env })).exitCode).toBe(0);
+  const out = await runRecorderCommand(["forget", COMMIT], { cwd: sub, env });
+  expect(out.exitCode).toBe(0);
+  expect(out.stdout).toContain(`session ${COMMIT} from ${subStore}`);
+  expect(out.stdout).toContain(`session ${COMMIT} from ${mainStore}`);
+  expect(existsSync(spool)).toBe(false);
+  // Disabling again makes check read the subdirectory store: nothing of the session is left.
+  expect((await runRecorderCommand(["disable"], { cwd: repo, env })).exitCode).toBe(0);
+  expect(sessionCount(subStore, COMMIT)).toBe(0);
+  expect(sessionCount(mainStore, COMMIT)).toBe(0);
+  expect(sessionCount(mainStore, CLEAN)).toBe(1);
+});
+
+test("review 6024679539: a busy second store makes forget remove nothing from any store", async () => {
+  const { repo, env, sub, subStore, spool } = await restoredInSubdirectory();
+  const mainStore = join(repo, ".agentops", "agentops.db");
+  const { Database } = await import("bun:sqlite");
+  const holder = new Database(subStore);
+  holder.exec("BEGIN IMMEDIATE");
+  let out: Awaited<ReturnType<typeof runRecorderCommand>>;
+  try {
+    out = await runRecorderCommand(["forget", COMMIT], { cwd: sub, env });
+  } finally {
+    holder.exec("ROLLBACK");
+    holder.close();
+  }
+  expect(out.exitCode).toBe(1);
+  expect(out.stderr).toContain("Run it again");
+  expect(sessionCount(mainStore, COMMIT)).toBe(1);
+  expect(sessionCount(subStore, COMMIT)).toBe(1);
+  expect(existsSync(spool)).toBe(true);
+  // Once the store is free, the same command finishes the job.
+  expect((await runRecorderCommand(["forget", COMMIT], { cwd: sub, env })).exitCode).toBe(0);
+  expect(sessionCount(mainStore, COMMIT)).toBe(0);
+  expect(sessionCount(subStore, COMMIT)).toBe(0);
+  expect(existsSync(spool)).toBe(false);
+}, 10_000);
