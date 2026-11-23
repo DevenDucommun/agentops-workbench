@@ -25,9 +25,8 @@ const START_STATUSES = new Set(["started", "in_progress", "running"]);
  * outcome (an exit code, or a failed or success status such as `timed_out` or
  * `completed`). The command is compared exactly, after trimming leading and
  * trailing whitespace. A rerun counts only if it started after the failure's
- * result was recorded. Start rows are paired with finished runs in recorded
- * order, not by call ID, so overlapping runs of the same command are not told
- * apart and may be paired wrongly.
+ * result was recorded. Hook invocation IDs identify a recorded start; other
+ * start rows are matched in order and overlapping runs may be paired wrongly.
  * `repeated-edits`: one file changed at least `repeatedEditThreshold` times.
  * File changes are applied changes only: ingest skips the start half of a
  * start/completion pair and failed or denied attempts (for Claude Code, an
@@ -54,6 +53,7 @@ export function detectStalls(
   const runs: Array<{ run: CommandRecord; key: string; start: number | null; outcome: number | null }> = [];
   for (const command of shell) {
     const key = normalizeCommand(command.command);
+    if (key.includes("[REDACTED:")) continue;
     const status = (command.status ?? "").toLowerCase();
     if (START_STATUSES.has(status) && command.exitCode === null) {
       openStarts.set(key, [...(openStarts.get(key) ?? []), command.eventId]);
@@ -61,7 +61,8 @@ export function detectStalls(
     }
     if (NEVER_A_RUN.has(status) || !hasRecordedOutcome(command)) continue;
     const pending = openStarts.get(key) ?? [];
-    const start = pending.length > 0 ? (pending.shift() ?? null) : command.eventId;
+    const linkedStart = command.eventId === null ? undefined : context?.hookStartRows.get(command.eventId);
+    const start = linkedStart ?? (pending.length > 0 ? pending.shift() ?? null : command.eventId);
     const outcome = command.eventId === null ? null : (context?.resultRowIds.get(command.eventId) ?? command.eventId);
     runs.push({ run: command, key, start, outcome });
   }
@@ -88,6 +89,7 @@ export function detectStalls(
 
   const edits = new Map<string, { count: number; firstEventId: number | null }>();
   for (const file of fileChanges) {
+    if (file.path.includes("[REDACTED:")) continue;
     const entry = edits.get(file.path) ?? { count: 0, firstEventId: file.eventId };
     entry.count += 1;
     if (entry.firstEventId === null || (file.eventId !== null && file.eventId < entry.firstEventId)) entry.firstEventId = file.eventId;

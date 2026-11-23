@@ -287,3 +287,36 @@ describe("review round 5: applied edits, executed outcomes, exact commands", () 
     expect(generic([run({ command: "bun test a.ts", exitCode: 1, status: "failed" }), run({ command: "bun test\u00a0a.ts", exitCode: 0, status: "completed" })])).toEqual([]);
   });
 });
+
+describe("stall evidence after privacy filtering and normalization", () => {
+  const command = (exitCode: number, text = "bun test") => ({ type: "command", command: text, exitCode });
+  const edit = (extra = {}) => ({ type: "file_edit", path: "src/a.ts", ...extra });
+  function categories(events: unknown[]) {
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-stall-evidence-")), "agentops.db"));
+    try {
+      const text = [{ type: "session", id: "stall-evidence" }, ...events].map(row => JSON.stringify(row)).join("\n");
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("session.jsonl", text), defaultConfig);
+      analyzeSession(store, sessionId, defaultConfig);
+      return getRiskFlags(store, sessionId).map(f => f.category).filter(c => ["repeated-edits", "retry-without-change"].includes(c));
+    } finally {
+      store.db.close();
+    }
+  }
+  test("redaction cannot establish identical paths or commands", () => {
+    const home = ["/home", "example"].join("/");
+    expect(categories(Array.from({ length: 6 }, (_, i) => edit({ path: home + "/file" + i })))).toEqual([]);
+    expect(categories([command(1, "test " + home + "/a"), command(0, "test " + home + "/b")])).toEqual([]);
+  });
+  test("an unconfirmed file change neither counts toward the threshold nor separates a retry", () => {
+    for (const extra of [{ status: "skipped" }, { status: "timed_out" }, { status: "no_result" }, { operation: "inferred edit" }]) {
+      expect(categories([command(1), ...Array.from({ length: 6 }, () => edit(extra)), command(0)])).toEqual(["retry-without-change"]);
+    }
+    expect(categories([command(1), ...Array.from({ length: 6 }, () => edit({ status: "completed" })), command(0)])).toEqual(["repeated-edits"]);
+  });
+  test("an edit separates hook calls only if it precedes the second start", () => {
+    const start = (toolUseId: string) => ({ type: "tool_started", toolName: "Bash", toolUseId });
+    const finish = (toolUseId: string, exitCode: number) => ({ ...command(exitCode), type: "tool_call", toolName: "Bash", toolUseId });
+    expect(categories([start("a"), finish("a", 1), start("b"), edit(), finish("b", 0)])).toEqual(["retry-without-change"]);
+    expect(categories([start("a"), finish("a", 1), edit(), start("b"), finish("b", 0)])).toEqual([]);
+  });
+});

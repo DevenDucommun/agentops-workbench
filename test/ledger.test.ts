@@ -1101,3 +1101,189 @@ describe("review 6010390361: failures with flags, hook exit_code", () => {
     expect(bash?.exitCode).toBe(1);
   });
 });
+
+describe("review 6010457450: interrupted stream runs, narrowed failures", () => {
+  test("a Claude stream run reported interrupted is not a pass", () => {
+    const records = [
+      { type: "system", subtype: "init", session_id: "int-stream" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b1", is_error: false, content: "" }] }, tool_use_result: { interrupted: true, stdout: "", stderr: "" } },
+      { type: "result", subtype: "success", session_id: "int-stream", result: "Tests passed." }
+    ];
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("int.jsonl", records.map((r) => JSON.stringify(r)).join("\n")), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim?.verdict).not.toBe("supported");
+  });
+
+  test("a later failed run of a support command with a file argument contradicts the claim", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["node --test"] } } };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "narrowed" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "node --test", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "node --test runner.test.cjs", status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("n.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    expect(claim).toMatchObject({ verdict: "contradicted", cited: { command: "node --test runner.test.cjs" } });
+  });
+});
+
+describe("review 6010483073: interruption beats background; failure spellings", () => {
+  test.each([false, true])("a linked interruption contradicts the claim with run_in_background=%s", (background) => {
+    const records = [
+      { type: "system", subtype: "init", session_id: "int-bg" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b0", name: "Bash", input: { command: "bun test" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b0", is_error: false, content: "ok" }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test", run_in_background: background } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b1", is_error: false, content: "" }] }, tool_use_result: { interrupted: true, backgroundTaskId: "t1" } },
+      { type: "result", subtype: "success", session_id: "int-bg", result: "Tests passed." }
+    ];
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("int.jsonl", records.map((r) => JSON.stringify(r)).join("\n")), defaultConfig);
+    const [claim] = getClaimsLedger(store, sessionId).claims;
+    store.db.close();
+    expect(claim?.verdict).toBe("contradicted");
+  });
+
+  test("a failed configured run behind CI=1 or with a tab still contradicts", () => {
+    const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: ["node --test"] } } };
+    for (const failed of ["CI=1 node --test runner.test.cjs", "node\t--test"]) {
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      const lines = [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "spelling" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "node --test", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: failed, status: "failed", exitCode: 1 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("s.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+      const [claim] = getClaimsLedger(store, sessionId, config).claims;
+      store.db.close();
+      expect(claim?.verdict).toBe("contradicted");
+    }
+  });
+});
+
+describe("review on 82ca3f39: an exact configured command with an assignment", () => {
+  const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { lint: ["bun run lint"], test: ["CI=1 node --test"] } } };
+
+  for (const failed of ["CI=1 node --test", "CI=1 node --test runner.test.cjs", "env CI=1 node --test runner.test.cjs", "CI=1 node\t--test runner.test.cjs", "CI=1\tnode --test runner.test.cjs", "A=1 CI=1 node --test runner.test.cjs", "node --test runner.test.cjs"]) {
+    test(`a failed retry of \`${failed}\` contradicts the earlier pass`, () => {
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      const lines = [
+        { schemaVersion: "agentops.event.v1", type: "session", id: "exact-env" },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "bun run lint", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: "CI=1 node --test", status: "completed", exitCode: 0 },
+        { schemaVersion: "agentops.event.v1", type: "command", command: failed, status: "failed", exitCode: 1 },
+        { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const { sessionId } = ingestTranscript(store, parseJsonlTranscript("e.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+      const [claim] = getClaimsLedger(store, sessionId, config).claims;
+      const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: [] });
+      store.db.close();
+      expect(claim).toMatchObject({ verdict: "contradicted", cited: { command: failed, outcome: "failed" } });
+      expect(gate.status).not.toBe("passed");
+    });
+  }
+});
+
+describe("review 6026295365: configured commands that differ only in an assignment stay distinct", () => {
+  test("a lint failure does not contradict a test claim when only the assignment differs", () => {
+    const config = {
+      ...defaultConfig,
+      evidence: { ...defaultConfig.evidence, supportCommands: { test: ["CHECK=unit node verify.cjs"], lint: ["CHECK=lint node verify.cjs"] } }
+    };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "distinct-assign" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "CHECK=unit node verify.cjs", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "CHECK=lint node verify.cjs", status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("d.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    expect(claim).toMatchObject({ verdict: "supported", cited: { command: "CHECK=unit node verify.cjs", outcome: "passed" } });
+  });
+});
+
+describe("review 6026429058: a failed run of another kind's exact command does not contradict", () => {
+  for (const lintRun of ["node verify.cjs", "env node verify.cjs", "node\tverify.cjs"]) test(`a failed lint \`${lintRun}\` does not contradict tests configured as \`CHECK=unit node verify.cjs\``, () => {
+    const config = {
+      ...defaultConfig,
+      evidence: { ...defaultConfig.evidence, supportCommands: { test: ["CHECK=unit node verify.cjs"], lint: ["node verify.cjs"] } }
+    };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "other-kind" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "CHECK=unit node verify.cjs", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: lintRun, status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("o.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    expect(claim).toMatchObject({ verdict: "supported", cited: { command: "CHECK=unit node verify.cjs", outcome: "passed" } });
+  });
+});
+
+describe("review 6026938504: default-config adapter regressions", () => {
+  test("a Claude PowerShell call keeps its command in the stored session", () => {
+    const stream = [
+      { type: "system", subtype: "init", session_id: "claude-ps" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_ps", name: "PowerShell", input: { command: "git status --short" } }] } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_ps", is_error: false, content: "" }] } },
+      { type: "result", subtype: "success", session_id: "claude-ps", result: "Done." }
+    ].map((r) => JSON.stringify(r)).join("\n");
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
+    const commands = store.db.query("SELECT command, status FROM commands WHERE session_id = $id").all({ $id: sessionId }) as { command: string; status: string }[];
+    store.db.close();
+    expect(commands).toEqual([{ command: "git status --short", status: "completed" }]);
+  });
+});
+
+describe("failed runs retain their configured evidence kind", () => {
+  for (const [retry, verdict] of [
+    ["env CHECK=unit node verify.cjs", "contradicted"],
+    ["env CHECK=unit node verify.cjs sample.js", "contradicted"],
+    ["node verify.cjs sample.js", "supported"]
+  ] as const) {
+    test(`a failed ${retry} leaves the test claim ${verdict}`, () => {
+      const config = {
+        ...defaultConfig,
+        evidence: { ...defaultConfig.evidence, supportCommands: { test: ["CHECK=unit node verify.cjs"], lint: ["node verify.cjs"] } }
+      };
+      const rows = [
+        { type: "session", id: "selector" },
+        { type: "command", command: "CHECK=unit node verify.cjs", status: "completed", exitCode: 0 },
+        { type: "command", command: retry, status: "failed", exitCode: 1 },
+        { type: "final_response", role: "assistant", summary: "Tests passed." }
+      ];
+      const trace = rows.map((row) => JSON.stringify({ ...row, schemaVersion: "agentops.event.v1" })).join("\n");
+      const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+      try {
+        const { sessionId } = ingestTranscript(store, parseJsonlTranscript("selector.jsonl", trace), config);
+        const claim = getClaimsLedger(store, sessionId, config).claims[0];
+        expect(claim?.verdict).toBe(verdict);
+        expect(claim?.cited?.command).toBe(verdict === "contradicted" ? retry : "CHECK=unit node verify.cjs");
+      } finally {
+        store.db.close();
+      }
+    });
+  }
+
+  test("a requested background retry with an explicit nonzero exit is a terminal failure", () => {
+    const record = {
+      session_id: "background-exit", cwd: "/workspace", hook_event_name: "PostToolUse",
+      tool_name: "Bash", tool_use_id: "retry", tool_input: { command: "bun test", run_in_background: true },
+      tool_response: { exit_code: 1 }
+    };
+    const trace = parseClaudeHooksJsonl("hook.jsonl", JSON.stringify(record), defaultConfig);
+    expect(trace.events.find((event) => event.command === "bun test")).toMatchObject({ status: "failed", exitCode: 1 });
+  });
+});

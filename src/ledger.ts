@@ -154,6 +154,82 @@ export function isSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: s
   return configured.some((candidate) => isSafeSupportCommand(candidate) && normalizeCommand(candidate) === normalized);
 }
 
+/**
+ * A support command, or one with more arguments after it (`node --test
+ * runner.test.cjs`). Used only for failures: a failed run of a narrowed check
+ * still counts against the claim, while support stays word for word.
+ */
+function extendsSupportCommand(rule: Pick<EvidenceClaimRule, "id">, command: string, config: AgentOpsConfig = defaultConfig): boolean {
+  // Failures only, so every spelling below can only add contradictions.
+  // Configured entries are compared as written (tabs read as spaces), so two
+  // entries that differ only in an assignment (`CHECK=unit node verify.cjs`
+  // and `CHECK=lint node verify.cjs`) never match each other's runs. Only the
+  // observed command is varied: tabs as spaces, a leading `env` wrapper
+  // dropped, and leading VAR=value assignments dropped one at a time. So a
+  // failed `CI=1 node --test x`, `env CI=1 node --test x`,
+  // `A=1 CI=1 node<TAB>--test x` or `node --test x` still counts against a
+  // configured `CI=1 node --test` or `node --test`.
+  // An observed command with no assignments of its own (`node --test x`) is
+  // also compared with the configured entry's assignments removed; one that
+  // carries assignments must match them as written.
+  const configured = config.evidence.supportCommands?.[rule.id] ?? DEFAULT_SUPPORT_COMMANDS[rule.id];
+  const observed = observedFailureSpellings(command);
+  if (observed.length === 0) return false;
+  const bare = !LEADING_ASSIGNMENT.test(command.replace(/\t/g, " ").replace(/^\s*env\s+/, ""));
+  const matches = (base: string | null) =>
+    base !== null && base !== "" && observed.some((spelling) => spelling === base || spelling.startsWith(`${base} `));
+  // Keep environment selectors for as long as a configured command matches.
+  // Within each spelling the longest whole-word command owns a narrowed run.
+  const kinds = Object.keys(DEFAULT_SUPPORT_COMMANDS) as EvidenceClaimId[];
+  for (const spelling of observed) {
+    let longest = 0;
+    let matchesKind = false;
+    for (const kind of kinds) {
+      const entries = config.evidence.supportCommands?.[kind] ?? DEFAULT_SUPPORT_COMMANDS[kind];
+      for (const entry of entries) {
+        const base = normalizeCommand(entry.replace(/\t/g, " "));
+        if (!base || base.length < longest || (spelling !== base && !spelling.startsWith(`${base} `))) continue;
+        if (base.length > longest) matchesKind = false;
+        longest = base.length;
+        if (kind === rule.id) matchesKind = true;
+      }
+    }
+    if (longest > 0) return matchesKind;
+  }
+  return configured.some((candidate) => {
+    const spaced = candidate.replace(/\t/g, " ");
+    return bare && matches(normalizeCommand(stripLeadingAssignments(spaced)));
+  });
+}
+
+const LEADING_ASSIGNMENT = /^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
+
+function stripLeadingAssignments(command: string): string {
+  let rest = command;
+  while (LEADING_ASSIGNMENT.test(rest)) rest = rest.replace(LEADING_ASSIGNMENT, "");
+  return rest;
+}
+
+/** The observed command as written, then with tabs as spaces, a leading `env` dropped, and each count of leading assignments dropped. */
+function observedFailureSpellings(command: string): string[] {
+  const spellings = new Set<string>();
+  const add = (value: string) => {
+    const normalized = normalizeCommand(value);
+    if (normalized !== null) spellings.add(normalized);
+  };
+  add(command);
+  const spaced = command.replace(/\t/g, " ");
+  for (const start of [spaced, spaced.replace(/^\s*env\s+/, "")]) {
+    let rest = start;
+    add(rest);
+    while (LEADING_ASSIGNMENT.test(rest)) {
+      rest = rest.replace(LEADING_ASSIGNMENT, "");
+      add(rest);
+    }
+  }
+  return [...spellings];
+}
+
 /** ASCII spaces collapsed and trimmed; null for anything that is not plain printable ASCII (a non-breaking space, a tab, a newline). */
 function normalizeCommand(command: string): string | null {
   if (!PLAIN_ASCII.test(command)) return null;
@@ -355,7 +431,7 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed"
-          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || isSupportCommand(rule, command.command, input.config)
+          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || extendsSupportCommand(rule, command.command, input.config)
           : fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
       .map((command): LedgerEvidence => ({
@@ -374,6 +450,12 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
 
 /** Ledger for a stored session's latest final response. */
 export function getClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfig = defaultConfig): ClaimsLedger {
+  // Every read below comes from one transaction, so a re-import committing in
+  // between can never pair the old final response with the new command rows.
+  return store.db.transaction(() => readClaimsLedger(store, sessionId, config))();
+}
+
+function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfig): ClaimsLedger {
   const final = store.db
     // Claims are read from both the full final response (events.text, when the
     // store saved one) and the summary, which may be a producer's explicit one.
@@ -402,6 +484,7 @@ export function getClaimsLedger(store: Store, sessionId: string, config: AgentOp
 
 /** What a stored session records about each command row: its linked result row, tool name and event type. */
 export type CommandContext = {
+  hookStartRows: Map<number, number>;
   resultRowIds: Map<number, number>;
   toolNames: Map<number, string>;
   eventTypes: Map<number, string>;
@@ -430,11 +513,27 @@ export function getCommandContext(store: Store, sessionId: string): CommandConte
     eventId: number;
     toolName: string;
   }>;
-  const types = store.db.query("SELECT id, type FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{ id: number; type: string }>;
+  const events = store.db.query(`
+    SELECT id, type, tool_use_id AS invocation, agent_id AS agent FROM events WHERE session_id = $sid ORDER BY id
+  `).all({ $sid: sessionId }) as Array<{ id: number; type: string; invocation: string | null; agent: string | null }>;
+  const hookStartRows = new Map<number, number>();
+  const pending = new Map<string, number>();
+  for (const event of events) {
+    if (!event.invocation || event.invocation.includes("[REDACTED:") || event.agent?.includes("[REDACTED:")) continue;
+    const key = JSON.stringify([event.agent, event.invocation]);
+    if (event.type === "tool_started") {
+      pending.set(key, event.id);
+    } else {
+      const start = pending.get(key);
+      if (start !== undefined) hookStartRows.set(event.id, start);
+      pending.delete(key);
+    }
+  }
   return {
+    hookStartRows,
     resultRowIds: new Map(results.map((row) => [row.callRowId, row.resultRowId])),
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName])),
-    eventTypes: new Map(types.map((row) => [row.id, row.type]))
+    eventTypes: new Map(events.map((row) => [row.id, row.type]))
   };
 }
 

@@ -154,8 +154,14 @@ function repositoryRoots(repository: string, cwd: string): string[] {
 export async function ingestAfterSessionEnd(outcome: HookOutcome, stateDir: string): Promise<void> {
   if (!outcome.recorded || outcome.hookEventName !== "SessionEnd") return;
   try {
-    const { ingestSpoolFile } = await import("./ingest");
-    ingestSpoolFile(outcome.spoolFile, { repoRoot: outcome.repository });
+    const { ingestSpoolFile, SpoolGoneError } = await import("./ingest");
+    try {
+      ingestSpoolFile(outcome.spoolFile, { repoRoot: outcome.repository });
+    } catch (error) {
+      // Forgotten while the session ended: nothing to import, and no error file to leave behind.
+      if (error instanceof SpoolGoneError) return;
+      throw error;
+    }
   } catch (error) {
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
     writeRecorderError(join(stateDir, "spool"), sid, "ingest-failed", error instanceof Error ? error.message : String(error));
@@ -190,6 +196,7 @@ export async function verdictAfterStop(outcome: HookOutcome, stateDir: string, e
     const dbPath = env.AGENTOPS_DB !== undefined ? resolve(cwd, env.AGENTOPS_DB) : join(outcome.repository, ".agentops", "agentops.db");
     return verdictJson(turnVerdict(outcome.spoolFile, { repoRoot: outcome.checkout, dbPath, configPath }));
   } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === "SPOOL_GONE") return null;
     const sid = basename(outcome.spoolFile).replace(/\.jsonl$/, "");
     writeRecorderError(join(stateDir, "spool"), sid, "verdict-failed", error instanceof Error ? error.message : String(error));
     return null;

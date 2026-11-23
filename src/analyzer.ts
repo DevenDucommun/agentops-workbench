@@ -3,7 +3,7 @@ import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
-import { getCommands, getEvents, getFileChanges, getSession } from "./store";
+import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 
 type RiskFlag = {
   eventId: number | null;
@@ -127,17 +127,8 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
-  // Retry and stall rules (spec R2.3). An edit with no recorded result
-  // (`no_result`) stays in the file list, but without evidence it landed it
-  // neither counts toward repeated edits nor separates a retry.
-  const unanswered = new Set(
-    (
-      store.db
-        .query("SELECT event_id AS eventId FROM tool_calls WHERE session_id = $sid AND event_id IS NOT NULL AND LOWER(status) = 'no_result'")
-        .all({ $sid: sessionId }) as Array<{ eventId: number }>
-    ).map((row) => row.eventId)
-  );
-  const appliedChanges = fileChanges.filter((file) => file.eventId === null || !unanswered.has(file.eventId));
+  const unconfirmed = getUnconfirmedFileEvents(store, sessionId);
+  const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
   flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.

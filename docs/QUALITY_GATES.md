@@ -149,7 +149,9 @@ What counts:
   a retry. Tool calls other than shell runs do not count.
 - Two runs are the same command when their command strings match exactly
   after trimming leading and trailing whitespace. Internal whitespace is not
-  collapsed, so `bun  test` and `bun test` are different commands.
+  collapsed, so `bun  test` and `bun test` are different commands. Commands
+  and file paths containing a redaction placeholder cannot establish identity
+  and are excluded from same-command and same-file counts.
 - Only file changes with evidence they landed count, both toward
   `repeated-edits` and as the change that separates a failure from its rerun.
   Failed or denied edits are never recorded as changes. A Claude Code edit with
@@ -157,9 +159,9 @@ What counts:
   but the stall rules ignore it.
 
 Limit: a rerun counts only if it started after the failure's result was
-recorded, but runs are not paired with their starts by call ID. Start and
-result rows are matched in recorded order, so when runs of the same command
-overlap (a second start before the first result, or interleaved Codex
+recorded. Hook calls with a matching invocation and agent ID use their recorded
+start. For unlinked starts, rows are matched in recorded order. When such runs
+of the same command overlap (a second start before the first result, or interleaved Codex
 start and completion rows), they are not told apart and the rule may miss or
 misreport a retry.
 

@@ -175,11 +175,15 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
     const command = typeof input?.command === "string" ? input.command : undefined;
     const stdout = typeof response?.stdout === "string" ? response.stdout : undefined;
     const commit = (response?.gitOperation as { commit?: Record<string, unknown> } | undefined)?.commit;
+    // An exit code the record or the tool response reports wins over the hook's
+    // generic success: a PostToolUse can carry exitCode / exit_code 1.
+    const reported = [r.exitCode, r.exit_code, response?.exitCode, response?.exit_code].find((value): value is number => typeof value === "number");
     // A background launch (requested, after a timeout, or by the user) only
     // acknowledges the start; its exit code is not this call's, so it is still running.
     // A reported failure (PostToolUseFailure) or interruption keeps its own status.
     const background =
       !failed &&
+      (reported === undefined || reported === 0) &&
       response?.interrupted !== true &&
       (input?.run_in_background === true ||
       typeof response?.backgroundTaskId === "string" ||
@@ -188,16 +192,15 @@ function toolEvent(base: RawEvent, tool: string | undefined, input: Record<strin
     if (background) {
       return { ...base, type: "tool_call", toolName: name, command, input: command === undefined ? undefined : { command }, status: "started", output: stdout, summary: command ?? "Bash" };
     }
-    // An exit code the record or the tool response reports wins over the hook's
-    // generic success: a PostToolUse can carry exitCode / exit_code 1.
-    const reported = [r.exitCode, r.exit_code, response?.exitCode, response?.exit_code].find((value): value is number => typeof value === "number");
     return {
       ...base,
       type: "tool_call",
       toolName: name,
       command,
       input: command === undefined ? undefined : { command },
-      status: response?.interrupted === true ? "interrupted" : reported !== undefined && reported !== 0 ? "failed" : status,
+      // A reported nonzero exit only upgrades the hook's generic success; an
+      // explicit interruption or failure keeps its own status.
+      status: response?.interrupted === true || status === "interrupted" ? "interrupted" : status === "completed" && reported !== undefined && reported !== 0 ? "failed" : status,
       exitCode: reported ?? (failed ? undefined : 0),
       output: stdout,
       gitCommit: !failed && response?.interrupted !== true ? (r.gitCommit ?? commit) : undefined,
