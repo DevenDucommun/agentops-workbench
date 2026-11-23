@@ -70,7 +70,8 @@ the session can be found from the commit later.
 ## Privacy
 
 Recorded data is real session data: keep it private and never commit it.
-In short, records are redacted before they are written, some fields (such as
+In short, records pass through best-effort, pattern-based redaction before
+they are written, some fields (such as
 written file contents and command output) are reduced to a length and sha256,
 and most other text, including prompts and Bash commands, is kept after
 redaction. Claude Code's transcript files are never read, and nothing is

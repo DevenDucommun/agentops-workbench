@@ -77,8 +77,14 @@ redaction review.
 
 This section is the authoritative description of what the recorder stores.
 
-Every record is redacted before it is written: secrets, emails, and any path
-under `/Users/`, `/home/` or `/Volumes/`, wherever it appears. Before that,
+Every record is redacted before it is written, wherever the text appears.
+Redaction is pattern-based and best-effort. It replaces emails, paths under
+`/Users/`, `/home/` or `/Volumes/` (up to the first space or quote), and a
+fixed set of secret formats: AWS access keys, OpenAI-style and GitHub tokens,
+Slack tokens and PEM private keys. Anything else is kept as written, including
+secrets in other formats (such as a plain `password=...` assignment) and the
+rest of a home-directory path after a space. Treat the spool and the store as
+sensitive local data. Before redaction,
 path fields (`cwd`, `file_path`, `filePath`, `notebook_path`, `path`) that
 point inside the recorded checkout are made relative to it. Paths elsewhere in
 the text, such as in a command or a prompt, are not made relative, and
@@ -94,8 +100,9 @@ the payload is then lost as text, including the prompt or command it carried.
 Record metadata outside the payload is kept: the hook event, tool name,
 tool-use, prompt and agent IDs, agent type, working directory, file path, line
 counts, exit code, content hashes and a pushed commit. The session ID is part
-of the payload, so the record itself no longer carries it; the spool file it is
-in still belongs to that session.
+of the payload, so the payload no longer carries it, but the record's
+`eventId` is built from it and the spool file is named after the session, so
+both still identify it.
 
 | Kept as text, after redaction | Kept as length + sha256 only |
 | --- | --- |
@@ -112,6 +119,11 @@ else on the left, including subagent results, is kept as text after redaction.
 `privacy.storeRawPayload: true` in `agentops.config.json` keeps the right-hand
 column as text too (still redacted). Claude Code's `transcript_path` fields are
 dropped, and transcript files are never read.
+
+Fields the table doesn't name are kept in the spool as they arrive, after
+redaction. `agentops audit` and the session-end import store only the fields
+the adapter reads, so other fields stay in the spool and never reach the
+SQLite store, even with `privacy.storeRawPayload: true`.
 
 ### Where It Lives
 
