@@ -242,6 +242,8 @@ function normalizeSingleItem(item: CodexItem, status: string): RawEvent {
         type: "tool_call",
         source: "codex",
         toolName: "shell",
+        // The item id names the invocation, so its start and completion pair up.
+        toolUseId: typeof item.id === "string" ? item.id : undefined,
         command: item.command,
         input: item.command ? { command: item.command } : undefined,
         output: typeof item.output === "string" ? item.output : typeof item.aggregated_output === "string" ? item.aggregated_output : undefined,

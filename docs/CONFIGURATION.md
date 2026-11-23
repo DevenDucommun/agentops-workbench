@@ -32,6 +32,7 @@ and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
   "risk": {
     "largeChurnLines": 500,
     "repeatedEditThreshold": 6,
+    "treatBlockedAsExecuted": false,
     "sensitivePaths": [".env", ".npmrc", "secrets.json"],
     "productionPathPatterns": ["prod", "production", "deploy", "terraform", "k8s"]
   },
@@ -42,6 +43,7 @@ and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
     "requireVerification": true,
     "requiredVerificationCommands": [],
     "maxHighSeverityRisks": 0,
+    "maxBlockedAttempts": 2,
     "allowUnsupportedFinalClaims": false,
     "maxGeneratedFileChurnLines": 0,
     "generatedFilePatterns": ["generated", "dist", "build"]

@@ -12,6 +12,7 @@ export type AgentOpsConfig = {
   risk: {
     largeChurnLines: number;
     repeatedEditThreshold: number;
+    treatBlockedAsExecuted: boolean;
     sensitivePaths: string[];
     productionPathPatterns: string[];
   };
@@ -27,6 +28,7 @@ export type AgentOpsConfig = {
     requireVerification: boolean;
     requiredVerificationCommands: string[];
     maxHighSeverityRisks: number;
+    maxBlockedAttempts: number;
     allowUnsupportedFinalClaims: boolean;
     maxGeneratedFileChurnLines: number;
     generatedFilePatterns: string[];
@@ -59,6 +61,7 @@ export const defaultConfig: AgentOpsConfig = {
   risk: {
     largeChurnLines: 500,
     repeatedEditThreshold: 6,
+    treatBlockedAsExecuted: false,
     sensitivePaths: [".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "secrets.json", "secrets.yaml", "credentials"],
     productionPathPatterns: ["prod", "production", "terraform", "helm", "k8s", "kubernetes", "deploy", "release"]
   },
@@ -69,6 +72,7 @@ export const defaultConfig: AgentOpsConfig = {
     requireVerification: true,
     requiredVerificationCommands: [],
     maxHighSeverityRisks: 0,
+    maxBlockedAttempts: 2,
     allowUnsupportedFinalClaims: false,
     maxGeneratedFileChurnLines: 0,
     generatedFilePatterns: ["generated", "dist", "build"]
@@ -185,6 +189,7 @@ function validateConfigShape(value: unknown): string[] {
       if (repeatedEditThreshold !== undefined && (typeof repeatedEditThreshold !== "number" || !Number.isInteger(repeatedEditThreshold) || repeatedEditThreshold < 2)) {
         errors.push("risk.repeatedEditThreshold must be an integer of at least 2.");
       }
+      requireBoolean(value.risk, "risk.treatBlockedAsExecuted", "treatBlockedAsExecuted", errors);
       requireStringArray(value.risk, "risk.sensitivePaths", "sensitivePaths", errors);
       requireStringArray(value.risk, "risk.productionPathPatterns", "productionPathPatterns", errors);
     }
@@ -224,6 +229,7 @@ function validateConfigShape(value: unknown): string[] {
       requireBoolean(value.gates, "gates.requireVerification", "requireVerification", errors);
       requireBoolean(value.gates, "gates.allowUnsupportedFinalClaims", "allowUnsupportedFinalClaims", errors);
       requireNonNegativeInteger(value.gates, "gates.maxHighSeverityRisks", "maxHighSeverityRisks", errors);
+      requireNonNegativeInteger(value.gates, "gates.maxBlockedAttempts", "maxBlockedAttempts", errors);
       requireNonNegativeInteger(value.gates, "gates.maxGeneratedFileChurnLines", "maxGeneratedFileChurnLines", errors);
       requireStringArray(value.gates, "gates.requiredVerificationCommands", "requiredVerificationCommands", errors);
       requireStringArray(value.gates, "gates.generatedFilePatterns", "generatedFilePatterns", errors);

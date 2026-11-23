@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, evaluateEvidenceClaims, finalClaimTexts, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
 import { type ClaimsLedger, getClaimsLedger } from "./ledger";
 import type { AgentOpsConfig } from "./config";
 import {
@@ -308,8 +308,8 @@ function readDashboardSession(store: Store, sessionId: string, config: AgentOpsC
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
-  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config));
+  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command.command, config));
+  const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config), config);
   return {
     session: toDashboardSessionRecord(session),
     evidenceQuality: buildEvidenceQuality(session.source_adapter, commands, files, risks),
@@ -454,12 +454,15 @@ function buildDashboardDecision(
   commands: CommandRecord[],
   risks: RiskFlagRecord[],
   verification: CommandRecord[],
-  ledger: ClaimsLedger
+  ledger: ClaimsLedger,
+  config: AgentOpsConfig
 ): DashboardDecision {
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   const finalTexts = finalEvent ? finalClaimTexts(finalEvent) : [];
-  const evidence = buildEvidenceRows(finalTexts, commands, risks, verification, ledger);
-  const highRiskCount = risks.filter((risk) => risk.severity === "high").length;
+  const evidence = buildEvidenceRows(finalTexts, commands.filter(dashboardEvidenceCandidate), risks, verification, ledger);
+  // The same counts the quality gate uses, so the dashboard and `agentops check` agree.
+  const highRiskCount = gateHighRiskCount(commands, risks, config);
+  const blockedAttempts = countBlockedAttempts(commands, config);
   const mediumRiskCount = risks.filter((risk) => risk.severity === "medium").length;
   const missingEvidenceCount = evidence.filter((row) => row.status === "missing-evidence").length;
   const inferredEvidenceCount = evidence.filter((row) => row.status === "inferred-evidence").length;
@@ -469,6 +472,10 @@ function buildDashboardDecision(
   if (highRiskCount > 0) {
     status = "blocked";
     reasons.push(`${highRiskCount} high-severity risk${highRiskCount === 1 ? "" : "s"} detected.`);
+  }
+  if (blockedAttempts > config.gates.maxBlockedAttempts) {
+    status = "blocked";
+    reasons.push(`${blockedAttempts} blocked risky attempts (gate allows ${config.gates.maxBlockedAttempts}).`);
   }
   if (mediumRiskCount > 0) {
     if (status === "ready") status = "needs-review";
@@ -500,6 +507,12 @@ function buildDashboardDecision(
     },
     evidence
   };
+}
+
+// Inferred commands are displayed as inferred; declined calls and bare starts
+// remain in the timeline but cannot substantiate a dashboard claim.
+function dashboardEvidenceCandidate(command: CommandRecord): boolean {
+  return command.status === "inferred" || isObservedExecution(command);
 }
 
 function buildEvidenceRows(

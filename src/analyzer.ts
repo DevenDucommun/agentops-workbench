@@ -1,6 +1,7 @@
 import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
+import type { CommandRecord } from "./types";
 import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
@@ -56,22 +57,29 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     }
   }
 
+  const context = getCommandContext(store, sessionId);
+  const pairedStarts = startRowsWithOutcome(commands, context.invocationKeys);
   for (const command of commands) {
-    if (destructiveCommandPattern.test(command.command)) {
-      flags.push({
-        eventId: command.eventId,
-        severity: "high",
-        category: "destructive-command",
-        message: `Destructive command detected: ${command.command}`
-      });
-    }
-    if (permissionCommandPattern.test(command.command)) {
-      flags.push({
-        eventId: command.eventId,
-        severity: "medium",
-        category: "permission-change",
-        message: `Permission-changing command detected: ${command.command}`
-      });
+    // The start row of an invocation that also has an outcome row (Codex
+    // item.started, then item.completed or a decline) is the same command, not
+    // a second run: the outcome row alone decides its command risk. Its output
+    // is still checked below.
+    const pairedStart = pairedStarts.has(command.id);
+    // A risky command that was denied or declined never ran (spec R2.4): it is
+    // an informational blocked attempt unless risk.treatBlockedAsExecuted is set.
+    // One blocked attempt per command, even when it matches both rules, so
+    // gates.maxBlockedAttempts counts denied commands rather than flags.
+    const blocked = isBlockedCommandStatus(command.status) && !config.risk.treatBlockedAsExecuted;
+    const destructive = destructiveCommandPattern.test(command.command);
+    const permission = permissionCommandPattern.test(command.command);
+    if (pairedStart) {
+      // No command flags for the start half.
+    } else if (blocked && (destructive || permission)) {
+      const kind = destructive && permission ? "Destructive, permission-changing" : destructive ? "Destructive" : "Permission-changing";
+      flags.push({ eventId: command.eventId, severity: "low", category: "blocked-attempt", message: `${kind} command was ${command.status} and did not run: ${command.command}` });
+    } else {
+      if (destructive) flags.push({ eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` });
+      if (permission) flags.push({ eventId: command.eventId, severity: "medium", category: "permission-change", message: `Permission-changing command detected: ${command.command}` });
     }
     if (command.output && secretPattern.test(command.output)) {
       flags.push({
@@ -129,10 +137,10 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
 
   const unconfirmed = getUnconfirmedFileEvents(store, sessionId);
   const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
-  flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, getCommandContext(store, sessionId)));
+  flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
   // Inferred commands were only mentioned in text; denied/declined ones never ran.
-  const observedCommands = commands.filter((command) => isExecutedCommandStatus(command.status));
+  const observedCommands = commands.filter(isObservedExecution);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -212,6 +220,12 @@ export function isExecutedCommandStatus(status: string | null | undefined): bool
   return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
 }
 
+/** A Codex start is emitted before approval and can be followed by a decline. */
+export function isObservedExecution(command: CommandRecord): boolean {
+  const status = command.status?.toLowerCase();
+  return isExecutedCommandStatus(status) && !(status === "in_progress" && command.exitCode === null);
+}
+
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
   const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
   const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
@@ -241,6 +255,77 @@ function normalizeClaimText(value: string): string {
 
 function toClaimTexts(value: string | readonly string[]): string[] {
   return (typeof value === "string" ? [value] : [...value]).map(normalizeClaimText);
+}
+
+// Only the separate start row an adapter writes before the outcome row (Codex
+// item.started, "in_progress"). A Claude Code "started" row is a background run
+// that did execute, so it is never paired away.
+const START_ROW_STATUSES = new Set(["in_progress"]);
+
+/**
+ * Row ids of start rows (started, in progress, no exit code) that a later row
+ * of the same invocation completes. A start with no later outcome (an
+ * interrupted run), or without an invocation id, is not paired: it may have run.
+ */
+export function startRowsWithOutcome(commands: CommandRecord[], invocationKeys: Map<number, string> = new Map()): Set<number> {
+  const open = new Map<string, number[]>();
+  const paired = new Set<number>();
+  const ordered = [...commands].sort((a, b) => (a.eventId ?? 0) - (b.eventId ?? 0) || a.id - b.id);
+  // Only rows that name the same invocation pair. Rows without an invocation id
+  // are never paired: matching by command text could pair an interrupted run
+  // with a later, unrelated decline and clear its risk.
+  for (const command of ordered) {
+    const id = command.eventId === null ? undefined : invocationKeys.get(command.eventId);
+    if (id === undefined) continue;
+    // Same invocation id and same command: an id reused by another worker for a
+    // different command never pairs.
+    const invocation = `${id}\u0000${command.command}`;
+    const isStart = START_ROW_STATUSES.has((command.status ?? "").toLowerCase()) && command.exitCode === null;
+    if (isStart) {
+      open.set(invocation, [...(open.get(invocation) ?? []), command.id]);
+      continue;
+    }
+    const start = open.get(invocation)?.shift();
+    if (start !== undefined) paired.add(start);
+  }
+  return paired;
+}
+
+/**
+ * Blocked risky attempts, counted from the commands themselves so a store whose
+ * flags predate the rule (or whose analysis was interrupted) still counts them:
+ * one per denied or declined destructive or permission-changing command.
+ */
+/**
+ * High-severity risks for the gate, with blocked commands judged under the
+ * check's policy rather than the audit's: stored high flags on denied or
+ * declined destructive commands are dropped, and under
+ * risk.treatBlockedAsExecuted each such command counts once as a high
+ * destructive-command risk unless a suppression in this config covers it.
+ * Switching the policy between audit and check therefore gives the same result
+ * as re-auditing.
+ */
+export function gateHighRiskCount(commands: CommandRecord[], risks: Array<{ eventId: number | null; severity: string; category: string }>, config: AgentOpsConfig = defaultConfig): number {
+  const blocked = commands.filter((command) => isBlockedCommandStatus(command.status) && destructiveCommandPattern.test(command.command));
+  const blockedEvents = new Set(blocked.map((command) => command.eventId).filter((id): id is number => id !== null));
+  const stored = risks.filter((risk) => risk.severity === "high" && !(risk.category === "destructive-command" && risk.eventId !== null && blockedEvents.has(risk.eventId))).length;
+  if (!config.risk.treatBlockedAsExecuted) return stored;
+  const live = blocked
+    .map((command): RiskFlag => ({ eventId: command.eventId, severity: "high", category: "destructive-command", message: `Destructive command detected: ${command.command}` }))
+    .filter((flag) => !isSuppressed(flag, config.suppressions));
+  return stored + live.length;
+}
+
+export function countBlockedAttempts(commands: CommandRecord[], config: AgentOpsConfig = defaultConfig): number {
+  if (config.risk.treatBlockedAsExecuted) return 0;
+  return commands.filter(
+    (command) => isBlockedCommandStatus(command.status) && (destructiveCommandPattern.test(command.command) || permissionCommandPattern.test(command.command))
+  ).length;
+}
+
+/** Denied (by a permission rule or the user) or declined (by the agent runtime's approval policy). */
+export function isBlockedCommandStatus(status: string | null | undefined): boolean {
+  return status === "denied" || status === "declined";
 }
 
 /**

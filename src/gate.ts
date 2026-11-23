@@ -1,4 +1,4 @@
-import { currentLedgerClaimFlags, isExecutedCommandStatus, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedExecution, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -59,10 +59,15 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isExecutedCommandStatus(command.status) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isObservedExecution(command) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
-  checks.push(checkAtMost("max-high-risks", "High-severity risks", risks.filter((risk) => risk.severity === "high").length, config.gates.maxHighSeverityRisks));
+  const highRisks = gateHighRiskCount(commands, risks, config);
+  checks.push(checkAtMost("max-high-risks", "High-severity risks", highRisks, config.gates.maxHighSeverityRisks));
+  // Blocked risky commands are informational one by one; repeated attempts fail the gate (spec R2.4).
+  // Counted from the stored commands, not flags, so a store analyzed before this
+  // rule existed (or an interrupted analysis) cannot hide them.
+  checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", countBlockedAttempts(commands, config), config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
     checks.push({

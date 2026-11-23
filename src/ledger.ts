@@ -488,6 +488,8 @@ export type CommandContext = {
   resultRowIds: Map<number, number>;
   toolNames: Map<number, string>;
   eventTypes: Map<number, string>;
+  /** Recorded agent and invocation identity, shared by start and outcome events. */
+  invocationKeys: Map<number, string>;
 };
 
 export function getCommandContext(store: Store, sessionId: string): CommandContext {
@@ -516,11 +518,13 @@ export function getCommandContext(store: Store, sessionId: string): CommandConte
   const events = store.db.query(`
     SELECT id, type, tool_use_id AS invocation, agent_id AS agent FROM events WHERE session_id = $sid ORDER BY id
   `).all({ $sid: sessionId }) as Array<{ id: number; type: string; invocation: string | null; agent: string | null }>;
+  const invocationKeys = new Map<number, string>();
   const hookStartRows = new Map<number, number>();
   const pending = new Map<string, number>();
   for (const event of events) {
     if (!event.invocation || event.invocation.includes("[REDACTED:") || event.agent?.includes("[REDACTED:")) continue;
     const key = JSON.stringify([event.agent, event.invocation]);
+    invocationKeys.set(event.id, key);
     if (event.type === "tool_started") {
       pending.set(key, event.id);
     } else {
@@ -531,6 +535,7 @@ export function getCommandContext(store: Store, sessionId: string): CommandConte
   }
   return {
     hookStartRows,
+    invocationKeys,
     resultRowIds: new Map(results.map((row) => [row.callRowId, row.resultRowId])),
     toolNames: new Map(tools.map((row) => [row.eventId, row.toolName])),
     eventTypes: new Map(events.map((row) => [row.id, row.type]))
