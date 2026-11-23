@@ -1210,3 +1210,23 @@ describe("review 6026295365: configured commands that differ only in an assignme
     expect(claim).toMatchObject({ verdict: "supported", cited: { command: "CHECK=unit node verify.cjs", outcome: "passed" } });
   });
 });
+
+describe("review 6026429058: a failed run of another kind's exact command does not contradict", () => {
+  test("a failed lint `node verify.cjs` does not contradict tests configured as `CHECK=unit node verify.cjs`", () => {
+    const config = {
+      ...defaultConfig,
+      evidence: { ...defaultConfig.evidence, supportCommands: { test: ["CHECK=unit node verify.cjs"], lint: ["node verify.cjs"] } }
+    };
+    const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
+    const lines = [
+      { schemaVersion: "agentops.event.v1", type: "session", id: "other-kind" },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "CHECK=unit node verify.cjs", status: "completed", exitCode: 0 },
+      { schemaVersion: "agentops.event.v1", type: "command", command: "node verify.cjs", status: "failed", exitCode: 1 },
+      { schemaVersion: "agentops.event.v1", type: "final_response", role: "assistant", summary: "Tests passed." }
+    ];
+    const { sessionId } = ingestTranscript(store, parseJsonlTranscript("o.jsonl", lines.map((l) => JSON.stringify(l)).join("\n")), config);
+    const [claim] = getClaimsLedger(store, sessionId, config).claims;
+    store.db.close();
+    expect(claim).toMatchObject({ verdict: "supported", cited: { command: "CHECK=unit node verify.cjs", outcome: "passed" } });
+  });
+});
