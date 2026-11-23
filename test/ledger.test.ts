@@ -1134,12 +1134,12 @@ describe("review 6010457450: interrupted stream runs, narrowed failures", () => 
 });
 
 describe("review 6010483073: interruption beats background; failure spellings", () => {
-  test("an interrupted result with a background marker is still interrupted", () => {
+  test.each([false, true])("a linked interruption contradicts the claim with run_in_background=%s", (background) => {
     const records = [
       { type: "system", subtype: "init", session_id: "int-bg" },
       { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b0", name: "Bash", input: { command: "bun test" } }] } },
       { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b0", is_error: false, content: "ok" }] } },
-      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test" } }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "bun test", run_in_background: background } }] } },
       { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "b1", is_error: false, content: "" }] }, tool_use_result: { interrupted: true, backgroundTaskId: "t1" } },
       { type: "result", subtype: "success", session_id: "int-bg", result: "Tests passed." }
     ];

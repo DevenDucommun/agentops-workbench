@@ -410,12 +410,12 @@ function bashStatus(block: ClaudeContentBlock, results: ToolResults): string {
   // A background run's tool_result only acknowledges the launch; its outcome is
   // not in the stream, so it is still running as far as the ledger can tell.
   const failed = results.get(block);
-  // A reported failure is a failure even for a background run.
+  // Linked terminal outcomes take precedence over the requested launch mode.
   if (failed === true) return "failed";
+  if (failed === "interrupted") return "interrupted";
   if (block.input?.run_in_background === true) return "started";
   if (failed === undefined) return "no_result";
   if (failed === "background") return "started";
-  if (failed === "interrupted") return "interrupted";
   return failed ? "failed" : "completed";
 }
 
