@@ -44,8 +44,12 @@ Sizes are relative effort: S, M or L.
 - [x] **T1.8 (S) Privacy and release docs.** PUBLICATION_AND_PRIVACY (spool
   location, retention, removal) and RELEASE_CHECKLIST recorder items.
 - [ ] **T1.9 (S) Dogfood gate, then release v3.3.0.** Verify: one week of
-  enrolled use, `agentops verify` (preview) clean, no hook errors, release
-  smoke passes.
+  enrolled use with no hook errors. Reconcile imported and interrupted sessions,
+  replay an interrupted spool, and check selective removal. Measure installed
+  hook latency in an ordinary checkout and a linked worktree against the
+  50 ms p95 budget. `bun run smoke:recorder` checks its synthetic spool chain.
+  Track pilot evidence in [#157](https://github.com/DevenDucommun/agentops-workbench/issues/157).
+  The store-wide `agentops verify` command is tracked in T4.1.
 
 ## M2: Evidence ledger (v3.4.0)
 
@@ -54,7 +58,9 @@ Sizes are relative effort: S, M or L.
   claim, fail then pass then claim).
 - [ ] **T2.2 (M) New claim categories** (callers/usages, on-device or
   in-browser verification, "fixed"). Verify: one positive and one negative
-  fixture per category.
+  fixture per category. Reimplement the four kinds on the merged ledger using
+  configured support commands and citations for failures, following the
+  [replacement decision in #141](https://github.com/DevenDucommun/agentops-workbench/pull/141).
 - [x] **T2.3 (M) Retry/stall rules.** Verify: AC8 fixtures, and the existing
   fixtures' gate results are unchanged.
 - [x] **T2.4 (S) Blocked-attempt policy plus gate threshold.** Verify: the
@@ -62,7 +68,15 @@ Sizes are relative effort: S, M or L.
   the behavior change and the config key that restores it.
 - [x] **T2.5 (M) Ledger rendering** in the report, dashboard and PR comment.
   Verify: demo artifacts regenerated (`smoke:demo-artifacts`).
-- [ ] **T2.6 (S) Release v3.4.0.**
+- [ ] **T2.7 Evidence classification and citations.** Implement the evidence
+  tiers and the `unverified` verdict from the [trust model](evidence-trust-model.md).
+  Verify each [#154 case](https://github.com/DevenDucommun/agentops-workbench/issues/154)
+  against the expected verdict and cited event. [#160](https://github.com/DevenDucommun/agentops-workbench/pull/160)
+  covers evidence freshness and agreement across surfaces. [#161](https://github.com/DevenDucommun/agentops-workbench/pull/161)
+  tracks recognition of real verification commands.
+- [ ] **T2.6 (S) Release v3.4.0.** Complete T2.7 and the
+  [integrated acceptance checks](https://github.com/DevenDucommun/agentops-workbench/issues/157),
+  including creating and updating the same opt-in PR comment on GitHub.
 
 ## M3: Provenance (v3.5.0)
 

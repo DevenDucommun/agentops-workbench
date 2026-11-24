@@ -30,12 +30,12 @@ AgentOps answers those questions from the run's own event stream and turns them 
 
 - Latest release: [`v3.2.0`](https://github.com/DevenDucommun/agentops-workbench/releases/tag/v3.2.0) — `agentops check` ships as a [GitHub Action](#github-action) that fails a pull request when the agent run behind it lacks verification evidence
 - Install: one command, standalone binaries for macOS and Linux (no Bun, no clone)
-- Next (proposed): retry/stall detection, team policy packs, evidence-backed review, and OTLP export. See the [roadmap](docs/ROADMAP.md)
+- Next releases on the [roadmap](docs/ROADMAP.md) are the opt-in Claude Code recorder (v3.3) and the evidence ledger (v3.4). The [release checks](docs/specs/forensic-recorder/tasks.md) track the recorder pilot and verification of ledger verdicts.
 
 <details>
 <summary>Technical status</summary>
 
-- Current `main`: tracks the latest release
+- The development branch includes the recorder, claim citations, and retry/stall signals ahead of the published release.
 - Adapters checked against Codex CLI 0.166 and Claude Code 2.1
 - Capabilities: stable local review workflow with simplified product commands, guided first-run setup, first-class Codex and Claude Code capture commands, forensic plain-text import, deterministic quality gates for CI/PR workflows, read-only MCP session/report lookup, OpenInference-style JSON span export, decision-quality dashboard views, documented compatibility for schemas, adapters, CLI commands, config, reports, exports, migrations, privacy defaults, and release smoke coverage
 - Runtime model: local CLI, local SQLite, stdout reports
