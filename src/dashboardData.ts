@@ -1,6 +1,7 @@
-import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedExecution, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isVerificationCommand } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { type ClaimsLedger, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
+import { requiredCommandChecks } from "./gate";
+import { type ClaimsLedger, commandOutcome, hasRecordedOutcome, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,
   getEvents,
@@ -130,7 +131,7 @@ type DashboardEvidenceRow = {
   label: string;
   claimed: boolean;
   evidenceFound: boolean;
-  status: "verified" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
+  status: "stale" | "verified" | "failed" | "inferred-evidence" | "contradicted" | "missing-evidence" | "not-claimed";
   command: string | null;
   commandStatus: string | null;
   commandExitCode: number | null;
@@ -481,6 +482,13 @@ function buildDashboardDecision(
     status = "blocked";
     reasons.push(`${blockedAttempts} blocked risky attempts (gate allows ${config.gates.maxBlockedAttempts}).`);
   }
+  const requiredChecks = requiredCommandChecks(verification.filter(hasRecordedOutcome), config.gates.requiredVerificationCommands);
+  for (const check of requiredChecks) {
+    if (check.status === "failed") {
+      status = "blocked";
+      reasons.push(check.message);
+    }
+  }
   if (mediumRiskCount > 0) {
     if (status === "ready") status = "needs-review";
     reasons.push(`${mediumRiskCount} medium-severity risk${mediumRiskCount === 1 ? "" : "s"} detected.`);
@@ -497,9 +505,19 @@ function buildDashboardDecision(
     if (status === "ready") status = "needs-review";
     reasons.push(`${inferredEvidenceCount} claimed check${inferredEvidenceCount === 1 ? " has" : "s have"} inferred command evidence.`);
   }
+  if (checks.some(row => row.status === "failed")) {
+    if (status === "ready") status = "needs-review";
+    reasons.push("Verification recorded a failed run.");
+  }
+  for (const claim of ledger.claims) {
+    if (claim.verdict === "stale") {
+      if (status === "ready") status = "needs-review";
+      reasons.push(claim.reason);
+    }
+  }
   if (verification.length === 0) {
     if (status === "ready") status = "needs-review";
-    reasons.push("No verification command was recorded.");
+    reasons.push("No verification command with a recorded outcome was found.");
   }
   if (!reasons.length) reasons.push("No blocking risks or missing evidence detected.");
 
@@ -520,7 +538,7 @@ function buildDashboardDecision(
 // Inferred commands are displayed as inferred; declined calls and bare starts
 // remain in the timeline but cannot substantiate a dashboard claim.
 function dashboardEvidenceCandidate(command: CommandRecord): boolean {
-  return command.status === "inferred" || isObservedExecution(command);
+  return command.status === "inferred" || hasRecordedOutcome(command);
 }
 
 function buildEvidenceRows(
@@ -531,9 +549,10 @@ function buildEvidenceRows(
   ledger: ClaimsLedger,
   events: StoredEvent[]
 ): DashboardEvidenceRow[] {
-  const commandStrings = commands.map((command) => command.command);
+  const newestFirst = [...commands].reverse();
+  const commandStrings = newestFirst.map((command) => command.command);
   const rows = evaluateEvidenceClaims(finalTexts, commandStrings).map((claim) => {
-    const matchingCommand = claim.matchingCommand ? commands.find((command) => command.command === claim.matchingCommand) ?? null : null;
+    const matchingCommand = claim.matchingCommand ? newestFirst.find((command) => command.command === claim.matchingCommand) ?? null : null;
     // A claimed check renders the ledger verdict, so the dashboard agrees with
     // the report: a run after the final response does not back it. The one
     // exception is inferred (forensic) evidence, which the ledger does not count:
@@ -567,12 +586,12 @@ function buildEvidenceRows(
     });
   });
   const successRisk = risks.find((risk) => risk.category === "unsupported-success-claim") ?? null;
-  const finalSuccessClaimed = claimsFinalSuccess(finalTexts) || successRisk !== null;
+  const finalSuccessClaimed = ledger.claims.length > 0 || claimsFinalSuccess(finalTexts) || successRisk !== null;
   // A final success claim cannot present stronger evidence than one of its
   // specific ledger claims. Keep the same outcome and citation on both rows.
   if (finalSuccessClaimed && ledger.claims.length) {
     const claimed = rows.filter(row => ledger.claims.some(claim => claim.id === row.id));
-    for (const status of ["contradicted", "missing-evidence", "inferred-evidence", "verified"]) {
+    for (const status of ["contradicted", "stale", "missing-evidence", "inferred-evidence", "verified"]) {
       const source = claimed.find(row => row.status === status);
       if (source) return [...rows, { ...source, id: "final-success", label: "Final success" }];
     }
@@ -583,7 +602,7 @@ function buildEvidenceRows(
       label: "Final success",
       claimed: finalSuccessClaimed,
       evidenceFound: verification.length > 0,
-      command: verification[0] ?? null,
+      command: verification.at(-1) ?? null,
       risk: successRisk
     })
   );
@@ -595,7 +614,7 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     entry.verdict === "contradicted"
       ? (risks.find((item) => item.category === "contradicted-claim" && item.message.startsWith(`Final response claims ${entry.label} success,`)) ?? null)
       : (risks.find((item) => item.category === entry.category) ?? null);
-  return toEvidenceRow({
+  const row = toEvidenceRow({
     id: entry.id,
     label,
     claimed: true,
@@ -604,6 +623,12 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     command: entry.cited ? { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode } : null,
     risk
   });
+  if (entry.verdict === "stale") {
+    row.status = "stale";
+    row.riskMessage = entry.reason;
+    row.riskCategory = "stale-verification";
+  }
+  return row;
 }
 
 function toEvidenceRow(input: {
@@ -634,10 +659,11 @@ function toEvidenceRow(input: {
 function evidenceStatus(
   evidenceFound: boolean,
   claimed: boolean,
-  command: Pick<CommandRecord, "status"> | null
+  command: Pick<CommandRecord, "status" | "exitCode"> | null
 ): DashboardEvidenceRow["status"] {
   if (!evidenceFound) return claimed ? "missing-evidence" : "not-claimed";
-  return command?.status === "inferred" ? "inferred-evidence" : "verified";
+  if (command?.status === "inferred") return "inferred-evidence";
+  return command && commandOutcome(command) === "failed" ? "failed" : "verified";
 }
 
 function titleCase(value: string): string {

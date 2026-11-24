@@ -13,7 +13,7 @@ import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText }
 import { getGitChanges, getGitChangesOrEmpty } from "./git";
 import { formatAdapterList, generateSessionInspection, generateSessionList, noSessionsMessage } from "./inspect";
 import { formatPublicationScanResult, scanPublication } from "./publicationScan";
-import { generateGithubRepoComment, generateMarkdownReport } from "./report";
+import { generateGithubRepoComment, generateMarkdownReport, githubGateEvidence } from "./report";
 import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, listSessions, openStore, type Store } from "./store";
 import { startDashboardServer, type DashboardServer } from "./dashboard";
 import { startMcpStdio } from "./mcp";
@@ -482,9 +482,16 @@ function runCheck(args: string[]): CliResult {
     store.db.close();
     return { stderr: noSessionsMessage(), exitCode: 1 };
   }
-  const result = evaluateQualityGate(store, sessionId, config, { gitChanges: gitChangesFor(args) });
+  const gitChanges = gitChangesFor(args);
+  // Keep the verdict and its citations on the same session version during re-import.
+  const { result, output } = store.db.transaction(() => {
+    const result = evaluateQualityGate(store, sessionId, config, { gitChanges });
+    const output = format === "github"
+      ? formatGateGithub(result, githubGateEvidence(store, sessionId, config))
+      : format === "json" ? formatGateJson(result) : formatGateText(result);
+    return { result, output };
+  })();
   store.db.close();
-  const output = format === "json" ? formatGateJson(result) : format === "github" ? formatGateGithub(result) : formatGateText(result);
   const written = outputResult(output, outPath, format === "github" ? "quality gate PR comment" : "quality gate");
   return { ...written, exitCode: result.status === "passed" ? 0 : 1 };
 }

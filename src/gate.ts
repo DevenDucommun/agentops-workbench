@@ -1,7 +1,9 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedExecution, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
+import type { CommandRecord } from "./types";
+import { commandOutcome, hasRecordedOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
@@ -59,7 +61,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => isObservedExecution(command) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command.command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -70,36 +72,33 @@ function evaluateQualityGateSnapshot(
   checks.push(checkAtMost("max-blocked-attempts", "Blocked risky attempts", countBlockedAttempts(commands, config), config.gates.maxBlockedAttempts));
 
   if (config.gates.requireVerification) {
+    const failed = verification.filter(command => commandOutcome(command) === "failed").length;
+    const outcomes = failed ? ` ${failed} failed.` : "";
     checks.push({
       id: "required-verification",
       label: "Verification evidence",
       status: verification.length > 0 ? "passed" : "failed",
-      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.` : "No observed verification command recorded.",
+      message: verification.length > 0 ? `${verification.length} observed verification command${verification.length === 1 ? "" : "s"} recorded.${outcomes}` : "No observed verification command recorded.",
       observed: verification.length,
       threshold: ">= 1"
     });
   }
 
-  for (const required of config.gates.requiredVerificationCommands) {
-    const matched = verification.some((command) => command.command.toLowerCase().includes(required.toLowerCase()));
-    checks.push({
-      id: `required-command:${required}`,
-      label: `Required command: ${required}`,
-      status: matched ? "passed" : "failed",
-      message: matched ? `Observed required verification command containing "${required}".` : `No observed verification command containing "${required}" was recorded.`,
-      observed: matched ? 1 : 0,
-      threshold: ">= 1"
-    });
-  }
+  checks.push(...requiredCommandChecks(verification, config.gates.requiredVerificationCommands));
 
   if (!config.gates.allowUnsupportedFinalClaims) {
     // Ledger verdicts are judged under this check's config (not the audit's), so a
     // stricter support list here, or an analysis that did not finish, cannot pass
     // a claim the ledger rejects. Other claim flags come from the stored analysis.
+    const ledgerFlags = currentLedgerClaimFlags(store, sessionId, config);
     const unsupportedClaims =
       risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
-      currentLedgerClaimFlags(store, sessionId, config).length;
-    checks.push(checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0));
+      ledgerFlags.length;
+    const check = checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0);
+    for (const flag of ledgerFlags) {
+      if (flag.category === "stale-verification") check.message += ` ${flag.message}`;
+    }
+    checks.push(check);
   }
 
   const generatedChurn = files.filter((file) => isGeneratedPath(file.path, config.gates.generatedFilePatterns)).reduce((total, file) => total + (file.linesAdded ?? 0) + (file.linesRemoved ?? 0), 0);
@@ -118,6 +117,21 @@ function evaluateQualityGateSnapshot(
   };
 }
 
+/** Evaluate named requirements against observed verification commands, using the current repository policy. */
+export function requiredCommandChecks(observedVerification: readonly CommandRecord[], requiredCommands: readonly string[]): GateCheck[] {
+  return requiredCommands.map(required => {
+    const matched = observedVerification.some(command => command.command.toLowerCase().includes(required.toLowerCase()));
+    return {
+      id: `required-command:${required}`,
+      label: `Required command: ${required}`,
+      status: matched ? "passed" : "failed",
+      message: matched ? `Observed required verification command containing "${required}".` : `No observed verification command containing "${required}" was recorded.`,
+      observed: matched ? 1 : 0,
+      threshold: ">= 1"
+    };
+  });
+}
+
 export function formatGateText(result: GateResult): string {
   const lines = [
     "# AgentOps Quality Gate",
@@ -133,7 +147,7 @@ export function formatGateText(result: GateResult): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function formatGateGithub(result: GateResult): string {
+export function formatGateGithub(result: GateResult, evidence: readonly string[] = []): string {
   const icon = result.status === "passed" ? "PASS" : "FAIL";
   const rows = result.checks.map((check) => `| ${check.status === "passed" ? "PASS" : "FAIL"} | ${escapeTable(check.label)} | ${escapeTable(check.message)} |`);
   return [
@@ -146,6 +160,7 @@ export function formatGateGithub(result: GateResult): string {
     "| Status | Check | Detail |",
     "| --- | --- | --- |",
     ...rows,
+    ...evidence.flatMap(section => ["", section]),
     "",
     "_Generated locally by AgentOps Workbench. This command does not post to GitHub._"
   ].join("\n") + "\n";
