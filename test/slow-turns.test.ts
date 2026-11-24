@@ -71,3 +71,45 @@ test("a separate historical window retains millisecond precision in the reasonin
   expect(slowTurnReport(data).qualifiedTurns).toBe(0);
   expect(slowTurnReport(data, 48, 28, anchor).turns[0].reasoningGaps).toEqual(a.reasoningItemGaps);
 });
+
+test("groups transitive continuations across each turn, unions overlaps, and caps only the examples", () => {
+  function withChain(n: number) {
+    const t = turn(n), start = Date.parse(t.startedAt);
+    const tool = (sequence: number, parent: number | null, from: number, to: number) => ({
+      ...t.tools[0], sequence, continuationOfSequence: parent, executionPhase: parent ? "continuation" : "initial",
+      startedAt: iso(start + from), completedAt: iso(start + to)
+    });
+    return { ...t, tools: [tool(1, null, 0, 100), tool(2, 1, 50, 200), tool(3, 2, 300, 400), tool(4, null, 500, 550)] };
+  }
+  const input = source(withChain(1), withChain(2));
+  const find = (n: number) => slowTurnReport(input, 48, 28, anchor, n).recurring.find(r => r.step === "Tool execution: test suite");
+  const r = find(1);
+  expect(r).toMatchObject({ totalMs: 700, occurrences: 8, affectedTurns: 2, operationCount: 4, unlinkedRecords: 0 });
+  expect(r?.topContributors).toEqual([{ kind: "operation", observedMs: 300, records: 3, initialSequence: 1, evidence: "/sessions/0/interactions/0/tools/0" }]);
+  expect(find(5)?.topContributors.length).toBe(4);
+});
+
+test("missing targets, ambiguous sequences and cycles never invent an operation or cross turns", () => {
+  const a = turn(1), b = turn(2);
+  const tools = [ [1, 2], [2, 1], [3, 99], [4, null], [4, null], [5, 4], [6, null] ].map(([sequence, parent]) => ({
+    ...a.tools[0], sequence, executionPhase: "cell-wait", continuationOfSequence: parent
+  }));
+  const r = slowTurnReport(source({ ...a, tools }, { ...b, tools: [{ ...b.tools[0], continuationOfSequence: null, executionPhase: "initial" }] }));
+  expect(r.recurring.find(s => s.step === "Tool execution: test suite")).toMatchObject({ operationCount: 1, unlinkedRecords: 7 });
+});
+
+test("ranks individual transitions and computes their median from all observations before limiting examples", () => {
+  function gaps(n: number, durations: number[]) {
+    const t = turn(n);
+    const at = Date.parse(t.startedAt);
+    return { ...t, tools: [{ ...t.tools[0], continuationOfSequence: null }], postToolGaps: durations.map((duration, i) => ({
+      afterTool: 1, nextEvent: "reasoning", startMs: at + i * 10, endMs: at + i * 10 + duration
+    })) };
+  }
+  const r = slowTurnReport(source(gaps(1, [0, 3]), gaps(2, [5, 16])), 48, 28, anchor, 1);
+  expect(r.recurring.find(x => x.step.startsWith("After "))).toMatchObject({ medianMs: 4, longestMs: 16,
+    topContributors: [{ kind: "transition", initialSequence: 1, sourceSequence: 1, evidence: "/sessions/0/interactions/1/postToolGaps/1", observedMs: 16 }] });
+  expect(r.recurring.find(x => x.step.startsWith("Between "))).toMatchObject({ medianMs: null, longestMs: 30000,
+    topContributors: [{ kind: "turn summary", records: 10, evidence: "/sessions/0/interactions/0/reasoningItemGaps" }] });
+  expect(() => slowTurnReport(source(), 48, 28, anchor, 0)).toThrow("--top");
+});

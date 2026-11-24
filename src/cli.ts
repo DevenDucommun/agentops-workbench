@@ -834,7 +834,7 @@ Quality gate output (for CI/PR):
 Advanced:
   agentops doctor [--fix]
   agentops demo --serve
-  agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--json]
+  agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--top 3] [--json]
   agentops adapters [--input <session.jsonl>]
   agentops config --check
   agentops sessions
