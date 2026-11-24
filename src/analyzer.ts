@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, mentionsRuleCommand } from "./ledger";
+import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 
@@ -139,8 +139,8 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
   flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
-  // Inferred commands were only mentioned in text; denied/declined ones never ran.
-  const observedCommands = commands.filter(isObservedExecution);
+  // An attempt without a recorded outcome cannot substantiate a success claim.
+  const observedCommands = commands.filter(hasRecordedOutcome);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -212,18 +212,6 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   })();
-}
-
-const NOT_EXECUTED_COMMAND_STATUSES = new Set(["inferred", "denied", "declined"]);
-
-export function isExecutedCommandStatus(status: string | null | undefined): boolean {
-  return !NOT_EXECUTED_COMMAND_STATUSES.has(status ?? "");
-}
-
-/** A Codex start is emitted before approval and can be followed by a decline. */
-export function isObservedExecution(command: CommandRecord): boolean {
-  const status = command.status?.toLowerCase();
-  return isExecutedCommandStatus(status) && !(status === "in_progress" && command.exitCode === null);
 }
 
 export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
@@ -378,6 +366,8 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
         category: claim.category,
         message: `Final response claims ${claim.label} success, but no observed matching ${claim.label} command was recorded.`
       });
+    } else if (claim.verdict === "stale") {
+      flags.push({ eventId: finalEventId, severity: "medium", category: "stale-verification", message: claim.reason });
     } else if (claim.verdict === "contradicted" && claim.cited) {
       const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
       flags.push({
@@ -392,7 +382,7 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
 }
 
 /** Categories that only ledger verdicts raise. */
-export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim"]);
+export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification"]);
 
 /**
  * The ledger's claim flags for a stored session under `config`, after its

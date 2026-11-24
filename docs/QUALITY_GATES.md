@@ -37,12 +37,14 @@ The GitHub format is stdout/file only. The CLI does not post comments; the
 
 Default gates fail when:
 
-- no observed verification command is recorded
+- no verification command has a recorded outcome
 - any high-severity risk is present
 - more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
-  contradicted, or only inferred from forensic text
+  contradicted, stale, or only inferred from forensic text
 - generated-file churn is above the configured threshold
+
+An unfinished command, including a Claude tool call without a result or a Codex start without a completion, cannot satisfy a verification requirement. A recorded failure proves the check ran. The verification gate reports its failure count, and a later success claim is checked against the ledger.
 
 Forensic inferred commands are review evidence, not observed proof.
 
@@ -55,6 +57,7 @@ from the runs recorded before it:
 | --- | --- | --- |
 | `supported` | The latest relevant run is a passing run that can support the claim | none |
 | `contradicted` | The latest relevant run failed | `contradicted-claim` |
+| `stale` | A passing run predates or overlaps an applied file change | `stale-verification` |
 | `unsupported` | No relevant run was observed | `missing-<kind>-evidence` |
 
 A run counts only with its own recorded outcome: an exit code, an explicit
@@ -68,6 +71,8 @@ reports a non-zero exit code or a failed status. Denied, declined, inferred
 and still-running commands never count. The verdict cites the run it rests on
 by `eventId`, or by stored event row for sessions recorded without event IDs.
 A claim that fails, then passes on a re-run, is supported.
+
+Freshness uses the recorded session, which has no dependency graph. Any recorded, applied file change before the claim can affect a project check. The report keeps the earlier pass and identifies the latest change that needs a rerun. Reads, inferred or unsuccessful edits, and changes after the final response do not invalidate that claim. A new matching run started after the change and completed before the claim supplies the current verdict.
 
 The session report (`agentops save report`) and PR comment (`agentops save pr`)
 show each ledger verdict and cite its timeline step when evidence exists. The
@@ -216,7 +221,9 @@ example, `"lint"` matches `bun run lint`.
 
 The repository is itself a GitHub Action. It installs a pinned AgentOps
 release binary, audits each artifact, runs `agentops check --format github`,
-writes the results to the job summary, and fails the job when any gate fails:
+writes the results to the job summary, and fails the job when any gate fails. The summary and optional sticky comment include the claim verdict, command, recorded outcome, and timeline step. Up to five additional failed verification runs appear separately from the claim verdicts.
+
+Example workflow:
 
 ```yaml
 name: AgentOps Gate

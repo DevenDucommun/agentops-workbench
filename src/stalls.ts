@@ -13,9 +13,6 @@ export type StallFlag = {
   message: string;
 };
 
-// Rows that are never a finished run, even when they carry an exit code: never
-// executed, skipped, only started, or with no recorded result.
-const NEVER_A_RUN = new Set(["inferred", "denied", "declined", "skipped", "started", "in_progress", "running", "pending", "queued", "no_result"]);
 const START_STATUSES = new Set(["started", "in_progress", "running"]);
 
 /**
@@ -56,7 +53,7 @@ export function detectStalls(
       openStarts.set(key, [...(openStarts.get(key) ?? []), command.eventId]);
       continue;
     }
-    if (NEVER_A_RUN.has(status) || !hasRecordedOutcome(command)) continue;
+    if (!hasRecordedOutcome(command)) continue;
     const pending = openStarts.get(key) ?? [];
     const linkedStart = command.eventId === null ? undefined : context?.hookStartRows.get(command.eventId);
     const start = linkedStart ?? (pending.length > 0 ? pending.shift() ?? null : command.eventId);

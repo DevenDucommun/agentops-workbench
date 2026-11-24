@@ -417,7 +417,7 @@ export function getUnconfirmedFileEvents(store: Store, sessionId: string): Set<n
     LEFT JOIN tool_calls t ON t.session_id = f.session_id AND t.event_id = f.event_id
     WHERE f.session_id = $sid AND f.event_id IS NOT NULL
       AND (LOWER(${status}) IN ('skipped', 'timed_out', 'timeout', 'no_result', 'interrupted', 'inferred',
-            'failed', 'error', 'denied', 'declined', 'rejected', 'cancelled', 'canceled',
+            'failed', 'error', 'denied', 'declined', 'rejected', 'cancelled', 'canceled', 'aborted', 'killed',
             'started', 'running', 'in_progress', 'pending', 'queued')
            OR LOWER(f.operation) = 'inferred edit')
   `).all({ $sid: sessionId }) as Array<{ eventId: number }>;
