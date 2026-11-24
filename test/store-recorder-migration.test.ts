@@ -6,7 +6,9 @@ import { expect, test } from "bun:test";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig } from "../src/config";
 import { parseJsonlTranscript } from "../src/parser";
-import { generateMarkdownReport } from "../src/report";
+import { evaluateQualityGate } from "../src/gate";
+import { getDashboardSession } from "../src/dashboardData";
+import { generateGithubRepoComment, generateMarkdownReport } from "../src/report";
 import {
   findSessionsForCommit,
   getEventChain,
@@ -154,8 +156,66 @@ test("links commits to sessions and finds them by short or full SHA", () => {
   expect(findSessionsForCommit(store, "a1b2c3d%")).toEqual([]);
   expect(() => linkSessionCommit(store, { sessionId: "legacy", sha: "not-a-sha", branch: null, kind: null, source: "tool", eventId: null })).toThrow("not a commit SHA");
 
-  // Deleting the session (as re-ingest does) removes its commit links.
+  // Explicit deletion removes its commit links.
   store.db.query("DELETE FROM sessions WHERE id = 'legacy'").run();
   expect(getSessionCommits(store, "legacy")).toEqual([]);
   store.db.close();
+});
+
+test("upgrading released v3.2 rows requires review until re-import restores the full response", () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), "agentops-upgrade-")), "agentops.db");
+  const legacy = new Database(dbPath);
+  legacy.exec(V3_2_SCHEMA);
+  legacy.exec(readFileSync(join(import.meta.dir, "fixtures/v32-final-responses.sql"), "utf8"));
+  legacy.close();
+  const store = openStore(dbPath);
+  const id = "legacy-long";
+  const gate = (session = id) => evaluateQualityGate(store, session);
+  const report = () => generateGithubRepoComment(store, id, [], defaultConfig);
+  const warning = "the full final response cannot be verified";
+  try {
+    expect(gate().status).toBe("failed");
+    expect(gate().checks.find(check => check.id === "final-response-completeness")?.message).toContain(warning);
+    expect(report()).toContain(warning);
+    expect(getDashboardSession(store, id, defaultConfig)?.decision.mergeReadiness.reasons.join(" ")).toContain(warning);
+    expect(gate("legacy-short").status).toBe("failed");
+    expect(gate("legacy-pass").status).toBe("passed");
+
+    // An opt-in retained payload can establish the full text before re-import.
+    const updatePayload = store.db.query("UPDATE events SET raw_json = ? WHERE session_id = ? AND type = 'final_response'");
+    const marker = getEvents(store, id)[1].summary;
+    updatePayload.run(JSON.stringify({ type: "final_response", content: marker + " Tests passed." }), id);
+    expect(report()).toContain("Contradicted");
+    expect(report()).not.toContain(warning);
+    updatePayload.run("invalid", id);
+    expect(report()).toContain(warning);
+    updatePayload.run("", id);
+
+    const originalCommand = getEvents(store, id)[0];
+    const linked = { sessionId: id, sha: "a".repeat(40), branch: "feature", kind: "committed", source: "tool" as const };
+    linkSessionCommit(store, { ...linked, eventId: originalCommand.id });
+    const records = [
+      { type: "session", id },
+      { type: "command", command: "bun test", exitCode: 1, status: "failed" },
+      { type: "final_response", content: "Review notes. ".repeat(20) + "All tests pass." }
+    ];
+    const capture = () => parseJsonlTranscript("capture.jsonl", records.map(row => JSON.stringify({ schemaVersion: "agentops.event.v1", ...row })).join("\n"));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      ingestTranscript(store, capture());
+      expect(gate().status).toBe("failed");
+      expect(report()).not.toContain(warning);
+      expect(report()).toContain("Contradicted | `bun test` (exit 1), step 1");
+      expect(getSessionCommits(store, id)).toEqual([{ ...linked, eventId: getEvents(store, id)[0].id }]);
+    }
+    // A full response that literally ends with the old marker is complete.
+    records[2].content = marker;
+    ingestTranscript(store, capture());
+    expect(gate().status).toBe("passed");
+    records[1].command = "bun run lint";
+    ingestTranscript(store, capture());
+    expect(getSessionCommits(store, id)).toEqual([{ ...linked, eventId: null }]);
+    expect(gate("legacy-pass").status).toBe("passed");
+  } finally {
+    store.db.close();
+  }
 });

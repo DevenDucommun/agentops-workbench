@@ -6,6 +6,12 @@ CI pass/fail decision.
 Gates read only the local SQLite store and current git metadata. They do not
 upload transcripts, command output, raw event payloads, or reports.
 
+## Checking older imports
+
+A v3.2.0 database can retain only the first 117 characters of a final response followed by three dots. If that boundary is present and the full text is unavailable, the gate fails with `final-response-completeness`. The PR report explains why the session needs review. A complete response of exactly that shape is indistinguishable from a clipped one in a summary-only store.
+
+Run `agentops audit <original-capture> --quiet` and then `agentops check <session-id>` to reassess the session. Re-import preserves its commit links. An event citation is retained when the corresponding step can still be matched. Without the original capture or a retained final-response payload, the missing text cannot be recovered from the summary.
+
 ## Basic Use
 
 ```bash

@@ -489,6 +489,10 @@ function buildDashboardDecision(
       reasons.push(check.message);
     }
   }
+  if (ledger.evidenceLimitation) {
+    if (status === "ready") status = "needs-review";
+    reasons.push(ledger.evidenceLimitation);
+  }
   if (mediumRiskCount > 0) {
     if (status === "ready") status = "needs-review";
     reasons.push(`${mediumRiskCount} medium-severity risk${mediumRiskCount === 1 ? "" : "s"} detected.`);

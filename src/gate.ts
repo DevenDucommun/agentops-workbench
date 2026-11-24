@@ -3,7 +3,7 @@ import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import type { CommandRecord } from "./types";
-import { commandOutcome, hasRecordedOutcome } from "./ledger";
+import { getClaimsLedger, commandOutcome, hasRecordedOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
@@ -86,11 +86,18 @@ function evaluateQualityGateSnapshot(
 
   checks.push(...requiredCommandChecks(verification, config));
 
+  const ledger = getClaimsLedger(store, sessionId, config);
+  if (ledger.evidenceLimitation) {
+    checks.push({
+      id: "final-response-completeness", label: "Complete final-response evidence", status: "failed",
+      message: ledger.evidenceLimitation, observed: 0, threshold: 1
+    });
+  }
   if (!config.gates.allowUnsupportedFinalClaims) {
     // Ledger verdicts are judged under this check's config (not the audit's), so a
     // stricter support list here, or an analysis that did not finish, cannot pass
     // a claim the ledger rejects. Other claim flags come from the stored analysis.
-    const ledgerFlags = currentLedgerClaimFlags(store, sessionId, config);
+    const ledgerFlags = currentLedgerClaimFlags(ledger, config);
     const unsupportedClaims =
       risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
       ledgerFlags.length;

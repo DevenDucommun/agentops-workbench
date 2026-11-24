@@ -161,7 +161,8 @@ const eventChainColumns: Array<[string, string]> = [
 export function ingestTranscript(
   store: Store,
   transcript: ParsedTranscript,
-  config: AgentOpsConfig = defaultConfig
+  config: AgentOpsConfig = defaultConfig,
+  { rebuildToolLinks = false }: { rebuildToolLinks?: boolean } = {}
 ): { sessionId: string; eventCount: number } {
   const { db } = store;
   // events.text is added when a store is first written, never when it is opened, so a
@@ -206,6 +207,16 @@ export function ingestTranscript(
   `);
 
   db.transaction(() => {
+    // Deleting the old session cascades to its commit links. Recorder imports
+    // rebuild tool-derived links from the spool; other links belong to the session.
+    const links = db.query(`
+      SELECT c.session_id AS sessionId, c.sha, c.branch, c.kind, c.source,
+             e.idx, e.raw_payload_hash AS payloadHash, e.event_hash AS eventHash
+      FROM session_commits c LEFT JOIN events e ON e.id = c.event_id AND e.session_id = c.session_id
+      WHERE c.session_id = ? AND (? = 0 OR c.source != 'tool')
+    `).all(session.id, Number(rebuildToolLinks)) as Array<Omit<SessionCommit, "eventId"> & {
+      idx: number | null; payloadHash: string | null; eventHash: string | null;
+    }>;
     db.query("DELETE FROM sessions WHERE id = $id").run({ $id: session.id });
     insertSession.run({
       $id: session.id,
@@ -286,7 +297,16 @@ export function ingestTranscript(
         });
       }
     });
-  })();
+
+    for (const link of links) {
+      // SQLite row ids change at each import. Reattach only when the same
+      // timeline step still contains the same event, otherwise keep the link uncited.
+      const event = db.query(`SELECT id FROM events WHERE session_id = ? AND idx = ?
+        AND CASE WHEN raw_payload_hash IS NOT NULL AND ? IS NOT NULL THEN raw_payload_hash = ? ELSE event_hash = ? END`)
+        .get(session.id, link.idx, link.payloadHash, link.payloadHash, link.eventHash) as { id: number } | null;
+      linkSessionCommit(store, { ...link, eventId: event?.id ?? null });
+    }
+  }).immediate();
 
   return { sessionId: session.id, eventCount: transcript.events.length };
 }
