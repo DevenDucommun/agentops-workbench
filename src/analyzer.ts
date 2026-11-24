@@ -2,9 +2,10 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { type ClaimsLedger, claimsRule, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
+import { type ClaimsLedger, claimsRule, commandOutcome, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
+import { verificationInvocations } from "./verificationCommand";
 
 type RiskFlag = {
   eventId: number | null;
@@ -141,7 +142,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
 
   // An attempt without a recorded outcome cannot substantiate a success claim.
   const observedCommands = commands.filter(hasRecordedOutcome);
-  const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command.command, config));
+  const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
       eventId: command.eventId,
@@ -151,7 +152,7 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     });
   }
 
-  const ranVerification = observedCommands.some((command) => isVerificationCommand(command.command, config));
+  const ranVerification = observedCommands.some((command) => isVerificationCommand(command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
@@ -214,10 +215,22 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   })();
 }
 
-export function isVerificationCommand(command: string, config: AgentOpsConfig = defaultConfig): boolean {
-  const keywords = config.evidence.verificationCommands.map(escapeRegex).join("|");
-  const pattern = new RegExp(`\\b(bun|npm|pnpm|yarn|pytest|cargo|go|make|gmake|mvn|gradle)\\s+([^\\n]*\\b)?(${keywords})\\b`, "i");
-  return pattern.test(command);
+export function isVerificationCommand(command: CommandRecord | string, config: AgentOpsConfig = defaultConfig): boolean {
+  return verificationTexts(command, config).length > 0;
+}
+
+/** Only text belonging to an observed verifier participates in named requirements. */
+export function verificationTexts(command: CommandRecord | string, config: AgentOpsConfig): string[] {
+  const tasks = config.evidence.verificationCommands;
+  const keywords = tasks.filter(Boolean).map(escapeRegex).join("|");
+  if (!keywords) return [];
+  const pattern = new RegExp(`\\b(?:${keywords})\\b`, "i");
+  const text = typeof command === "string" ? command : command.command;
+  const passed = typeof command !== "string" && hasRecordedOutcome(command) && commandOutcome(command) === "passed";
+  return verificationInvocations(text, passed).flatMap(({ runner, args }) => {
+    const matches = runner === "make" || runner === "gmake" ? args.some(goal => tasks.includes(goal)) : pattern.test(args.join(" "));
+    return matches ? [[runner, ...args].join(" ")] : [];
+  });
 }
 
 /**

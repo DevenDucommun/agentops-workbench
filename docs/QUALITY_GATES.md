@@ -212,8 +212,33 @@ Configure gates in `agentops.config.json`:
 }
 ```
 
-`requiredVerificationCommands` checks observed verification command text. For
-example, `"lint"` matches `bun run lint`.
+`requiredVerificationCommands` matches text from recognized verifier invocations. For
+example, `"lint"` matches `bun run lint`. The gate recognizes direct test runs, including literal commands inside
+a recorded `sh`, `bash` or `zsh -lc` wrapper. Quoted arguments, a leading
+`cd dir &&`, absolute runner paths, and redirected or piped output can still
+provide evidence that the runner was invoked. A required task matches the runner
+and its arguments (for Make, its goals). A `cd` directory, a Make `-C` directory,
+a redirection target, and text from a following echo are excluded. The classifier handles foreground
+runs. A successful foreground `&&` chain provides evidence for each recognized
+runner reached through recognized setup or other runners, including one whose
+output is piped. A trailing `&& echo ok` or a final semicolon preserves that
+evidence.
+A fallback such as `|| true` or an independent command after a semicolon
+can hide a skipped runner, so the final status cannot establish that it ran.
+Recognized setup includes literal `cd`, `git status`, `set -e`
+and `export CI=value`. The classifier recognizes `time` and the
+`python -m pytest`, `uv run pytest` and `poetry run pytest` launchers.
+For a single-line command, the classifier accepts trailing LF characters
+(`\n`) and a shell comment starting at a word boundary on that line.
+CRLF, indentation after a newline, and other multi-line scripts (including
+a leading or standalone comment line) can leave a run unclassified.
+A fallback or pipeline after a shell wrapper can also mask the outcome of a
+conditional run inside the wrapper. Sourced scripts, dynamic shell expressions, other shell setup, background
+launches and privilege wrappers can leave a run unclassified.
+Printing `echo bun test` cannot satisfy either verification check. For Make,
+the gate looks for a configured goal and accepts ordinary options such as
+`-j4` and `-C dir`. Dry-run options, explicit Make flag variables, and
+unrecognized Make options leave the verification requirement unsatisfied.
 
 `generatedFilePatterns` is a simple case-insensitive path substring match.
 

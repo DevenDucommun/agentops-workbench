@@ -310,7 +310,7 @@ function readDashboardSession(store: Store, sessionId: string, config: AgentOpsC
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command, config));
   const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config), config);
   return {
     session: toDashboardSessionRecord(session),
@@ -482,7 +482,7 @@ function buildDashboardDecision(
     status = "blocked";
     reasons.push(`${blockedAttempts} blocked risky attempts (gate allows ${config.gates.maxBlockedAttempts}).`);
   }
-  const requiredChecks = requiredCommandChecks(verification.filter(hasRecordedOutcome), config.gates.requiredVerificationCommands);
+  const requiredChecks = requiredCommandChecks(verification.filter(hasRecordedOutcome), config);
   for (const check of requiredChecks) {
     if (check.status === "failed") {
       status = "blocked";

@@ -65,6 +65,126 @@ test("supports required verification commands and generated-file churn gates", (
   store.db.close();
 });
 
+test.each([
+  ["echo bun test", "failed"],
+  ["make test --just-print", "failed"],
+  ["MAKEFLAGS=n make test", "failed"],
+  ["make -kn test", "failed"],
+  ["make -f test", "failed"],
+  ["gmake -C project test", "passed"],
+  ["mvn clean test", "passed"],
+  ["make test", "passed"],
+  ["make -j4 test", "passed"],
+  ["CI=1 bun test unit.test.ts", "passed"]
+])("checks the recorded invocation %s for both verification gates", (command, status) => {
+  const store = openInlineFixture([
+    { schemaVersion: "agentops.event.v1", type: "session", id: "command-shape" },
+    { schemaVersion: "agentops.event.v1", type: "command", command, status: "completed", exitCode: 0 }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const result = evaluateQualityGate(store, "command-shape", config);
+    for (const id of ["required-verification", "required-command:test"]) {
+      expect(result.checks).toContainEqual(expect.objectContaining({ id, status }));
+    }
+  } finally {
+    store.db.close();
+  }
+});
+
+test.each([
+  ["/bin/zsh -lc 'bun test'", "passed"],
+  ["/bin/zsh -lc 'cd packages/core && bun test'", "passed"],
+  ["bash -lc 'bun test 2>&1 | tail -20'", "passed"],
+  ['bun test "src/a b.test.ts"', "passed"],
+  ["env CI=1 bun test", "passed"],
+  ["timeout 600 bun test", "passed"],
+  ["bun test > log.txt 2>&1", "passed"],
+  ["bun test 2>/dev/null", "passed"],
+  ['bun test >> "out file" < /dev/null', "passed"],
+  ["/opt/tools/bin/bun test", "passed"],
+  ["~/.bun/bin/bun test", "passed"],
+  ["/usr/bin/env bash -lc 'bun test'", "passed"],
+  ["bun run lint; bun test", "passed"],
+  ["bun run lint && bun run typecheck && bun test", "passed"],
+  ["/bin/zsh -lc 'bun install && bun run lint && bun test'", "passed"],
+  ["npm ci && npm run build && npm test", "passed"],
+  ["bun run lint && bun test | tail -5", "passed"],
+  ["git status && cd a && cd b && bun test", "passed"],
+  ["set -e; export CI=1; time bun test", "passed"],
+  ["python -m pytest test/", "passed"],
+  ["uv run pytest test/", "passed"],
+  ["poetry run pytest test/", "passed"],
+  ["bun test\n", "passed"],
+  ["bun test # run tests", "passed"],
+  ["bun test\r\n", "failed"],
+  ["bun test\n  ", "failed"],
+  ["# run tests\nbun test", "failed"],
+  ["bun test\necho done", "failed"],
+  ["cd pkg && bun test && echo ok\necho more", "failed"],
+  ["/bin/zsh -lc 'cd x && bun test' && echo ok", "passed"],
+  ["echo ok # bun test", "failed"],
+  ["cd missing && bun test # test skipped\necho done", "failed"],
+  ["/bin/zsh -lc 'cd x && bun test' && echo ok || true", "failed"],
+  ["export MAKEFLAGS=n; make test", "failed"],
+  ["cd pkg && bun test && echo 'All tests passed'", "passed"],
+  ["cd pkg && bun test;", "passed"],
+  ["cd pkg && make test && make -n check", "passed"],
+  ["bun install && bun test && echo ok", "passed"],
+  ["cd missing && bun test; echo done", "failed"],
+  ["cd missing && bun test && echo ok || true", "failed"],
+  ["bun install && bun test || true", "failed"],
+  ["bun install && bun test | tail -3 || true", "failed"],
+  ["/bin/zsh -lc 'bun install && bun test' || true", "failed"],
+  ["/bin/zsh -lc 'echo bun test'", "failed"],
+  ["bash -lc 'make test --just-print | tail -1'", "failed"],
+  ["true || bun test", "failed"],
+  ['echo "cd core && bun test"', "failed"]
+])("classifies recorded Codex shell invocation %s", (command, status) => {
+  const store = openInlineFixture([
+    { type: "thread.started", thread_id: "codex-shell" },
+    { type: "item.completed", item: { id: "run", type: "command_execution", command, status: "completed", exit_code: 0 } }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const { checks } = evaluateQualityGate(store, "codex-shell", config);
+    for (const id of ["required-verification", "required-command:test"]) {
+      expect(checks).toContainEqual(expect.objectContaining({ id, status }));
+    }
+  } finally {
+    store.db.close();
+  }
+});
+
+test.each([
+  ["bun run lint; echo bun test", "failed"],
+  ["/bin/zsh -lc 'bun run lint && echo bun test'", "failed"],
+  ["make lint; make -n test", "failed"],
+  ["make lint && make -n test", "failed"],
+  ["make -C test lint", "failed"],
+  ["cd test && make lint", "failed"],
+  ['make lint > "bun test"', "failed"],
+  ["bun run lint && bun test && git diff --stat", "passed"],
+  ["bun run lint && bun test | tail -3 && echo ok", "passed"],
+  ["make lint; make test", "passed"],
+  ["make lint && make test", "passed"]
+])("matches the required task against the invoked verifier in %s", (command, expected) => {
+  const store = openInlineFixture([
+    { type: "thread.started", thread_id: "named-task" },
+    { type: "item.completed", item: { id: "run", type: "command_execution", command, status: "completed", exit_code: 0 } }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const { checks } = evaluateQualityGate(store, "named-task", config);
+    expect(checks.find(check => check.id === "required-verification")?.status).toBe("passed");
+    expect(checks).toContainEqual(expect.objectContaining({ id: "required-command:test", status: expected }));
+    const decision = getDashboardSession(store, "named-task", config)?.decision;
+    expect(decision?.mergeReadiness.status === "blocked").toBe(expected === "failed");
+  } finally {
+    store.db.close();
+  }
+});
+
 function openFixture(path: string) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-gate-test-"));
   const store = openStore(join(dir, "agentops.db"));
@@ -76,7 +196,8 @@ function openFixture(path: string) {
 function openInlineFixture(events: unknown[]) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-gate-test-"));
   const store = openStore(join(dir, "agentops.db"));
-  const transcript = parseJsonlTranscript("gate-inline.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
+  const input = { sourcePath: "gate-inline.jsonl", content: events.map((event) => JSON.stringify(event)).join("\n") };
+  const transcript = resolveAdapter(input).parse(input, defaultConfig);
   ingestTranscript(store, transcript, defaultConfig);
   return store;
 }

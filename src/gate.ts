@@ -1,4 +1,4 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, verificationTexts, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -61,7 +61,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -84,7 +84,7 @@ function evaluateQualityGateSnapshot(
     });
   }
 
-  checks.push(...requiredCommandChecks(verification, config.gates.requiredVerificationCommands));
+  checks.push(...requiredCommandChecks(verification, config));
 
   if (!config.gates.allowUnsupportedFinalClaims) {
     // Ledger verdicts are judged under this check's config (not the audit's), so a
@@ -118,9 +118,10 @@ function evaluateQualityGateSnapshot(
 }
 
 /** Evaluate named requirements against observed verification commands, using the current repository policy. */
-export function requiredCommandChecks(observedVerification: readonly CommandRecord[], requiredCommands: readonly string[]): GateCheck[] {
-  return requiredCommands.map(required => {
-    const matched = observedVerification.some(command => command.command.toLowerCase().includes(required.toLowerCase()));
+export function requiredCommandChecks(observedVerification: readonly CommandRecord[], config: AgentOpsConfig): GateCheck[] {
+  const texts = observedVerification.flatMap(command => verificationTexts(command, config));
+  return config.gates.requiredVerificationCommands.map(required => {
+    const matched = texts.some(text => text.toLowerCase().includes(required.toLowerCase()));
     return {
       id: `required-command:${required}`,
       label: `Required command: ${required}`,

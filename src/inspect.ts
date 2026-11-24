@@ -48,7 +48,7 @@ export function generateSessionInspection(
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const usage = getUsageSummary(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isVerificationCommand(command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
 
   const sections = [
