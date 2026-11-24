@@ -126,7 +126,7 @@ export function storeHookTranscript(
       const matches = [...knownFull].filter((full) => full.startsWith(sha));
       return matches.length === 1 ? matches[0] : undefined;
     };
-    const { sessionId, eventCount } = ingestTranscript(store, transcript, config);
+    const { sessionId, eventCount } = ingestTranscript(store, transcript, config, { rebuildToolLinks: true });
     analyzeSession(store, sessionId, config);
 
     const rowByEventId = new Map(getEventChain(store, sessionId).filter((row) => row.eventUid).map((row) => [row.eventUid as string, row.id]));

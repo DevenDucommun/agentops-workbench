@@ -403,8 +403,7 @@ export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule)
  * instead of the stored ones, so a check with a different config, or a store
  * whose analysis did not finish, still judges claims by the config it was given.
  */
-export function currentLedgerClaimFlags(store: Store, sessionId: string, config: AgentOpsConfig): RiskFlag[] {
-  const ledger = getClaimsLedger(store, sessionId, config);
+export function currentLedgerClaimFlags(ledger: ClaimsLedger, config: AgentOpsConfig): RiskFlag[] {
   if (ledger.finalEventRowId === null) return [];
   return ledgerClaimFlags(ledger, ledger.finalEventRowId).filter((flag) => !isSuppressed(flag, config.suppressions));
 }

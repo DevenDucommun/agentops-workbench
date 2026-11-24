@@ -1,5 +1,6 @@
+import { finalResponseText } from "./parser";
 import type { Store } from "./store";
-import type { CommandRecord } from "./types";
+import type { CommandRecord, RawEvent } from "./types";
 import { getCommands, getFileChanges, getUnconfirmedFileEvents } from "./store";
 import { type AgentOpsConfig, defaultConfig } from "./config";
 
@@ -50,6 +51,7 @@ export type ClaimsLedger = {
   finalEventRowId: number | null;
   finalEventId: string | null;
   claims: LedgerClaim[];
+  evidenceLimitation?: string;
 };
 
 /**
@@ -471,9 +473,9 @@ function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfi
     // Claims are read from both the full final response (events.text, when the
     // store saved one) and the summary, which may be a producer's explicit one.
     .query(
-      `SELECT id, event_uid AS eventUid, ${hasEventText(store) ? "text" : "NULL AS text"}, summary FROM events WHERE session_id = $sid AND type = 'final_response' ORDER BY idx DESC LIMIT 1`
+      `SELECT id, event_uid AS eventUid, ${hasEventText(store) ? "text" : "NULL AS text"}, summary, raw_json AS rawJson FROM events WHERE session_id = $sid AND type = 'final_response' ORDER BY idx DESC LIMIT 1`
     )
-    .get({ $sid: sessionId }) as { id: number; eventUid: string | null; text: string | null; summary: string | null } | null;
+    .get({ $sid: sessionId }) as { id: number; eventUid: string | null; text: string | null; summary: string | null; rawJson: string } | null;
   if (!final) return { sessionId, finalEventRowId: null, finalEventId: null, claims: [] };
   const rows = store.db.query("SELECT id, idx, event_uid AS eventUid FROM events WHERE session_id = $sid").all({ $sid: sessionId }) as Array<{
     id: number; idx: number; eventUid: string | null;
@@ -515,9 +517,25 @@ function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfi
       }
     }
   }
-  return buildClaimsLedger({
+  // v3.2 kept a 117-code-unit prefix plus "..." when it shortened a response.
+  // A legacy row can have NULL text even after another session upgraded the schema.
+  let text = final.text;
+  let summary = final.summary;
+  if (text === null && final.rawJson) {
+    let raw: RawEvent | null = null;
+    try {
+      raw = JSON.parse(final.rawJson);
+    } catch {
+      // An unreadable retained payload cannot establish completeness.
+    }
+    if (raw?.type === "final_response") {
+      text = finalResponseText(raw);
+      if (text !== null) summary = typeof raw.summary === "string" ? raw.summary : text;
+    }
+  }
+  const ledger = buildClaimsLedger({
     sessionId,
-    finalEvent: { rowId: final.id, eventId: final.eventUid, text: final.text ?? final.summary ?? "", summary: final.summary },
+    finalEvent: { rowId: final.id, eventId: final.eventUid, text: text ?? summary ?? "", summary },
     latestChange,
     runStarts,
     commands,
@@ -528,6 +546,10 @@ function readClaimsLedger(store: Store, sessionId: string, config: AgentOpsConfi
     toolNames,
     eventTypes
   });
+  if (text === null && summary?.length === 120 && summary.endsWith("...")) {
+    ledger.evidenceLimitation = "This store has only a summary ending at the legacy truncation boundary. Re-import the original capture with agentops audit. If it is unavailable, the full final response cannot be verified.";
+  }
+  return ledger;
 }
 
 /** What a stored session records about each command row: its linked result row, tool name and event type. */

@@ -55,6 +55,7 @@ function renderMarkdownReport(store: Store, sessionId: string, config: AgentOpsC
       ["Files Changed", String(files.length)],
       ["Risk Flags", String(risks.length)]
     ]),
+    ...(ledger.evidenceLimitation ? [ledger.evidenceLimitation] : []),
     ...forensicEvidenceQuality(session.source_adapter),
     ...(hasUsage(usage) ? ["## Usage", usageTable(usage)] : []),
     "## Timeline",
