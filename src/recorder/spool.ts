@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { eventHash, eventIdFor } from "../eventChain";
 import { redactValue, sha256 } from "../redaction";
+import type { Delivery } from "./delivery";
 import type { RawEvent } from "../types";
 
 // Spool writer for the forensic recorder (spec R1.2-R1.5, plan M1.2).
@@ -16,6 +17,8 @@ import type { RawEvent } from "../types";
 // stays inside its latency budget (spike S1).
 
 export type SpoolOptions = {
+  /** Private ticket created by the dispatcher for one retryable invocation. */
+  deliveryTicket?: string;
   /** Keep file contents and command output instead of length + sha256 (privacy.storeRawPayload). */
   storeRawPayload?: boolean;
   /** Records larger than this have their payload replaced by a digest. */
@@ -142,43 +145,56 @@ export function appendRecord(dir: string, sessionId: string, record: RawEvent, o
     return { ok: false, reason: "write-failed", detail: `mkdir: ${message(error)}` };
   }
 
-  const lockPath = `${path}.lock`;
-  const lock = acquireLock(lockPath, settings.lockTimeoutMs, settings.staleLockMs);
-  if (lock !== "acquired") {
-    return lock === "timeout"
-      ? fail(dir, sessionId, "lock-timeout", `lock not acquired within ${settings.lockTimeoutMs} ms`)
-      : fail(dir, sessionId, "write-failed", `lock: ${lock.error}`);
-  }
   try {
-    const tail = readTail(path);
-    const seq = tail ? tail.seq + 1 : 1;
-    let linked: RawEvent = { ...record, eventId: eventIdFor(sessionId, seq), seq, prevHash: tail ? tail.hash : null };
-    linked.hash = eventHash(linked);
-    let line = JSON.stringify(linked);
-    let truncated = false;
-    if (Buffer.byteLength(line) > settings.maxRecordBytes) {
-      const payloadJson = JSON.stringify(record.payload ?? null);
-      const { hash: _h, ...rest } = linked;
-      linked = { ...rest, truncated: true, payload: { omitted: "payload", bytes: Buffer.byteLength(payloadJson), sha256: sha256(payloadJson) } };
-      linked.hash = eventHash(linked);
-      line = JSON.stringify(linked);
-      truncated = true;
+    if (options.deliveryTicket !== undefined) {
+      // Keep SQLite out of the ordinary hook startup path.
+      const { withDelivery, ExpiredDelivery } = require("./delivery") as typeof import("./delivery");
+      try {
+        return withDelivery(dir, path, options.deliveryTicket, sessionId, settings.lockTimeoutMs, (delivery) =>
+          appendLocked(path, sessionId, { ...record, deliveryId: delivery.id }, settings.maxRecordBytes, delivery));
+      } catch (error) {
+        // A late retry must not recreate even the error sidecar after forget.
+        if (error instanceof ExpiredDelivery) return { ok: false, reason: "write-failed", detail: error.message };
+        throw error;
+      }
     }
-    // Torn bytes from a crashed writer may end the file even when no earlier line
-    // is a valid record; start a new line so this record stays readable.
-    const prefix = endsMidLine(path) ? "\n" : "";
-    const fd = openSync(path, "a", 0o600);
-    try {
-      writeSync(fd, `${prefix}${line}\n`);
-    } finally {
-      closeSync(fd);
-    }
-    return { ok: true, path, seq, hash: linked.hash as string, truncated };
+    const locked = withSpoolFileLock(path, () => appendLocked(path, sessionId, record, settings.maxRecordBytes), settings);
+    if (locked.ok) return locked.value;
+    return fail(dir, sessionId, locked.reason === "lock-timeout" ? "lock-timeout" : "write-failed", locked.detail);
   } catch (error) {
     return fail(dir, sessionId, "write-failed", message(error));
-  } finally {
-    releaseLock(lockPath);
   }
+}
+
+function appendLocked(path: string, sessionId: string, record: RawEvent, maxRecordBytes: number, delivery?: Delivery): AppendResult {
+  const prior = delivery?.prior(path);
+  if (prior) return { ok: true, path, seq: prior.seq, hash: prior.hash, truncated: prior.truncated };
+  const tail = readTail(path);
+  const seq = tail ? tail.seq + 1 : 1;
+  let linked: RawEvent = { ...record, eventId: eventIdFor(sessionId, seq), seq, prevHash: tail ? tail.hash : null };
+  linked.hash = eventHash(linked);
+  let line = JSON.stringify(linked);
+  let truncated = false;
+  if (Buffer.byteLength(line) > maxRecordBytes) {
+    const payloadJson = JSON.stringify(record.payload ?? null);
+    const { hash: _h, ...rest } = linked;
+    linked = { ...rest, truncated: true, payload: { omitted: "payload", bytes: Buffer.byteLength(payloadJson), sha256: sha256(payloadJson) } };
+    linked.hash = eventHash(linked);
+    line = JSON.stringify(linked);
+    truncated = true;
+  }
+  // Torn bytes from a crashed writer may end the file even when no earlier line
+  // is a valid record; start a new line so this record stays readable.
+  const prefix = endsMidLine(path) ? "\n" : "";
+  const fd = openSync(path, "a", 0o600);
+  try {
+    const bytes = `${prefix}${line}\n`;
+    delivery?.prepare(fd, bytes, seq, linked.hash as string, truncated);
+    if (writeSync(fd, bytes) !== Buffer.byteLength(bytes)) throw new Error("short spool write");
+  } finally {
+    closeSync(fd);
+  }
+  return { ok: true, path, seq, hash: linked.hash as string, truncated };
 }
 
 /**

@@ -14,7 +14,7 @@ export type HookOutcome =
   | { recorded: true; seq: number; repository: string; checkout: string; cwd: string; spoolFile: string; hookEventName: string }
   | { recorded: false; reason: "malformed-input" | "not-enrolled" | "append-failed"; detail?: string };
 
-export type HookOptions = { stateDir?: string; env?: NodeJS.ProcessEnv };
+export type HookOptions = { deliveryTicket?: string; stateDir?: string; env?: NodeJS.ProcessEnv };
 
 /** Processes one hook payload. Pure enough to test without a process; never throws. */
 export function handleHook(eventArg: string | undefined, stdinText: string, options: HookOptions = {}): HookOutcome {
@@ -36,6 +36,7 @@ export function handleHook(eventArg: string | undefined, stdinText: string, opti
   const repository = roots.main;
   if (typeof payload.hook_event_name !== "string" && eventArg) payload.hook_event_name = eventArg;
   const result = appendHookPayload(join(stateDir, "spool"), payload, {
+    deliveryTicket: options.deliveryTicket,
     storeRawPayload: storeRawPayload(repository),
     repoRoots: repositoryRoots(roots.checkout, cwd),
     gitCommit: observedPush(payload, cwd)
