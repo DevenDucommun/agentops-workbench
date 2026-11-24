@@ -228,10 +228,12 @@ can hide a skipped runner, so the final status cannot establish that it ran.
 Recognized setup includes literal `cd`, `git status`, `set -e`
 and `export CI=value`. The classifier recognizes `time` and the
 `python -m pytest`, `uv run pytest` and `poetry run pytest` launchers.
-A final newline or trailing shell comment is accepted. Commands on a later
-line can supply a separate exit status, so multi-line scripts can leave a
-conditional run unclassified. The same applies if a fallback follows a shell
-wrapper. Sourced scripts, dynamic shell expressions, other shell setup, background
+For a single-line command, the classifier accepts trailing LF characters
+(`\n`) and a shell comment starting at a word boundary on that line.
+CRLF, indentation after a newline, and other multi-line scripts (including
+a leading or standalone comment line) can leave a run unclassified.
+A fallback or pipeline after a shell wrapper can also mask the outcome of a
+conditional run inside the wrapper. Sourced scripts, dynamic shell expressions, other shell setup, background
 launches and privilege wrappers can leave a run unclassified.
 Printing `echo bun test` cannot satisfy either verification check. For Make,
 the gate looks for a configured goal and accepts ordinary options such as
