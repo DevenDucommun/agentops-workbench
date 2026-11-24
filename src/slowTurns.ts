@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+import { type Detail, type Observation, toolOrigins, toolDetail, transitionDetail, topContributors } from "./slowTurnContributors";
 
 // Only copy timing fields and controlled vocabulary from the PAI v1 export.
 // JSON pointers locate the original interaction without copying session paths,
@@ -70,54 +71,68 @@ function reasoning(value: unknown): Metric | null {
       longestMs > totalMs || totalMs > count * longestMs) throw Error("Invalid reasoning gap measurements");
   return { count, totalMs, longestMs };
 }
-function measurements(t: Row, start: number, end: number) {
-  const steps = new Map<string, Span[]>();
+function measurements(t: Row, start: number, end: number, evidence: string) {
+  const steps = new Map<string, Observation[]>();
+  const details = new Map<string, Detail>();
   const tools: Span[] = [], gaps: Span[] = [], outputs: Span[] = [];
   const operations = new Map<number, string>();
   const observed = (a: unknown, b: unknown): Span | undefined => {
     if (!ms(a) || !ms(b) || b < a || b < start || a > end) return;
     return { start: Math.max(start, a), end: Math.min(end, b) };
   };
-  function add(label: string, span: Span, all: Span[]) {
+  function add(label: string, span: Observation, all: Span[]) {
     const bucket = steps.get(label) ?? [];
     bucket.push(span);
     steps.set(label, bucket);
     all.push(span);
   }
   let completeTools = true, completeGaps = true, completeOutputs = true;
-  for (const item of array(t.tools ?? [])) {
-    const tool = row(item);
+  const records = array(t.tools ?? []).map(row);
+  const origins = toolOrigins(records, evidence);
+  for (const [i, tool] of records.entries()) {
+    const ref = { evidence: `${evidence}/tools/${i}`, origin: typeof tool.sequence === "number" ? origins.get(tool.sequence) : undefined,
+      sequence: typeof tool.sequence === "number" ? tool.sequence : undefined };
     const operation = operationFor(tool);
     if (typeof tool.sequence === "number") operations.set(tool.sequence, operation);
     const span = observed(time(tool.startedAt), time(tool.completedAt));
-    if (tool.status === "complete" && span) add(`Tool execution: ${operation}`, span, tools);
+    if (tool.status === "complete" && span) add(`Tool execution: ${operation}`, { ...span, ...ref }, tools);
     else completeTools = false;
     // v1 rollouts usually lack an output timestamp. Completion, a reported
     // nested wall time, and the first model event are different boundaries.
     const output = observed(time(tool.requestedAt), time(tool.firstOutputAt));
-    if (output) add(`Tool request to first output: ${operation}`, output, outputs);
+    if (output) add(`Tool request to first output: ${operation}`, { ...output, ...ref }, outputs);
     else completeOutputs = false;
   }
   const nextLabels = new Map([["reasoning", "reasoning item"], ["tool", "tool call"], ["message", "message"]]);
-  for (const item of array(t.postToolGaps ?? [])) {
+  for (const [i, item] of array(t.postToolGaps ?? []).entries()) {
     const gap = row(item);
     const next = nextLabels.get(String(gap.nextEvent));
     const span = observed(gap.startMs, gap.endMs);
-    if (span && next) add(`After ${operations.get(Number(gap.afterTool)) ?? "tool"} result → ${next}`, span, gaps);
+    if (span && next) add(`After ${operations.get(Number(gap.afterTool)) ?? "tool"} result → ${next}`, { ...span, evidence: `${evidence}/postToolGaps/${i}`,
+      sequence: typeof gap.afterTool === "number" ? gap.afterTool : undefined, origin: origins.get(Number(gap.afterTool)) }, gaps);
     else completeGaps = false;
   }
   const metrics = new Map([...steps].map(([label, spans]) => [label, summarize(spans)]));
+  for (const [label, spans] of steps) {
+    details.set(label, label.startsWith("Tool execution:") ? toolDetail(spans, group => summarize(group).totalMs) : transitionDetail(spans));
+  }
   const reasoningGaps = reasoning(t.reasoningItemGaps);
-  if (reasoningGaps?.count) metrics.set("Between same-response reasoning items", reasoningGaps);
+  if (reasoningGaps?.count) {
+    const label = "Between same-response reasoning items";
+    metrics.set(label, reasoningGaps);
+    details.set(label, { contributors: [{ kind: "turn summary", evidence: evidence + "/reasoningItemGaps",
+      observedMs: reasoningGaps.totalMs, records: reasoningGaps.count }], durations: [] });
+  }
   return {
-    metrics, reasoningGaps,
+    metrics, details, reasoningGaps,
     toolExecution: coverage(tools, Array.isArray(t.tools), completeTools),
     afterResult: coverage(gaps, Array.isArray(t.postToolGaps), completeGaps),
     requestToFirstOutput: coverage(outputs, outputs.length > 0, completeOutputs)
   };
 }
 
-export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: string) {
+export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: string, top = 3) {
+  if (!Number.isSafeInteger(top) || top < 1) throw Error("--top must be a positive integer");
   const source = row(input);
   if (source.schemaVersion !== 1 || !Array.isArray(source.sessions)) throw Error("Expected a v1 Codex timing export with sessions");
   const end = time(asOf ?? source.generatedAt);
@@ -126,7 +141,7 @@ export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: 
   if (!Number.isFinite(new Date(start).getTime())) throw Error("Invalid report window");
   const seen = new Map<string, string>();
   const turns: Turn[] = [];
-  const ranked = new Map<string, { step: string; occurrences: number; totalMs: number; longestMs: number; evidence: string[] }>();
+  const ranked = new Map<string, { step: string; occurrences: number; totalMs: number; longestMs: number; evidence: string[]; details: Detail[] }>();
   let longestCompletedMs: number | null = null;
   for (const [si, entry] of source.sessions.entries()) {
     const session = row(entry);
@@ -148,20 +163,22 @@ export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: 
       longestCompletedMs = Math.max(longestCompletedMs ?? 0, t.durationMs);
       if (t.durationMs < minimum * 60_000) continue;
       const evidence = `/sessions/${si}/interactions/${ti}`;
-      const { metrics, ...timing } = measurements(t, from, to);
+      const { metrics, details, ...timing } = measurements(t, from, to, evidence);
       turns.push({ evidence, turnIndex: t.turnIndex, startedAt: new Date(from).toISOString(), durationMs: t.durationMs, steps: Array.from(metrics, ([step, measurement]) => ({ step, measurement })), ...timing });
       for (const [step, metric] of metrics) {
         if (metric.totalMs === 0) continue;
-        const r = ranked.get(step) ?? { step, occurrences: 0, totalMs: 0, longestMs: 0, evidence: [] };
+        const r = ranked.get(step) ?? { step, occurrences: 0, totalMs: 0, longestMs: 0, evidence: [], details: [] };
         r.occurrences += metric.count;
         r.totalMs += metric.totalMs;
         r.longestMs = Math.max(r.longestMs, metric.longestMs);
         r.evidence.push(evidence);
+        const detail = details.get(step);
+        if (detail) r.details.push(detail);
         ranked.set(step, r);
       }
     }
   }
-  const steps = [...ranked.values()].map(r => ({ ...r, affectedTurns: r.evidence.length }))
+  const steps = [...ranked.values()].map(({ details, ...r }) => ({ ...r, affectedTurns: r.evidence.length, ...topContributors(details, top) }))
     .sort((a, b) => b.totalMs - a.totalMs || a.step.localeCompare(b.step));
   const recurring = steps.filter(r => r.affectedTurns >= 2 && r.totalMs > 0);
   return { windowStart: new Date(start).toISOString(), windowEnd: new Date(end).toISOString(), minMinutes: minimum,
@@ -177,7 +194,17 @@ function render(report: ReturnType<typeof slowTurnReport>): string {
   if (report.longestCompletedMs !== null) lines.push(`Longest completed turn: ${minutes(report.longestCompletedMs)} min.`);
   if (!report.qualifiedTurns) return lines.concat("No qualifying turns.").join("\n") + "\n";
   lines.push("", report.recurring.length ? "Recurring delays by observed turn-minutes" : "No recurring delay observed across distinct qualifying turns.");
-  for (const r of report.recurring) lines.push(`- ${r.step}: ${minutes(r.totalMs)} min; ${r.occurrences} occurrences across ${r.affectedTurns} turns. Evidence: ${r.evidence.join(", ")}`);
+  for (const r of report.recurring) {
+    lines.push(`- ${r.step}: ${minutes(r.totalMs)} min; ${r.occurrences} occurrences across ${r.affectedTurns} turns. Evidence: ${r.evidence.join(", ")}`);
+    if (r.operationCount || r.unlinkedRecords) lines.push(`  ${r.operationCount} linked or standalone operations; ${r.unlinkedRecords} records with unknown origin.`);
+    if (r.topContributors[0]?.kind === "turn summary") lines.push(`  Median unavailable from turn summaries; longest ${(r.longestMs / 1000).toFixed(3)} s.`);
+    if (r.medianMs !== null) lines.push(`  Median ${(r.medianMs / 1000).toFixed(3)} s; longest ${(r.longestMs / 1000).toFixed(3)} s.`);
+    for (const c of r.topContributors) {
+      const root = c.initialSequence === undefined ? "" : ` · initial #${c.initialSequence}`;
+      const source = c.sourceSequence === undefined ? "" : ` · from #${c.sourceSequence}`;
+      lines.push(`  ${minutes(c.observedMs)} min · ${c.kind}${root}${source} · ${c.records} observations · ${c.evidence}`);
+    }
+  }
   lines.push("", "Per-turn timings (JSON pointers into the supplied export)");
   for (const t of report.turns) {
     lines.push(`${t.evidence} · turn ${t.turnIndex} · ${t.startedAt} · ${minutes(t.durationMs)} min`);
@@ -196,11 +223,11 @@ function render(report: ReturnType<typeof slowTurnReport>): string {
 }
 
 export function runSlowTurns(args: string[]) {
-  const usage = "Usage: agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--json]";
+  const usage = "Usage: agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--top 3] [--json]";
   function options() {
     try {
       return parseArgs({ args, allowPositionals: true, options: {
-        "since-hours": { type: "string" }, "min-minutes": { type: "string" }, "as-of": { type: "string" }, json: { type: "boolean" }
+        "since-hours": { type: "string" }, "min-minutes": { type: "string" }, "as-of": { type: "string" }, top: { type: "string" }, json: { type: "boolean" }
       } });
     } catch { throw Error(usage); }
   }
@@ -210,6 +237,6 @@ export function runSlowTurns(args: string[]) {
   const raw = readFileSync(file === "-" ? 0 : file, "utf8");
   let input: unknown;
   try { input = JSON.parse(raw); } catch { throw Error("Invalid JSON timing export"); }
-  const report = slowTurnReport(input, Number(parsed.values["since-hours"] ?? 48), Number(parsed.values["min-minutes"] ?? 28), parsed.values["as-of"]);
+  const report = slowTurnReport(input, Number(parsed.values["since-hours"] ?? 48), Number(parsed.values["min-minutes"] ?? 28), parsed.values["as-of"], Number(parsed.values.top ?? 3));
   return { stdout: parsed.values.json ? JSON.stringify(report, null, 2) + "\n" : render(report), exitCode: 0 };
 }
