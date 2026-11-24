@@ -1,3 +1,4 @@
+import { finishCli, type CliResult } from "./cliResult";
 import { storeHookTranscript } from "./recorder/ingest";
 import { isForgotten, spoolGeneration } from "./recorder/spool";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -17,14 +18,6 @@ import { generateGithubRepoComment, generateMarkdownReport, githubGateEvidence }
 import { getCommands, getFileChanges, getRiskFlags, getSessionId, ingestTranscript, listSessions, openStore, type Store } from "./store";
 import { startDashboardServer, type DashboardServer } from "./dashboard";
 import { startMcpStdio } from "./mcp";
-
-type CliResult = {
-  stdout?: string;
-  stderr?: string;
-  exitCode: number;
-  keepAlive?: Promise<void>;
-  cleanup?: () => void;
-};
 
 export async function runCli(argv: string[]): Promise<CliResult> {
   const [command, ...args] = argv;
@@ -847,12 +840,5 @@ Environment:
 }
 
 if (import.meta.main) {
-  const result = await runCli(process.argv.slice(2));
-  if (result.stdout) process.stdout.write(result.stdout);
-  if (result.stderr) process.stderr.write(result.stderr);
-  if (result.keepAlive) {
-    await result.keepAlive;
-  }
-  result.cleanup?.();
-  process.exit(result.exitCode);
+  await finishCli(await runCli(process.argv.slice(2)));
 }

@@ -4,7 +4,7 @@
 // analyzer, dashboard, MCP) is loaded, so Claude Code hooks stay inside the
 // latency budget measured in spike S1. Everything else loads the full CLI.
 
-export {};
+import { finishCli } from "./cliResult";
 
 const argv = process.argv.slice(2);
 
@@ -16,16 +16,8 @@ if (argv[0] === "hook") {
 // `agentops recorder enable|disable|status` (forensic recorder, spec R1.7).
 if (argv[0] === "recorder") {
   const { runRecorderCommand } = await import("./recorder/command");
-  const out = await runRecorderCommand(argv.slice(1));
-  if (out.stdout) process.stdout.write(out.stdout);
-  if (out.stderr) process.stderr.write(out.stderr);
-  process.exit(out.exitCode);
+  await finishCli(await runRecorderCommand(argv.slice(1)));
 }
 
 const { runCli } = await import("./cli");
-const result = await runCli(argv);
-if (result.stdout) process.stdout.write(result.stdout);
-if (result.stderr) process.stderr.write(result.stderr);
-if (result.keepAlive) await result.keepAlive;
-result.cleanup?.();
-process.exit(result.exitCode);
+await finishCli(await runCli(argv));
