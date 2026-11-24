@@ -59,7 +59,7 @@ export function generateSessionJsonExport(
     files: getFileChanges(store, sessionId),
     tools: getToolCalls(store, sessionId),
     risks: getRiskFlags(store, sessionId),
-    verification: commands.filter((command) => isVerificationCommand(command.command, config))
+    verification: commands.filter((command) => isVerificationCommand(command, config))
   };
 
   return `${JSON.stringify(payload, null, 2)}\n`;
@@ -88,7 +88,7 @@ export function generateOpenInferenceJsonExport(
     "agentops.repo": session.repo,
     "agentops.risk.count": risks.length,
     "agentops.command.count": commands.length,
-    "agentops.verification.count": commands.filter((command) => isVerificationCommand(command.command, config)).length,
+    "agentops.verification.count": commands.filter((command) => isVerificationCommand(command, config)).length,
     "input.value": session.task,
     "llm.model_name": session.model,
     "llm.token_count.prompt": usage.inputTokens,

@@ -3,39 +3,68 @@
 function firstCommand(source: string): { words: string[]; operator: string; rest: string } | null {
   const words: string[] = [];
   let word: string | undefined;
-  const token = /(?<space>[ \t]+)|(?<redirect>2>&1(?=[ \t|;&]|$))|(?<operator>&&|\|\||[|;])|'(?<single>[^']*)'|"(?<double>(?:[^"\\$`]|\\["\\])*)"|\\(?<escaped>[^\n])|(?<bare>[^\s;|&<>`$#()'"\\]+)/gy;
+  let redirectTarget = false;
+  const token = /(?<space>[ \t]+)|(?<duplicate>\d*[<>]&\d+(?=[ \t|;&]|$))|(?<redirect>\d*(?:>>?|<))|(?<operator>&&|\|\||[|;])|'(?<single>[^']*)'|"(?<double>(?:[^"\\$`]|\\["\\])*)"|\\(?<escaped>[^\n])|(?<bare>[^\s;|&<>`$#()'"\\]+)/gy;
   while (token.lastIndex < source.length) {
     const field = token.exec(source)?.groups;
     if (!field) return null;
-    if (field.space || field.operator || field.redirect) {
-      if (word !== undefined) words.push(word);
-      word = undefined;
+    if (field.space || field.operator || field.redirect || field.duplicate) {
+      if (word !== undefined) {
+        if (!redirectTarget) words.push(word);
+        redirectTarget = false;
+        word = undefined;
+      }
+      if (redirectTarget && !field.space) return null;
+      if (field.redirect) redirectTarget = true;
       if (field.operator) return { words, operator: field.operator, rest: source.slice(token.lastIndex) };
     } else {
       word = (word ?? "") + (field.single ?? field.double?.replace(/\\(["\\])/g, "$1") ?? field.escaped ?? field.bare);
     }
   }
-  if (word !== undefined) words.push(word);
+  if (redirectTarget && word === undefined) return null;
+  if (!redirectTarget && word !== undefined) words.push(word);
   return { words, operator: "", rest: "" };
 }
 
-export function verificationInvocation(command: string): { runner: string; args: string[] } | null {
+type Invocation = { runner: string; args: string[] };
+
+function programName(word = ""): string {
+  return word.startsWith("/") || word.startsWith("~/") ? word.slice(word.lastIndexOf("/") + 1) : word;
+}
+
+export function verificationInvocations(command: string, passed: boolean): Invocation[] {
   let part = firstCommand(command);
-  if (!part) return null;
-  // Codex records the login shell and its literal -c argument as the command.
-  if (/^(?:\/(?:usr\/)?bin\/)?(?:bash|zsh|sh)$/.test(part.words[0]) && /^-l?c$/.test(part.words[1]) && part.words.length === 3) {
-    part = firstCommand(part.words[2]);
+  if (!part) return [];
+  const shell = programName(part.words[0]) === "env" ? part.words.slice(1) : part.words;
+  if (["bash", "sh", "zsh"].includes(programName(shell[0])) && /^-l?c$/.test(shell[1]) && shell.length === 3) {
+    part = firstCommand(shell[2]);
   }
-  // Recognize the common working-directory prefix. Other conditional branches
-  // can be skipped by the shell, so they do not identify an observed runner.
   if (part?.words[0] === "cd" && part.words.length === 2 && part.operator === "&&") part = firstCommand(part.rest);
-  if (!part) return null;
-  const words = part.words;
+  const found: Invocation[] = [];
+  while (part) {
+    const invocation = runnerInvocation(part.words);
+    if (!invocation) break;
+    found.push(invocation);
+    if (part.operator === ";") {
+      part = firstCommand(part.rest);
+    } else if (part.operator === "&&" && passed) {
+      // Success proves the last command in a two-command AND list ran.
+      // A later fallback or pipeline could mask a skipped invocation.
+      const next = firstCommand(part.rest);
+      part = next?.operator === "" ? next : null;
+    } else {
+      break;
+    }
+  }
+  return found;
+}
+
+function runnerInvocation(words: string[]): Invocation | null {
   let program = 0;
-  if (words[program] === "env") program++;
+  if (programName(words[program]) === "env") program++;
   while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[program])) program++;
-  if (words[program] === "timeout" && /^\d+(?:\.\d+)?[smhd]?$/.test(words[program + 1])) program += 2;
-  const runner = words[program];
+  if (programName(words[program]) === "timeout" && /^\d+(?:\.\d+)?[smhd]?$/.test(words[program + 1])) program += 2;
+  const runner = programName(words[program]);
   const args = words.slice(program + 1);
   if (args.some(arg => ["-h", "--help", "-V", "--version", "--dry-run", "--list", "--collect-only"].includes(arg))) return null;
 

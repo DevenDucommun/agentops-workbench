@@ -99,6 +99,12 @@ test.each([
   ['bun test "src/a b.test.ts"', "passed"],
   ["env CI=1 bun test", "passed"],
   ["timeout 600 bun test", "passed"],
+  ["bun test > log.txt 2>&1", "passed"],
+  ["bun test 2>/dev/null", "passed"],
+  ['bun test >> "out file" < /dev/null', "passed"],
+  ["/opt/tools/bin/bun test", "passed"],
+  ["~/.bun/bin/bun test", "passed"],
+  ["/usr/bin/env bash -lc 'bun test'", "passed"],
   ["bun run lint; bun test", "passed"],
   ["/bin/zsh -lc 'echo bun test'", "failed"],
   ["bash -lc 'make test --just-print | tail -1'", "failed"],
@@ -115,6 +121,33 @@ test.each([
     for (const id of ["required-verification", "required-command:test"]) {
       expect(checks).toContainEqual(expect.objectContaining({ id, status }));
     }
+  } finally {
+    store.db.close();
+  }
+});
+
+test.each([
+  ["bun run lint; echo bun test", "failed"],
+  ["/bin/zsh -lc 'bun run lint && echo bun test'", "failed"],
+  ["make lint; make -n test", "failed"],
+  ["make lint && make -n test", "failed"],
+  ["make -C test lint", "failed"],
+  ["cd test && make lint", "failed"],
+  ['make lint > "bun test"', "failed"],
+  ["make lint; make test", "passed"],
+  ["make lint && make test", "passed"]
+])("matches the required task against the invoked verifier in %s", (command, expected) => {
+  const store = openInlineFixture([
+    { type: "thread.started", thread_id: "named-task" },
+    { type: "item.completed", item: { id: "run", type: "command_execution", command, status: "completed", exit_code: 0 } }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const { checks } = evaluateQualityGate(store, "named-task", config);
+    expect(checks.find(check => check.id === "required-verification")?.status).toBe("passed");
+    expect(checks).toContainEqual(expect.objectContaining({ id: "required-command:test", status: expected }));
+    const decision = getDashboardSession(store, "named-task", config)?.decision;
+    expect(decision?.mergeReadiness.status === "blocked").toBe(expected === "failed");
   } finally {
     store.db.close();
   }

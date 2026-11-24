@@ -33,7 +33,7 @@ function renderMarkdownReport(store: Store, sessionId: string, config: AgentOpsC
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const usage = getUsageSummary(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isVerificationCommand(command, config));
   const final = [...events].reverse().find((event) => event.type === "final_response");
   const ledger = getClaimsLedger(store, sessionId, config);
   const citedEvents = new Set(ledger.claims.map(claim => claim.cited?.eventRowId));
@@ -207,7 +207,7 @@ export function githubGateEvidence(store: Store, sessionId: string, config: Agen
   const ledger = getClaimsLedger(store, sessionId, config);
   const cited = new Set(ledger.claims.map(claim => claim.cited?.eventRowId));
   const failures = getCommands(store, sessionId).filter(run =>
-    (run.eventId === null || !cited.has(run.eventId)) && hasRecordedOutcome(run) && commandOutcome(run) === "failed" && isVerificationCommand(run.command, config)
+    (run.eventId === null || !cited.has(run.eventId)) && hasRecordedOutcome(run) && commandOutcome(run) === "failed" && isVerificationCommand(run, config)
   );
   if (!ledger.claims.length && !failures.length) return [];
   const events = store.db.query("SELECT id, idx FROM events WHERE session_id = ?").all(sessionId) as Array<{ id: number; idx: number }>;
@@ -328,7 +328,7 @@ function buildRepoReportData(
   const files = getFileChanges(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const usage = getUsageSummary(store, sessionId);
-  const verification = commands.filter((command) => isVerificationCommand(command.command, config));
+  const verification = commands.filter((command) => isVerificationCommand(command, config));
   const agentPaths = new Set(files.map((file) => file.path));
   const gitPaths = new Set(gitChanges.map((change) => change.path));
 

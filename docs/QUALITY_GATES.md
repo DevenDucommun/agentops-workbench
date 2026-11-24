@@ -212,11 +212,14 @@ Configure gates in `agentops.config.json`:
 }
 ```
 
-`requiredVerificationCommands` checks observed verification command text. For
+`requiredVerificationCommands` matches text from recognized verifier invocations. For
 example, `"lint"` matches `bun run lint`. The gate recognizes direct test runs, including literal commands inside
 a recorded `sh`, `bash` or `zsh -lc` wrapper. Quoted arguments, a leading
-`cd dir &&`, or piping the runner’s output to another command can still
-provide evidence that the runner was invoked.
+`cd dir &&`, absolute runner paths, and redirected or piped output can still
+provide evidence that the runner was invoked. A required task matches the runner
+and its arguments (for Make, its goals). A `cd` directory, a Make `-C` directory,
+a redirection target, and text from a following echo are excluded. The classifier handles foreground
+runs and leaves background launches and privilege wrappers unclassified.
 Printing `echo bun test` cannot satisfy either verification check. For Make,
 the gate looks for a configured goal and accepts ordinary options such as
 `-j4` and `-C dir`. Dry-run options, explicit Make flag variables, and
