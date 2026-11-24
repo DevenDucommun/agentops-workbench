@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { getDashboardSession } from "../src/dashboardData";
-import { resolveAdapter } from "../src/adapters";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig, type AgentOpsConfig } from "../src/config";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "../src/gate";
