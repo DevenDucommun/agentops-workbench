@@ -219,7 +219,14 @@ a recorded `sh`, `bash` or `zsh -lc` wrapper. Quoted arguments, a leading
 provide evidence that the runner was invoked. A required task matches the runner
 and its arguments (for Make, its goals). A `cd` directory, a Make `-C` directory,
 a redirection target, and text from a following echo are excluded. The classifier handles foreground
-runs and leaves background launches and privilege wrappers unclassified.
+runs. A successful foreground `&&` chain provides evidence for each recognized
+runner, including one whose output goes to a final pipeline. A fallback such
+as `|| true` can hide a skipped command, so later conditional runs receive
+no credit. Recognized setup includes literal `cd`, `git status`, `set -e`
+and `export CI=value`. The classifier recognizes `time` and the
+`python -m pytest`, `uv run pytest` and `poetry run pytest` launchers.
+Sourced scripts, dynamic shell expressions, other shell setup, background
+launches and privilege wrappers can leave a run unclassified.
 Printing `echo bun test` cannot satisfy either verification check. For Make,
 the gate looks for a configured goal and accepts ordinary options such as
 `-j4` and `-C dir`. Dry-run options, explicit Make flag variables, and

@@ -37,26 +37,48 @@ export function verificationInvocations(command: string, passed: boolean): Invoc
   if (!part) return [];
   const shell = programName(part.words[0]) === "env" ? part.words.slice(1) : part.words;
   if (["bash", "sh", "zsh"].includes(programName(shell[0])) && /^-l?c$/.test(shell[1]) && shell.length === 3) {
+    passed = passed && part.operator === "";
     part = firstCommand(shell[2]);
   }
-  if (part?.words[0] === "cd" && part.words.length === 2 && part.operator === "&&") part = firstCommand(part.rest);
   const found: Invocation[] = [];
+  // In a successful AND list every member ran. Credit conditional members
+  // only after seeing the end, since a later fallback can mask a failure.
+  const conditional: Invocation[] = [];
+  let afterAnd = false;
   while (part) {
     const invocation = runnerInvocation(part.words);
-    if (!invocation) break;
-    found.push(invocation);
-    if (part.operator === ";") {
-      part = firstCommand(part.rest);
-    } else if (part.operator === "&&" && passed) {
-      // Success proves the last command in a two-command AND list ran.
-      // A later fallback or pipeline could mask a skipped invocation.
-      const next = firstCommand(part.rest);
-      part = next?.operator === "" ? next : null;
+    if (invocation) (afterAnd ? conditional : found).push(invocation);
+    else if (!isSetupCommand(part.words)) break;
+
+    if (part.operator === "&&" && passed) {
+      afterAnd = true;
+    } else if (part.operator === ";" && !afterAnd) {
+      // The next foreground command is unconditional.
     } else {
+      if (!part.operator || (part.operator === "|" && endsInPipeline(part.rest))) {
+        for (const run of conditional) found.push(run);
+      }
       break;
     }
+    part = firstCommand(part.rest);
   }
   return found;
+}
+
+// A pipeline at the end of an AND list can hide the runner's exit code,
+// but cannot execute if a preceding AND member failed.
+function endsInPipeline(source: string): boolean {
+  let part = firstCommand(source);
+  while (part?.operator === "|") part = firstCommand(part.rest);
+  return part?.operator === "" && part.words.length > 0;
+}
+
+function isSetupCommand(words: string[]): boolean {
+  const [program, arg] = words;
+  if (program === "cd") return words.length === 2;
+  if (program === "set") return words.length === 2 && arg === "-e";
+  if (program === "export") return words.length === 2 && /^CI=[A-Za-z0-9_-]+$/.test(arg);
+  return programName(program) === "git" && arg === "status";
 }
 
 function runnerInvocation(words: string[]): Invocation | null {
@@ -64,6 +86,10 @@ function runnerInvocation(words: string[]): Invocation | null {
   if (programName(words[program]) === "env") program++;
   while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[program])) program++;
   if (programName(words[program]) === "timeout" && /^\d+(?:\.\d+)?[smhd]?$/.test(words[program + 1])) program += 2;
+  if (words[program] === "time") program++;
+  const launcher = programName(words[program]);
+  if (/^python(?:3(?:\.\d+)?)?$/.test(launcher) && words[program + 1] === "-m" && words[program + 2] === "pytest") program += 2;
+  if (["uv", "poetry"].includes(launcher) && words[program + 1] === "run" && words[program + 2] === "pytest") program += 2;
   const runner = programName(words[program]);
   const args = words.slice(program + 1);
   if (args.some(arg => ["-h", "--help", "-V", "--version", "--dry-run", "--list", "--collect-only"].includes(arg))) return null;
