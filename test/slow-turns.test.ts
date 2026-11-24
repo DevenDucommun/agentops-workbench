@@ -53,6 +53,13 @@ test("keeps missing boundaries distinct from a measured zero and never substitut
     requestToFirstOutput: { count: 1, totalMs: 0 }, afterResult: { count: 0, totalMs: 0 } });
 });
 
+test("explicit first-output timing survives another tool with missing timestamps", () => {
+  const t = turn(1);
+  const tools = [{ ...t.tools[0], requestedAt: t.startedAt, firstOutputAt: iso(Date.parse(t.startedAt) + 500) }, t.tools[0]];
+  expect(slowTurnReport(source({ ...t, tools })).turns[0].requestToFirstOutput)
+    .toEqual({ count: 1, totalMs: 500, longestMs: 500, partial: true });
+});
+
 test("window without qualifying turns excludes earlier, unfinished and future turns", () => {
   const r = slowTurnReport(source(turn(1, 27), turn(-55, 45), turn(25, 45), { ...turn(3), status: "incomplete" }));
   expect(r).toMatchObject({ status: "no-qualifying-turns", completedTurns: 1, qualifiedTurns: 0, recurring: [], turns: [] });

@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 // prompts, arguments, or arbitrary tool names into a report.
 type Row = Record<string, unknown>;
 type Span = { start: number; end: number };
-type Metric = { count: number; totalMs: number; longestMs: number };
+type Metric = { count: number; totalMs: number; longestMs: number; partial?: true };
 type Turn = {
   evidence: string;
   turnIndex: number;
@@ -59,6 +59,10 @@ function summarize(spans: Span[]): Metric {
   }
   return { count: spans.length, totalMs, longestMs };
 }
+function coverage(spans: Span[], supplied: boolean, complete: boolean): Metric | null {
+  if (!supplied || (!complete && !spans.length)) return null;
+  return complete ? summarize(spans) : { ...summarize(spans), partial: true };
+}
 function reasoning(value: unknown): Metric | null {
   if (value == null) return null;
   const { count, longestMs, totalMs } = row(value);
@@ -107,9 +111,9 @@ function measurements(t: Row, start: number, end: number) {
   if (reasoningGaps?.count) metrics.set("Between same-response reasoning items", reasoningGaps);
   return {
     metrics, reasoningGaps,
-    toolExecution: Array.isArray(t.tools) && completeTools ? summarize(tools) : null,
-    afterResult: Array.isArray(t.postToolGaps) && completeGaps ? summarize(gaps) : null,
-    requestToFirstOutput: outputs.length && completeOutputs ? summarize(outputs) : null
+    toolExecution: coverage(tools, Array.isArray(t.tools), completeTools),
+    afterResult: coverage(gaps, Array.isArray(t.postToolGaps), completeGaps),
+    requestToFirstOutput: coverage(outputs, outputs.length > 0, completeOutputs)
   };
 }
 
@@ -179,7 +183,7 @@ function render(report: ReturnType<typeof slowTurnReport>): string {
     lines.push(`${t.evidence} · turn ${t.turnIndex} · ${t.startedAt} · ${minutes(t.durationMs)} min`);
     for (const [name, metric] of [["Tool execution", t.toolExecution], ["After tool result", t.afterResult],
       ["Same-response reasoning gaps", t.reasoningGaps], ["Tool request to first output", t.requestToFirstOutput]] as const) {
-      lines.push(`  ${name}: ${metric ? `${metric.count} observed, ${minutes(metric.totalMs)} min total, ${(metric.longestMs / 1000).toFixed(3)} s longest` : "timing unavailable"}`);
+      lines.push(`  ${name}: ${metric ? `${metric.count} observed, ${minutes(metric.totalMs)} min total, ${(metric.longestMs / 1000).toFixed(3)} s longest${metric.partial ? " (partial timing)" : ""}` : "timing unavailable"}`);
     }
     for (const { step, measurement } of t.steps) {
       if (step.startsWith("After ") || step.startsWith("Tool execution:")) {
