@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { loadAdapterInput, resolveAdapter } from "../src/adapters";
 import { getDashboardSession } from "../src/dashboardData";
+import { resolveAdapter } from "../src/adapters";
 import { analyzeSession } from "../src/analyzer";
 import { defaultConfig, type AgentOpsConfig } from "../src/config";
 import { evaluateQualityGate, formatGateGithub, formatGateJson, formatGateText } from "../src/gate";
@@ -92,6 +93,34 @@ test.each([
   }
 });
 
+test.each([
+  ["/bin/zsh -lc 'bun test'", "passed"],
+  ["/bin/zsh -lc 'cd packages/core && bun test'", "passed"],
+  ["bash -lc 'bun test 2>&1 | tail -20'", "passed"],
+  ['bun test "src/a b.test.ts"', "passed"],
+  ["env CI=1 bun test", "passed"],
+  ["timeout 600 bun test", "passed"],
+  ["bun run lint; bun test", "passed"],
+  ["/bin/zsh -lc 'echo bun test'", "failed"],
+  ["bash -lc 'make test --just-print | tail -1'", "failed"],
+  ["true || bun test", "failed"],
+  ['echo "cd core && bun test"', "failed"]
+])("classifies recorded Codex shell invocation %s", (command, status) => {
+  const store = openInlineFixture([
+    { type: "thread.started", thread_id: "codex-shell" },
+    { type: "item.completed", item: { id: "run", type: "command_execution", command, status: "completed", exit_code: 0 } }
+  ]);
+  try {
+    const config = { ...defaultConfig, gates: { ...defaultConfig.gates, requiredVerificationCommands: ["test"] } };
+    const { checks } = evaluateQualityGate(store, "codex-shell", config);
+    for (const id of ["required-verification", "required-command:test"]) {
+      expect(checks).toContainEqual(expect.objectContaining({ id, status }));
+    }
+  } finally {
+    store.db.close();
+  }
+});
+
 function openFixture(path: string) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-gate-test-"));
   const store = openStore(join(dir, "agentops.db"));
@@ -103,7 +132,8 @@ function openFixture(path: string) {
 function openInlineFixture(events: unknown[]) {
   const dir = mkdtempSync(join(tmpdir(), "agentops-gate-test-"));
   const store = openStore(join(dir, "agentops.db"));
-  const transcript = parseJsonlTranscript("gate-inline.jsonl", events.map((event) => JSON.stringify(event)).join("\n"));
+  const input = { sourcePath: "gate-inline.jsonl", content: events.map((event) => JSON.stringify(event)).join("\n") };
+  const transcript = resolveAdapter(input).parse(input, defaultConfig);
   ingestTranscript(store, transcript, defaultConfig);
   return store;
 }
