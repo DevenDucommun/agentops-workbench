@@ -392,3 +392,17 @@ base), rename handling is basic, and path comparison is exact. The `v1.x`
 `repo-report` command was removed in `v2.0.0`; the Markdown-only variant is not
 re-exposed on the simple verbs (the `generateMarkdownRepoReport` library function
 remains).
+
+## Slow interactive Codex turns
+
+`agentops slow-turns timing.json` reads a supplied PAI v1 timing export locally. The default window covers the 48 hours ending at the export’s `generatedAt`. It examines completed turns that started and finished in the window and selects durations of at least 28 minutes. Use `--min-minutes`, `--since-hours`, or `--as-of <UTC timestamp>` to change the selection. Use `--json` for millisecond measurements or `-` to read an export from stdin.
+
+To take a fresh measurement with the optional PAI exporter and keep the evidence file for inspection:
+
+```sh
+timing=$(mktemp) && bun ~/.claude/scripts/codex-turn-accounting.ts --since-hours 48 --json > "$timing" && echo "Evidence file: $timing" && agentops slow-turns "$timing"
+```
+
+Each evidence reference is a JSON Pointer into that file. For example, `/sessions/0/interactions/2` selects the third interaction in the first session. The session entry carries the local rollout filename. The report ranks steps with positive elapsed time in at least two distinct turns. For each step it counts occurrences and merges overlapping timestamped spans within a turn. Compare rows independently: tool spans and transition spans can overlap, and the source gives only a count, sum and maximum for same-response reasoning gaps. The report does not infer causes or sum those measurements into a latency budget.
+
+Missing timing is shown as unavailable. When some events lack boundaries, individual measured steps still appear. Tool request-to-first-output requires explicit request and output timestamps; the current PAI export generally lacks them. The report uses the supplied file without a recorder, PAI install, or session database. Only the example export command needs PAI.

@@ -46,6 +46,11 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       return { stdout: help(), exitCode: 0 };
     }
 
+    if (command === "slow-turns") {
+      const { runSlowTurns } = await import("./slowTurns");
+      return runSlowTurns(args);
+    }
+
     if (command === "doctor") {
       return runDoctor(args);
     }
@@ -829,6 +834,7 @@ Quality gate output (for CI/PR):
 Advanced:
   agentops doctor [--fix]
   agentops demo --serve
+  agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--json]
   agentops adapters [--input <session.jsonl>]
   agentops config --check
   agentops sessions
