@@ -1,11 +1,18 @@
 // Read literal shell words up to the first command boundary. A quoted pipe or
 // semicolon stays in its argument. Dynamic shell expressions are left unknown.
 function firstCommand(source: string): { words: string[]; operator: string; rest: string } | null {
+  // A final line terminator is common in captured script text.
+  if (source.endsWith("\n")) source = source.replace(/\n+$/, "");
   const words: string[] = [];
   let word: string | undefined;
   let redirectTarget = false;
   const token = /(?<space>[ \t]+)|(?<duplicate>\d*[<>]&\d+(?=[ \t|;&]|$))|(?<redirect>\d*(?:>>?|<))|(?<operator>&&|\|\||[|;])|'(?<single>[^']*)'|"(?<double>(?:[^"\\$`]|\\["\\])*)"|\\(?<escaped>[^\n])|(?<bare>[^\s;|&<>`$#()'"\\]+)/gy;
   while (token.lastIndex < source.length) {
+    if (source[token.lastIndex] === "#" && word === undefined) {
+      // A comment ends this literal command only if no later line can run.
+      if (source.indexOf("\n", token.lastIndex) !== -1) return null;
+      break;
+    }
     const field = token.exec(source)?.groups;
     if (!field) return null;
     if (field.space || field.operator || field.redirect || field.duplicate) {
@@ -37,7 +44,8 @@ export function verificationInvocations(command: string, passed: boolean): Invoc
   if (!part) return [];
   const shell = programName(part.words[0]) === "env" ? part.words.slice(1) : part.words;
   if (["bash", "sh", "zsh"].includes(programName(shell[0])) && /^-l?c$/.test(shell[1]) && shell.length === 3) {
-    passed = passed && part.operator === "";
+    const wrapperIsLast = !part.operator || (part.operator === ";" && part.rest.trim() === "");
+    passed = passed && (wrapperIsLast || (part.operator === "&&" && endsWithAndList(part.rest)));
     part = firstCommand(shell[2]);
   }
   const found: Invocation[] = [];
