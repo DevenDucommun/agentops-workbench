@@ -41,23 +41,17 @@ export function verificationInvocations(command: string, passed: boolean): Invoc
     part = firstCommand(shell[2]);
   }
   const found: Invocation[] = [];
-  // In a successful AND list every member ran. Credit conditional members
-  // only after seeing the end, since a later fallback can mask a failure.
-  const conditional: Invocation[] = [];
-  let afterAnd = false;
+  let checkedAndList = false;
   while (part) {
     const invocation = runnerInvocation(part.words);
-    if (invocation) (afterAnd ? conditional : found).push(invocation);
+    if (invocation) found.push(invocation);
     else if (!isSetupCommand(part.words)) break;
 
-    if (part.operator === "&&" && passed) {
-      afterAnd = true;
-    } else if (part.operator === ";" && !afterAnd) {
-      // The next foreground command is unconditional.
-    } else {
-      if (!part.operator || (part.operator === "|" && endsInPipeline(part.rest))) {
-        for (const run of conditional) found.push(run);
-      }
+    if (part.operator === "&&") {
+      if (!passed) break;
+      if (!checkedAndList && !endsWithAndList(part.rest)) break;
+      checkedAndList = true;
+    } else if (part.operator !== ";") {
       break;
     }
     part = firstCommand(part.rest);
@@ -65,12 +59,18 @@ export function verificationInvocations(command: string, passed: boolean): Invoc
   return found;
 }
 
-// A pipeline at the end of an AND list can hide the runner's exit code,
-// but cannot execute if a preceding AND member failed.
-function endsInPipeline(source: string): boolean {
+// A zero exit proves that every pipeline in a literal AND list was entered.
+// Whether its last program is itself a verifier is immaterial. A fallback
+// or a later independent command can supply that exit status instead.
+function endsWithAndList(source: string): boolean {
   let part = firstCommand(source);
-  while (part?.operator === "|") part = firstCommand(part.rest);
-  return part?.operator === "" && part.words.length > 0;
+  while (part && part.words.length > 0) {
+    if (part.operator !== "&&" && part.operator !== "|") {
+      return part.operator === "" || (part.operator === ";" && part.rest.trim() === "");
+    }
+    part = firstCommand(part.rest);
+  }
+  return false;
 }
 
 function isSetupCommand(words: string[]): boolean {

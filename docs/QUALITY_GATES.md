@@ -220,9 +220,12 @@ provide evidence that the runner was invoked. A required task matches the runner
 and its arguments (for Make, its goals). A `cd` directory, a Make `-C` directory,
 a redirection target, and text from a following echo are excluded. The classifier handles foreground
 runs. A successful foreground `&&` chain provides evidence for each recognized
-runner, including one whose output goes to a final pipeline. A fallback such
-as `|| true` can hide a skipped command, so later conditional runs receive
-no credit. Recognized setup includes literal `cd`, `git status`, `set -e`
+runner reached through recognized setup or other runners, including one whose
+output is piped. A trailing `&& echo ok` or a final semicolon preserves that
+evidence.
+A fallback such as `|| true` or an independent command after a semicolon
+can hide a skipped runner, so the final status cannot establish that it ran.
+Recognized setup includes literal `cd`, `git status`, `set -e`
 and `export CI=value`. The classifier recognizes `time` and the
 `python -m pytest`, `uv run pytest` and `poetry run pytest` launchers.
 Sourced scripts, dynamic shell expressions, other shell setup, background

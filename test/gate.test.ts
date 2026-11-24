@@ -116,6 +116,12 @@ test.each([
   ["uv run pytest test/", "passed"],
   ["poetry run pytest test/", "passed"],
   ["export MAKEFLAGS=n; make test", "failed"],
+  ["cd pkg && bun test && echo 'All tests passed'", "passed"],
+  ["cd pkg && bun test;", "passed"],
+  ["cd pkg && make test && make -n check", "passed"],
+  ["bun install && bun test && echo ok", "passed"],
+  ["cd missing && bun test; echo done", "failed"],
+  ["cd missing && bun test && echo ok || true", "failed"],
   ["bun install && bun test || true", "failed"],
   ["bun install && bun test | tail -3 || true", "failed"],
   ["/bin/zsh -lc 'bun install && bun test' || true", "failed"],
@@ -147,6 +153,8 @@ test.each([
   ["make -C test lint", "failed"],
   ["cd test && make lint", "failed"],
   ['make lint > "bun test"', "failed"],
+  ["bun run lint && bun test && git diff --stat", "passed"],
+  ["bun run lint && bun test | tail -3 && echo ok", "passed"],
   ["make lint; make test", "passed"],
   ["make lint && make test", "passed"]
 ])("matches the required task against the invoked verifier in %s", (command, expected) => {
