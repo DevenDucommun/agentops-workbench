@@ -8,6 +8,12 @@ const record = (value: unknown): value is Row =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 export const isCellWait = (tool: Row) => tool.name === "wait" || tool.executionPhase === "cell-wait";
+const linkedJobs = new Map([["preflight", "preflight"], ["test-suite", "test"], ["ci-wait", "CI"]]);
+export function linkedJobKind(launch: Row | undefined) {
+  if (launch?.executionPhase === "initial" && typeof launch.operation === "string") {
+    return linkedJobs.get(launch.operation);
+  }
+}
 
 // An annotation records an independently traced relationship. The digest binds
 // array positions to one export. Never infer process ownership from proximity.
@@ -17,6 +23,7 @@ export function parseWaitJobs(raw: string, input: unknown, file: unknown): WaitJ
     throw Error("Invalid wait-job evidence or timing export digest mismatch");
   }
   const jobs: WaitJobs = new Map();
+  const launchKinds = new Map<string, string>();
   if (!record(input) || !Array.isArray(input.sessions)) throw Error("Invalid timing export");
   for (const job of file.jobs) {
     if (!record(job) || typeof job.turn !== "string" || typeof job.kind !== "string" ||
@@ -40,6 +47,11 @@ export function parseWaitJobs(raw: string, input: unknown, file: unknown): WaitJ
     const launch = resolve(job.launchSequence);
     if (isCellWait(launch.tool)) throw Error("A wait cannot be its own job launcher");
     const origin = { evidence: job.turn + "/tools/" + launch.index, sequence: launch.sequence };
+    const knownKind = launchKinds.get(origin.evidence) ?? linkedJobKind(launch.tool);
+    if (knownKind !== undefined && knownKind !== job.kind) {
+      throw Error(`Conflicting job kinds for launch ${origin.evidence}: ${knownKind} and ${job.kind}`);
+    }
+    launchKinds.set(origin.evidence, job.kind);
     for (const sequence of job.waitSequences) {
       const wait = resolve(sequence);
       const key = job.turn + "/tools/" + wait.index;

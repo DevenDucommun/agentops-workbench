@@ -124,13 +124,14 @@ test("job evidence overrides the polling helper and preserves elapsed totals", (
   const tools = [
     { ...t.tools[0], sequence: 1, executionPhase: "initial", continuationOfSequence: null },
     { ...t.tools[0], sequence: 2, executionPhase: "orchestrated", operation: "discovery", continuationOfSequence: null },
-    ...[1, 2, 2].map((parent, i) => ({ ...t.tools[0], sequence: i + 3, name: "wait",
+    { ...t.tools[0], sequence: 3, executionPhase: "initial", operation: "other", continuationOfSequence: null },
+    ...[1, 2, 2].map((parent, i) => ({ ...t.tools[0], sequence: i + 4, name: "wait",
       operation: "discovery", executionPhase: "cell-wait", continuationOfSequence: parent }))
   ];
-  const input = source({ ...t, tools, postToolGaps: [{ ...t.postToolGaps[0], afterTool: 4 }] });
+  const input = source({ ...t, tools, postToolGaps: [{ ...t.postToolGaps[0], afterTool: 5 }] });
   const raw = JSON.stringify(input);
   const turnRef = "/sessions/0/interactions/0";
-  const job = { turn: turnRef, launchSequence: 1, kind: "review", waitSequences: [4] };
+  const job = { turn: turnRef, launchSequence: 3, kind: "review", waitSequences: [5] };
   const file = { schemaVersion: 1, exportSha256: createHash("sha256").update(raw).digest("hex"), jobs: [job] };
   const parse = (jobs: unknown[]) => parseWaitJobs(raw, input, { ...file, jobs });
   const before = slowTurnReport(input).turns[0];
@@ -140,13 +141,18 @@ test("job evidence overrides the polling helper and preserves elapsed totals", (
   expect(after.waitAttribution.map(w => [w.job, w.basis])).toEqual([
     ["test", "linked operation"], ["review", "supplied"], [null, "unknown"]
   ]);
-  expect(after.waitAttribution[1]).toMatchObject({ launch: turnRef + "/tools/0", wait: turnRef + "/tools/3" });
+  expect(after.waitAttribution[1]).toMatchObject({ launch: turnRef + "/tools/2", wait: turnRef + "/tools/4" });
   expect(after.steps.map(s => s.step)).toContain("After wait for review result → reasoning item");
   expect(() => parseWaitJobs(raw + " ", input, file)).toThrow("digest");
-  for (const invalid of [[job, job], [{ ...job, waitSequences: [2] }], [{ ...job, launchSequence: 3 }],
+  for (const invalid of [[job, job], [{ ...job, waitSequences: [2] }], [{ ...job, launchSequence: 4 }],
     [{ ...job, kind: "private text" }], [{ ...job, turn: "/sessions/0/interactions/1" }]]) {
     expect(() => parse(invalid)).toThrow();
   }
+  const secondWait = { ...job, waitSequences: [6] };
+  expect(parse([job, secondWait]).size).toBe(2);
+  expect(() => parse([job, { ...secondWait, kind: "merge" }])).toThrow("Conflicting job kinds");
+  expect(() => parse([{ ...job, launchSequence: 1 }])).toThrow("Conflicting job kinds");
+  expect(parse([{ ...job, launchSequence: 1, kind: "test" }]).size).toBe(1);
 });
 
 test("verified exec polls and cell waits share one job, excluding unverified work and time between polls", () => {

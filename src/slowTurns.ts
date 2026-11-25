@@ -1,4 +1,4 @@
-import { isCellWait, parseWaitJobs, type WaitJobs } from "./slowTurnWaitJobs";
+import { isCellWait, linkedJobKind, parseWaitJobs, type WaitJobs } from "./slowTurnWaitJobs";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { type Detail, type Observation, toolOrigins, toolDetail, transitionDetail, topContributors } from "./slowTurnContributors";
@@ -48,7 +48,6 @@ const otherTools = new Map(Object.entries({
   exec: "execution", wait: "execution wait", sleep: "sleep", wait_agent: "agent wait",
   spawn_agent: "agent launch", followup_task: "agent follow-up", send_message: "agent message"
 }));
-const linkedJobs = new Map([["preflight", "preflight"], ["test-suite", "test"], ["ci-wait", "CI"]]);
 function operationFor(tool: Row): string {
   const category = labels.get(String(tool.operation));
   if (category && category !== "other") return category;
@@ -103,7 +102,7 @@ function measurements(t: Row, start: number, end: number, evidence: string, jobs
     if (supplied || isCellWait(tool)) {
       const launch = ref.origin && launches.get(ref.origin.sequence);
       // A nested/wrapper operation may simply be polling some other process.
-      const linked = launch?.executionPhase === "initial" ? linkedJobs.get(String(launch.operation)) : undefined;
+      const linked = linkedJobKind(launch);
       const job = supplied?.kind ?? linked;
       ref.origin = supplied?.origin ?? (linked ? ref.origin : undefined);
       operation = job ? `wait for ${job}` : "unattributed wait";
