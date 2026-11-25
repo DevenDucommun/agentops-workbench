@@ -8,8 +8,10 @@ name: Action PR comment
 #
 # The Action finds its comment by a marker that every gate comment shares, so
 # this test refuses to run on a pull request that has a gate comment from any
-# other run. It tags its own comment with a second marker when it finishes and
-# removes only tagged comments on a re-run.
+# other run. It tags a comment only when the Action reports that this job's
+# first run created it (output `comment-action`), and removes only tagged
+# comments on a re-run. A comment from another run that appears mid-test is
+# updated by the Action, never created, so the test fails without tagging it.
 
 on:
   pull_request:
@@ -71,6 +73,7 @@ jobs:
           test ! -s "$RUNNER_TEMP/gate-comments.jsonl"
 
       - name: First run creates the comment
+        id: first
         uses: ./
         with:
           agentops-path: ./bin/agentops
@@ -79,17 +82,29 @@ jobs:
           fail-on-gate: "false"
 
       - name: Assert one comment with the first result
+        env:
+          FIRST_ID: ${{ steps.first.outputs.comment-id }}
+          FIRST_ACTION: ${{ steps.first.outputs.comment-action }}
         run: |
+          # This run must have created the comment itself. If another run's
+          # comment appeared after the empty-start check, the Action updated
+          # that one instead: stop here, before this test tags anything.
+          if [ "$FIRST_ACTION" != created ]; then
+            echo "::error::The first run ${FIRST_ACTION:-did not report} a comment instead of creating one. Another run may be writing gate comments on this pull request."
+            exit 1
+          fi
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
             --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/first.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/first.json")" = 1
           jq -rs 'add | .[0].id' "$RUNNER_TEMP/first.json" > "$RUNNER_TEMP/comment-id"
+          test "$(cat "$RUNNER_TEMP/comment-id")" = "$FIRST_ID"
           jq -rs 'add | .[0].user.login' "$RUNNER_TEMP/first.json" | grep -qx 'github-actions\[bot\]'
           body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/first.json")"
           grep -q 'Session: .codex-exec-sample.$' <<< "$body"
           grep -q 'PASSED' <<< "$body"
 
       - name: Second run updates the same comment
+        id: second
         uses: ./
         with:
           agentops-path: ./bin/agentops
@@ -98,7 +113,12 @@ jobs:
           fail-on-gate: "false"
 
       - name: Assert the same comment now holds the second result
+        env:
+          SECOND_ID: ${{ steps.second.outputs.comment-id }}
+          SECOND_ACTION: ${{ steps.second.outputs.comment-action }}
         run: |
+          test "$SECOND_ACTION" = updated
+          test "$SECOND_ID" = "$(cat "$RUNNER_TEMP/comment-id")"
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
             --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/second.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/second.json")" = 1

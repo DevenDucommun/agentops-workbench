@@ -289,7 +289,9 @@ jobs:
 | `github-token` | `github.token` | Token used only for `comment`. |
 
 Outputs: `status` (`passed` or `failed`), `failed` (count of failing
-artifacts), and `report` (path to the combined Markdown report).
+artifacts), and `report` (path to the combined Markdown report). With
+`comment: true`, also `comment-id` (the sticky comment's id) and
+`comment-action` (`created` or `updated`).
 
 The CLI never posts to GitHub. Only the Action posts, and only with
 `comment: true`. The sticky comment starts with `<!-- agentops-gate -->` and is

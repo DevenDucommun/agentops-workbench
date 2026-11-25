@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- The Action reports its sticky comment: outputs `comment-id` and
+  `comment-action` (`created` or `updated`) when `comment` is true. A hosted
+  workflow, run on pull requests labeled `action-comment-test`, checks that
+  one comment is created and then updated in place.
+
 ### Changed
 
 - Blocked risky commands (T2.4): a destructive or permission-changing command

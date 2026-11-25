@@ -85,16 +85,20 @@ test("Action summary and sticky comment cite the same failed run and the later s
   writeFileSync(join(dir, "gh"), [
     "#!/bin/sh",
     'if [ "$2" != "-X" ]; then echo "$EXISTING"; exit 0; fi',
-    'test "$3" = "$METHOD" && test "$4" = "$ENDPOINT" && test "$5" = "-F" && test "$6" = "body=@$REPORT" || exit 2',
-    'cat "$REPORT" > "$POSTED"'
+    'test "$3" = "$METHOD" && test "$4" = "$ENDPOINT" && test "$5" = "-F" && test "$6" = "body=@$REPORT" && test "$7" = "--jq" && test "$8" = ".id" || exit 2',
+    'cat "$REPORT" > "$POSTED"',
+    'echo "$COMMENT_ID"'
   ].join("\n"), { mode: 0o755 });
-  for (const [existing, method, endpoint] of [["", "POST", "issues/7/comments"], ["21", "PATCH", "issues/comments/21"]]) {
+  for (const [existing, method, endpoint, id, action] of [["", "POST", "issues/7/comments", "34", "created"], ["21", "PATCH", "issues/comments/21", "21", "updated"]]) {
     const posted = join(dir, method);
+    const stepOutput = join(dir, `${method}-output`);
     const result = Bun.spawnSync(["bash", "-e", "-o", "pipefail", "-c", post.run], {
-      cwd: dir, env: { PATH: dir + ":" + env.PATH, REPORT: report, GITHUB_REPOSITORY: "org/repo", PR_NUMBER: "7",
-        EXISTING: existing, METHOD: method, ENDPOINT: "repos/org/repo/" + endpoint, POSTED: posted }
+      cwd: dir, env: { PATH: dir + ":" + env.PATH, REPORT: report, GITHUB_REPOSITORY: "org/repo", PR_NUMBER: "7", GITHUB_OUTPUT: stepOutput,
+        EXISTING: existing, METHOD: method, ENDPOINT: "repos/org/repo/" + endpoint, POSTED: posted, COMMENT_ID: id }
     });
     expect(result.exitCode).toBe(0);
     expect(readFileSync(posted, "utf8")).toBe(markdown);
+    // The step reports which comment it wrote and whether it created it.
+    expect(readFileSync(stepOutput, "utf8")).toBe(`id=${id}\naction=${action}\n`);
   }
 });
