@@ -424,6 +424,18 @@ describe("review 6063542874: every blocking case gets the expected verdict and c
     const failed = (result: { gate: { checks: Array<{ id: string; status: string }> } }) => result.gate.checks.filter((c) => c.status === "failed").map((c) => c.id);
     const pasted = text(["$ bun test", "exit code 0", "Ran bun run lint", "Final: Implemented."], optional);
     expect([pasted.gate.status, failed(pasted)]).toEqual(["failed", ["unsupported-final-claims"]]);
+    // Review 6064957251: Markdown emphasis does not hide the claim, in plain text
+    // or in a generic JSONL capture with only an inferred command.
+    for (const spelling of ["_Implemented_.", "__Implemented__.", "*Implemented*.", "**Implemented**."]) {
+      const emphasized = text(["$ bun test", "exit code 0", `Final: ${spelling}`], optional);
+      expect([spelling, failed(emphasized)]).toEqual([spelling, ["unsupported-final-claims"]]);
+    }
+    const jsonl = run([
+      { schemaVersion: V, type: "session", id: "emphasis" },
+      { schemaVersion: V, type: "tool_call", toolName: "Bash", input: { cmd: "bun run lint" }, status: "inferred", provenance: "inferred" },
+      { schemaVersion: V, type: "final_response", role: "assistant", content: "_Implemented_." }
+    ], "emphasis.jsonl", optional);
+    expect(failed(jsonl)).toEqual(["unsupported-final-claims"]);
     // Controls: an observed run backs the same claim, and a neutral final response needs nothing.
     const observed = run([session("g1"), shell("bun test", "completed", 0), final("Implemented.")], "g1.jsonl", optional);
     expect(observed.gate.status).toBe("passed");
@@ -451,6 +463,7 @@ describe("review 6063542874: every blocking case gets the expected verdict and c
     };
     const mixed = "$ bun test\nexit code 0\nRan bun run lint\nFinal: Implemented.\n";
     expect(check(mixed, earlierVersion)).toEqual(["unsupported-final-claims"]);
+    expect(check(mixed.replace("Implemented.", "_Implemented_."), earlierVersion)).toEqual(["unsupported-final-claims"]);
     // Controls: a neutral final response on the same stored evidence passes, and
     // a suppression of the general-success category still applies at check time.
     expect(check("$ bun test\nexit code 0\nFinal: Proceeding to the next file.\n", earlierVersion)).toEqual([]);

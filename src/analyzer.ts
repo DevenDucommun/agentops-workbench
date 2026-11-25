@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { type ClaimsLedger, claimsRule, commandOutcome, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
+import { type ClaimsLedger, claimsRule, claimText, commandOutcome, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 import { verificationInvocations } from "./verificationCommand";
@@ -390,7 +390,9 @@ export function claimsFinalSuccess(value: string | readonly string[]): boolean {
 }
 
 function claimsSuccess(value: string | readonly string[]): boolean {
-  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(text));
+  // Matched as the ledger matches claims (claimText), so Markdown emphasis such
+  // as `_Implemented_.` cannot hide a success claim from `\b`.
+  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(claimText(text)));
 }
 
 function isSensitivePath(path: string, config: AgentOpsConfig): boolean {
