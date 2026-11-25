@@ -410,3 +410,22 @@ Missing timing is shown as unavailable. When some events lack boundaries, indivi
 Each recurring step includes its three largest contributors. Use `--top 5` to inspect five, or `--json` for exact milliseconds and evidence pointers. For tool execution, follow the initial tool sequence to inspect one operation and its linked waits or continuations. The observed time merges that step’s overlapping records and excludes time between records. Unresolved links appear as individual records with unknown origin. Counts and totals always cover all contributors.
 
 For transitions, the report identifies the preceding tool sequence, ranks individual spans, and gives the median and longest observed gap. Same-response reasoning data provides only per-turn summaries, so its contributors are turns and its median is unavailable.
+
+An explicit cell wait carries its own label. A continuation chain to an initial preflight, test-suite or CI-wait call supplies a job category. A chain ending at a generic polling helper leaves the job unknown. JSON includes the wait and launch JSON pointers and the basis for each attribution.
+
+When a local trace independently identifies the process that a helper polled, pass `--wait-jobs jobs.json`. Use the SHA-256 of the original timing file bytes and tool sequence numbers within the selected interaction. For example:
+
+```json
+{
+  "schemaVersion": 1,
+  "exportSha256": "<64 lowercase hexadecimal digits>",
+  "jobs": [{
+    "turn": "/sessions/0/interactions/0",
+    "kind": "review",
+    "launchSequence": 7,
+    "waitSequences": [12, 15]
+  }]
+}
+```
+
+Supported job kinds are `preflight`, `review`, `merge`, `test`, `build`, and `CI`. Verify the launch and waits using a process handle, cell receipt, or equivalent independent evidence before supplying a link. Each wait belongs to at most one job. The CLI rejects stale exports, missing or duplicate sequences, and conflicting links. Attribution changes the step labels while preserving the original timing boundaries.

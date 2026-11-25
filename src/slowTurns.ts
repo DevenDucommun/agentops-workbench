@@ -1,3 +1,4 @@
+import { isCellWait, parseWaitJobs, type WaitJobs } from "./slowTurnWaitJobs";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { type Detail, type Observation, toolOrigins, toolDetail, transitionDetail, topContributors } from "./slowTurnContributors";
@@ -17,6 +18,7 @@ type Turn = {
   afterResult: Metric | null;
   reasoningGaps: Metric | null;
   requestToFirstOutput: Metric | null;
+  waitAttribution: { wait: string; launch: string | null; job: string | null; basis: "supplied" | "linked operation" | "unknown" }[];
   steps: { step: string; measurement: Metric }[];
 };
 const row = (value: unknown): Row => {
@@ -46,6 +48,7 @@ const otherTools = new Map(Object.entries({
   exec: "execution", wait: "execution wait", sleep: "sleep", wait_agent: "agent wait",
   spawn_agent: "agent launch", followup_task: "agent follow-up", send_message: "agent message"
 }));
+const linkedJobs = new Map([["preflight", "preflight"], ["test-suite", "test"], ["ci-wait", "CI"]]);
 function operationFor(tool: Row): string {
   const category = labels.get(String(tool.operation));
   if (category && category !== "other") return category;
@@ -71,7 +74,7 @@ function reasoning(value: unknown): Metric | null {
       longestMs > totalMs || totalMs > count * longestMs) throw Error("Invalid reasoning gap measurements");
   return { count, totalMs, longestMs };
 }
-function measurements(t: Row, start: number, end: number, evidence: string) {
+function measurements(t: Row, start: number, end: number, evidence: string, jobs: WaitJobs) {
   const steps = new Map<string, Observation[]>();
   const details = new Map<string, Detail>();
   const tools: Span[] = [], gaps: Span[] = [], outputs: Span[] = [];
@@ -89,10 +92,25 @@ function measurements(t: Row, start: number, end: number, evidence: string) {
   let completeTools = true, completeGaps = true, completeOutputs = true;
   const records = array(t.tools ?? []).map(row);
   const origins = toolOrigins(records, evidence);
+  const launches = new Map(records.map(tool => [tool.sequence, tool]));
+  const waitAttribution: Turn["waitAttribution"] = [];
+  const jobOrigins = new Map<number, Observation["origin"]>();
   for (const [i, tool] of records.entries()) {
     const ref = { evidence: `${evidence}/tools/${i}`, origin: typeof tool.sequence === "number" ? origins.get(tool.sequence) : undefined,
       sequence: typeof tool.sequence === "number" ? tool.sequence : undefined };
-    const operation = operationFor(tool);
+    let operation = operationFor(tool);
+    if (isCellWait(tool)) {
+      const supplied = jobs.get(ref.evidence);
+      const launch = ref.origin && launches.get(ref.origin.sequence);
+      // A nested/wrapper operation may simply be polling some other process.
+      const linked = launch?.executionPhase === "initial" ? linkedJobs.get(String(launch.operation)) : undefined;
+      const job = supplied?.kind ?? linked;
+      ref.origin = supplied?.origin ?? (linked ? ref.origin : undefined);
+      operation = job ? `wait for ${job}` : "unattributed wait";
+      waitAttribution.push({ wait: ref.evidence, launch: ref.origin?.evidence ?? null,
+        job: job ?? null, basis: supplied ? "supplied" : linked ? "linked operation" : "unknown" });
+    }
+    if (ref.sequence !== undefined) jobOrigins.set(ref.sequence, ref.origin);
     if (typeof tool.sequence === "number") operations.set(tool.sequence, operation);
     const span = observed(time(tool.startedAt), time(tool.completedAt));
     if (tool.status === "complete" && span) add(`Tool execution: ${operation}`, { ...span, ...ref }, tools);
@@ -109,7 +127,7 @@ function measurements(t: Row, start: number, end: number, evidence: string) {
     const next = nextLabels.get(String(gap.nextEvent));
     const span = observed(gap.startMs, gap.endMs);
     if (span && next) add(`After ${operations.get(Number(gap.afterTool)) ?? "tool"} result → ${next}`, { ...span, evidence: `${evidence}/postToolGaps/${i}`,
-      sequence: typeof gap.afterTool === "number" ? gap.afterTool : undefined, origin: origins.get(Number(gap.afterTool)) }, gaps);
+      sequence: typeof gap.afterTool === "number" ? gap.afterTool : undefined, origin: jobOrigins.get(Number(gap.afterTool)) }, gaps);
     else completeGaps = false;
   }
   const metrics = new Map([...steps].map(([label, spans]) => [label, summarize(spans)]));
@@ -124,14 +142,14 @@ function measurements(t: Row, start: number, end: number, evidence: string) {
       observedMs: reasoningGaps.totalMs, records: reasoningGaps.count }], durations: [] });
   }
   return {
-    metrics, details, reasoningGaps,
+    metrics, details, reasoningGaps, waitAttribution,
     toolExecution: coverage(tools, Array.isArray(t.tools), completeTools),
     afterResult: coverage(gaps, Array.isArray(t.postToolGaps), completeGaps),
     requestToFirstOutput: coverage(outputs, outputs.length > 0, completeOutputs)
   };
 }
 
-export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: string, top = 3) {
+export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: string, top = 3, jobs: WaitJobs = new Map()) {
   if (!Number.isSafeInteger(top) || top < 1) throw Error("--top must be a positive integer");
   const source = row(input);
   if (source.schemaVersion !== 1 || !Array.isArray(source.sessions)) throw Error("Expected a v1 Codex timing export with sessions");
@@ -163,7 +181,7 @@ export function slowTurnReport(input: unknown, hours = 48, minimum = 28, asOf?: 
       longestCompletedMs = Math.max(longestCompletedMs ?? 0, t.durationMs);
       if (t.durationMs < minimum * 60_000) continue;
       const evidence = `/sessions/${si}/interactions/${ti}`;
-      const { metrics, details, ...timing } = measurements(t, from, to, evidence);
+      const { metrics, details, ...timing } = measurements(t, from, to, evidence, jobs);
       turns.push({ evidence, turnIndex: t.turnIndex, startedAt: new Date(from).toISOString(), durationMs: t.durationMs, steps: Array.from(metrics, ([step, measurement]) => ({ step, measurement })), ...timing });
       for (const [step, metric] of metrics) {
         if (metric.totalMs === 0) continue;
@@ -212,6 +230,8 @@ function render(report: ReturnType<typeof slowTurnReport>): string {
       ["Same-response reasoning gaps", t.reasoningGaps], ["Tool request to first output", t.requestToFirstOutput]] as const) {
       lines.push(`  ${name}: ${metric ? `${metric.count} observed, ${minutes(metric.totalMs)} min total, ${(metric.longestMs / 1000).toFixed(3)} s longest${metric.partial ? " (partial timing)" : ""}` : "timing unavailable"}`);
     }
+    const launches = new Map(t.waitAttribution.filter(w => w.launch).map(w => [w.launch, w.job]));
+    for (const [launch, job] of launches) lines.push(`  Wait for ${job} · launch evidence: ${launch}`);
     for (const { step, measurement } of t.steps) {
       if (step.startsWith("After ") || step.startsWith("Tool execution:")) {
         lines.push(`    ${step}: ${measurement.count} observed, ${minutes(measurement.totalMs)} min`);
@@ -223,11 +243,11 @@ function render(report: ReturnType<typeof slowTurnReport>): string {
 }
 
 export function runSlowTurns(args: string[]) {
-  const usage = "Usage: agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--top 3] [--json]";
+  const usage = "Usage: agentops slow-turns <timing.json|-> [--since-hours 48] [--min-minutes 28] [--as-of ISO-timestamp] [--top 3] [--wait-jobs FILE] [--json]";
   function options() {
     try {
       return parseArgs({ args, allowPositionals: true, options: {
-        "since-hours": { type: "string" }, "min-minutes": { type: "string" }, "as-of": { type: "string" }, top: { type: "string" }, json: { type: "boolean" }
+        "since-hours": { type: "string" }, "min-minutes": { type: "string" }, "as-of": { type: "string" }, top: { type: "string" }, "wait-jobs": { type: "string" }, json: { type: "boolean" }
       } });
     } catch { throw Error(usage); }
   }
@@ -237,6 +257,8 @@ export function runSlowTurns(args: string[]) {
   const raw = readFileSync(file === "-" ? 0 : file, "utf8");
   let input: unknown;
   try { input = JSON.parse(raw); } catch { throw Error("Invalid JSON timing export"); }
-  const report = slowTurnReport(input, Number(parsed.values["since-hours"] ?? 48), Number(parsed.values["min-minutes"] ?? 28), parsed.values["as-of"], Number(parsed.values.top ?? 3));
+  const fileName = parsed.values["wait-jobs"];
+  const jobs = fileName ? parseWaitJobs(raw, input, JSON.parse(readFileSync(fileName, "utf8"))) : undefined;
+  const report = slowTurnReport(input, Number(parsed.values["since-hours"] ?? 48), Number(parsed.values["min-minutes"] ?? 28), parsed.values["as-of"], Number(parsed.values.top ?? 3), jobs);
   return { stdout: parsed.values.json ? JSON.stringify(report, null, 2) + "\n" : render(report), exitCode: 0 };
 }
