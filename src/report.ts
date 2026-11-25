@@ -245,9 +245,13 @@ const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", u
 function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: number }>, linkTimeline: boolean): string {
   const steps = new Map(events.map((event) => [event.id, event.idx]));
   const rows = ledger.claims.map((claim) => {
-    const evidence = claim.cited
-      ? formatRun(claim.cited, stepRef(claim.cited, steps, linkTimeline))
-      : claim.reason;
+    // A citation shows the outcome as of the claim: a run whose outcome was
+    // recorded only after the final response shows it as unknown.
+    const evidence = !claim.cited
+      ? claim.reason
+      : claim.cited.outcome === "unknown" && hasRecordedOutcome(claim.cited)
+        ? `${codeSpan(claim.cited.command)} (outcome unknown), ${stepRef(claim.cited, steps, linkTimeline)}`
+        : formatRun(claim.cited, stepRef(claim.cited, steps, linkTimeline));
     const detail = claim.verdict === "stale" || claim.verdict === "unverified" ? `${evidence}. ${claim.reason}` : evidence;
     return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(detail)} |`;
   });

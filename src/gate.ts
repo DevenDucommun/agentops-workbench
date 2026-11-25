@@ -60,10 +60,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  // Only observed runs satisfy the verification prerequisites: a command parsed
-  // from text is inferred however it reads (evidence trust model, rule 1).
-  const verification = commands.filter((command) =>
-    command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config));
+  const verification = commands.filter((command) => isObservedVerification(command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -98,20 +95,21 @@ function evaluateQualityGateSnapshot(
   // Ledger verdicts are judged under this check's config (not the audit's), so a
   // stricter support list here, or an analysis that did not finish, cannot pass
   // a claim the ledger rejects. Other claim flags come from the stored analysis.
-  const allFlags = currentLedgerClaimFlags(ledger, config);
-  const ledgerFlags = allFlags.filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
-  const unverified = allFlags.filter((flag) => flag.category === UNVERIFIED_CLAIM_CATEGORY);
+  const ledgerFlags = currentLedgerClaimFlags(ledger, config).filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
   // The two switches are independent: inferred evidence fails its own check
   // unless the repository opts in, whatever allowUnsupportedFinalClaims says, and
   // an unverified claim is never also charged as unsupported. The claim is still
-  // reported as unverified either way (trust model, decision 1).
+  // reported as unverified either way (trust model, decision 1). The check counts
+  // the ledger's verdicts, not risk flags: a suppression hides a flag from the
+  // risk list, but only gates.allowUnverifiedClaims can pass an unverified claim.
+  const unverified = ledger.claims.filter((claim) => claim.verdict === "unverified");
   checks.push({
     id: "unverified-claims",
     label: "Claims backed only by inferred evidence",
     status: unverified.length === 0 || config.gates.allowUnverifiedClaims ? "passed" : "failed",
     message: unverified.length === 0
       ? "0 observed."
-      : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${ledger.claims.filter((claim) => claim.verdict === "unverified").map((claim) => claim.label).join(", ")}.`,
+      : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${unverified.map((claim) => claim.label).join(", ")}.`,
     observed: unverified.length,
     threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
   });
@@ -140,6 +138,15 @@ function evaluateQualityGateSnapshot(
       changedFiles: options.gitChanges?.length ?? 0
     }
   };
+}
+
+/**
+ * A run that can satisfy the verification prerequisites: a verification command
+ * with its own recorded outcome, observed rather than parsed from text
+ * (evidence trust model, rule 1). Every surface (gate, dashboard) uses this rule.
+ */
+export function isObservedVerification(command: CommandRecord, config: AgentOpsConfig): boolean {
+  return command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config);
 }
 
 /** Evaluate named requirements against observed verification commands, using the current repository policy. */

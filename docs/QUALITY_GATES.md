@@ -92,12 +92,16 @@ counts against a claim whatever its tier, including a failing exit code that
 text attributes to a command.
 
 Inferred commands never satisfy `requireVerification` or
-`requiredVerificationCommands`. In a plain-text import, claims are read from
-every line outside a user turn, not only the last marked response.
+`requiredVerificationCommands`, and the dashboard's readiness and verification
+count use the same rule. In a plain-text import, claims are read from every
+line outside a user turn (shell prompts aside), not only the last marked
+response.
 
 `unverified` claims fail the separate `unverified-claims` check, whatever
-`allowUnsupportedFinalClaims` says, and are not also counted as unsupported. A
-repository that accepts text-derived evidence can set
+`allowUnsupportedFinalClaims` says, and are not also counted as unsupported.
+The check counts the ledger's verdicts, so suppressing the `unverified-claim`
+risk hides it from the risk list but does not pass the check. A repository
+that accepts text-derived evidence can set
 `gates.allowUnverifiedClaims: true`. The check then passes, but the CLI, PR
 comment and dashboard still show the claim as `unverified`, and the dashboard
 still asks for review.

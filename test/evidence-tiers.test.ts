@@ -9,6 +9,8 @@ import { type AgentOpsConfig, defaultConfig, validateConfigFile } from "../src/c
 import { evaluateQualityGate } from "../src/gate";
 import { type ClaimVerdict, getClaimsLedger } from "../src/ledger";
 import { getCommands, ingestTranscript, openStore } from "../src/store";
+import { getDashboardSession } from "../src/dashboardData";
+import { generateGithubRepoComment, githubGateEvidence } from "../src/report";
 
 // T2.7 (evidence trust model): evidence tiers, the `unverified` verdict, and a
 // regression row for every case in #154. Each row checks the verdict and the
@@ -364,5 +366,77 @@ describe("review 6063242011: every blocking case gets the expected verdict and c
     expect(late.claim?.reason).toContain("recorded its result only after the final response");
     const prose = text(["Ran bun test", "exit code 1", "Final: Tests passed."], gates({ allowUnverifiedClaims: true }));
     expect([prose.claim?.verdict, prose.claim?.cited?.command, prose.gate.status]).toEqual(["contradicted", "bun test", "failed"]);
+  });
+});
+
+describe("review 6063542874: every blocking case gets the expected verdict and citation", () => {
+  const gates = (overrides: Partial<AgentOpsConfig["gates"]>, base: AgentOpsConfig = defaultConfig): AgentOpsConfig => ({ ...base, gates: { ...base.gates, ...overrides } });
+  const imported = (name: string, body: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-tiers-"));
+    const path = join(dir, name);
+    writeFileSync(path, body);
+    return { dir, path };
+  };
+  const text = (lines: string[], config: AgentOpsConfig = defaultConfig) => {
+    const { dir, path } = imported("transcript.txt", `${lines.join("\n")}\n`);
+    return audit(path, dir, config);
+  };
+
+  test("1: a suppressed unverified-claim flag never passes the unverified check", () => {
+    const suppressed: AgentOpsConfig = { ...defaultConfig, suppressions: [{ category: "unverified-claim", reason: "Silence duplicate advisory." }] };
+    const result = run([session("r1"), shell("bun test a.test.ts", "completed", 0), final("Tests passed.")], "r1.jsonl", suppressed);
+    expect(result.claim?.verdict).toBe("unverified");
+    expect(result.gate.checks.find((c) => c.id === "unverified-claims")).toMatchObject({ status: "failed", observed: 1 });
+    expect(result.gate.status).toBe("failed");
+  });
+
+  test("2: a short unmarked claim, or one on a line with an exit code, is still a claim", () => {
+    const noPrereq = gates({ requireVerification: false });
+    const unmarked = text(["Ran bun test", "exit code 0", "Tests passed."], noPrereq);
+    expect([unmarked.claim?.verdict, unmarked.claim?.cited?.command, unmarked.gate.status]).toEqual(["unverified", "bun test", "failed"]);
+    const withExit = text(["$ bun test", "Assistant: Tests passed with exit code 0.", "Final: Done."], noPrereq);
+    expect([withExit.claim?.verdict, withExit.gate.status]).toEqual(["unverified", "failed"]);
+    // Control: no claim anywhere outside a user turn.
+    expect(text(["Ran bun test", "exit code 0", "User: did the tests pass?", "Final: Done."], noPrereq).claim).toBeUndefined();
+  });
+
+  test("3: the dashboard applies the gate's verification rule", () => {
+    const config = gates({ requiredVerificationCommands: ["bun test"] });
+    const readiness = (name: string, body: string) => {
+      const { dir, path } = imported(name, body);
+      const store = openStore(join(dir, "agentops.db"));
+      const input = loadAdapterInput(path);
+      const { sessionId } = ingestTranscript(store, resolveAdapter(input).parse(input, config), config);
+      analyzeSession(store, sessionId, config);
+      const gate = evaluateQualityGate(store, sessionId, config, { gitChanges: [] }).status;
+      const detail = getDashboardSession(store, sessionId, config);
+      store.db.close();
+      return [gate, detail?.decision.mergeReadiness.status, detail?.decision.mergeReadiness.verificationCount];
+    };
+    expect(readiness("pasted.txt", "$ bun test\nexit code 0\nFinal: Done.\n")).toEqual(["failed", "blocked", 0]);
+    const structured = [session("r3"), shell("bun test", "completed", 0), final("Done.")].map((l) => JSON.stringify(l)).join("\n");
+    expect(readiness("structured.jsonl", `${structured}\n`)).toEqual(["passed", "ready", 1]);
+  });
+
+  test("4: a citation shows the outcome as of the claim", () => {
+    const s = "stream-r4";
+    const render = (lines: Lines) => {
+      const { dir, path } = imported("stream.jsonl", `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+      const store = openStore(join(dir, "agentops.db"));
+      const input = loadAdapterInput(path);
+      const { sessionId } = ingestTranscript(store, resolveAdapter(input).parse(input, defaultConfig), defaultConfig);
+      analyzeSession(store, sessionId, defaultConfig);
+      const markdown = [githubGateEvidence(store, sessionId, defaultConfig).join("\n"), generateGithubRepoComment(store, sessionId, [], defaultConfig)];
+      store.db.close();
+      return markdown;
+    };
+    for (const markdown of render([init(s), uses(s, [{ id: "x", command: "bun test" }]), ...done(s, "Tests passed."), results(s, [{ id: "x", isError: false }])])) {
+      expect(markdown).toContain("`bun test` (outcome unknown), step");
+      expect(markdown).not.toContain("`bun test` (completed)");
+    }
+    // Control: a result before the final response keeps its recorded outcome.
+    for (const markdown of render([init(s), uses(s, [{ id: "x", command: "bun test" }]), results(s, [{ id: "x", isError: false }]), ...done(s, "Tests passed.")])) {
+      expect(markdown).toContain("`bun test` (completed), step");
+    }
   });
 });

@@ -388,7 +388,8 @@ test("dashboard distinguishes inferred forensic evidence from verified evidence"
     expect(detailPayload.decision.mergeReadiness.status).toBe("needs-review");
     expect(detailPayload.decision.mergeReadiness.reasons.join(" ")).toContain("inferred command evidence");
     expect(detailPayload.decision.mergeReadiness.missingEvidenceCount).toBe(0);
-    expect(detailPayload.decision.mergeReadiness.verificationCount).toBe(1);
+    // Inferred commands are shown, but never count as verification (same rule as the gate).
+    expect(detailPayload.decision.mergeReadiness.verificationCount).toBe(0);
     expect(detailPayload.decision.evidence).toContainEqual(
       expect.objectContaining({ id: "test", status: "inferred-evidence", command: "bun test", commandStatus: "inferred" })
     );
