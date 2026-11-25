@@ -1,4 +1,4 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, verificationTexts, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -97,7 +97,21 @@ function evaluateQualityGateSnapshot(
     // Ledger verdicts are judged under this check's config (not the audit's), so a
     // stricter support list here, or an analysis that did not finish, cannot pass
     // a claim the ledger rejects. Other claim flags come from the stored analysis.
-    const ledgerFlags = currentLedgerClaimFlags(ledger, config);
+    const allFlags = currentLedgerClaimFlags(ledger, config);
+    const ledgerFlags = allFlags.filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
+    const unverified = allFlags.filter((flag) => flag.category === UNVERIFIED_CLAIM_CATEGORY);
+    // Inferred evidence fails its own check unless the repository opts in; the
+    // claim is still reported as unverified either way (trust model, decision 1).
+    checks.push({
+      id: "unverified-claims",
+      label: "Claims backed only by inferred evidence",
+      status: unverified.length === 0 || config.gates.allowUnverifiedClaims ? "passed" : "failed",
+      message: unverified.length === 0
+        ? "0 observed."
+        : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${ledger.claims.filter((claim) => claim.verdict === "unverified").map((claim) => claim.label).join(", ")}.`,
+      observed: unverified.length,
+      threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
+    });
     const unsupportedClaims =
       risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
       ledgerFlags.length;

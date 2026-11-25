@@ -9,6 +9,7 @@ Session: `risky-session`
 | FAIL | High-severity risks | 2 observed; maximum allowed is 0. |
 | PASS | Blocked risky attempts | 0 observed; maximum allowed is 2. |
 | FAIL | Verification evidence | No observed verification command recorded. |
+| PASS | Claims backed only by inferred evidence | 0 observed. |
 | FAIL | Unsupported or inferred final claims | 1 observed; maximum allowed is 0. |
 | PASS | Generated-file churn | 0 observed; maximum allowed is 0. |
 

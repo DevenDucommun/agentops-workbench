@@ -239,7 +239,7 @@ function codeSpan(text: string): string {
   return `${fence}${padding}${value}${padding}${fence}`;
 }
 
-const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported", stale: "Rerun needed" } as const;
+const VERDICT_LABELS = { supported: "Supported", contradicted: "Contradicted", unsupported: "Unsupported", stale: "Rerun needed", unverified: "Unverified" } as const;
 
 /** One row per claim in the final response: its verdict and the run it rests on (spec R2.5). */
 function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: number }>, linkTimeline: boolean): string {
@@ -248,7 +248,8 @@ function formatLedger(ledger: ClaimsLedger, events: Array<{ id: number; idx: num
     const evidence = claim.cited
       ? formatRun(claim.cited, stepRef(claim.cited, steps, linkTimeline))
       : claim.reason;
-    return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(claim.verdict === "stale" ? `${evidence}. ${claim.reason}` : evidence)} |`;
+    const detail = claim.verdict === "stale" || claim.verdict === "unverified" ? `${evidence}. ${claim.reason}` : evidence;
+    return `| ${escapeTable(claim.label)} | ${VERDICT_LABELS[claim.verdict]} | ${escapeTable(detail)} |`;
   });
   return ["| Claim | Verdict | Evidence |", "| --- | --- | --- |", ...rows].join("\n");
 }

@@ -15,6 +15,11 @@ import { getCommands, getRiskFlags, ingestTranscript, openStore } from "../src/s
 
 const ROOT = join(import.meta.dir, "..");
 
+/** Whether the gate's claim checks pass: unsupported, contradicted or stale claims, or unverified ones. */
+function claimGate(gate: ReturnType<typeof evaluateQualityGate>): "passed" | "failed" {
+  return gate.checks.some((c) => (c.id === "unsupported-final-claims" || c.id === "unverified-claims") && c.status === "failed") ? "failed" : "passed";
+}
+
 function ingest(fixture: string) {
   const store = openStore(join(mkdtempSync(join(tmpdir(), "agentops-ledger-")), "agentops.db"));
   const path = join(ROOT, fixture);
@@ -141,8 +146,9 @@ describe("buildClaimsLedger", () => {
       eventIds: new Map()
     });
     expect(ledger.claims.map((c) => [c.verdict, c.evidence.length, c.cited?.status])).toEqual([["contradicted", 1, "failed"]]);
+    // A run with no outcome is inferred evidence (trust model, rule 1): unverified, never supported.
     const none = buildClaimsLedger({ sessionId: "s", finalEvent: final(9, "All tests pass."), commands: [run(1, 2, "bun test", "running", null)], eventIds: new Map() });
-    expect(none.claims.map((c) => c.verdict)).toEqual(["unsupported"]);
+    expect(none.claims.map((c) => [c.verdict, c.cited?.outcome])).toEqual([["unverified", "unknown"]]);
   });
 
   test("several claims in one response get separate verdicts", () => {
@@ -186,7 +192,7 @@ describe("Claude Code: a Bash result decides the run's outcome", () => {
     const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream(result)), defaultConfig);
     analyzeSession(store, sessionId, defaultConfig);
     const claims = getClaimsLedger(store, sessionId).claims.map((c) => [c.id, c.verdict, c.cited?.outcome ?? null]);
-    const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }).checks.find((c) => c.id === "unsupported-final-claims")?.status;
+    const gate = claimGate(evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }));
     store.db.close();
     return { claims, gate };
   };
@@ -196,7 +202,7 @@ describe("Claude Code: a Bash result decides the run's outcome", () => {
   });
 
   test("a tool_use with no tool_result is not evidence", () => {
-    expect(audit(null)).toEqual({ claims: [["test", "unsupported", null]], gate: "failed" });
+    expect(audit(null)).toEqual({ claims: [["test", "unverified", "unknown"]], gate: "failed" });
   });
 
   test("a successful tool_result supports the test claim", () => {
@@ -270,8 +276,9 @@ describe("A and B: asymmetric evidence", () => {
       expect(cite("Tests passed.", [command, 0])).toEqual(["supported", command]);
     }
     // Extra arguments, environment assignments, a different script or a dry run do not.
+    // They are inferred evidence: unverified, citing the run (trust model, rule 3).
     for (const command of ["CI=1 bun test", "bun test a.test.ts", "bun test --coverage", "pytest -q", "make test --just-print", "MAKEFLAGS=n make test", "npm run TEST", "npm run test -- --watch=false"]) {
-      expect(cite("Tests passed.", [command, 0])).toEqual(["unsupported", null]);
+      expect(cite("Tests passed.", [command, 0])).toEqual(["unverified", command]);
     }
   });
 
@@ -281,7 +288,7 @@ describe("A and B: asymmetric evidence", () => {
       buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 99, eventId: null, text: "Tests passed." }, commands: [run(1, command, 0)], eventIds: new Map(), config }).claims[0]
         ?.verdict;
     expect(ledger("bun run ci")).toBe("supported");
-    expect(ledger("bun test")).toBe("unsupported");
+    expect(ledger("bun test")).toBe("unverified");
   });
 
   test("B: passing runs that are not the strict shape never support", () => {
@@ -320,9 +327,9 @@ describe("A and B: asymmetric evidence", () => {
       "bun test\tbad.test.ts",
       "make test-docs"
     ]) {
-      expect(cite("Tests passed.", [command, 0])).toEqual(["unsupported", null]);
+      expect(cite("Tests passed.", [command, 0])[0]).not.toBe("supported");
     }
-    expect(cite("Typecheck passed.", ["npx tsc --noEmit", 0])).toEqual(["unsupported", null]);
+    expect(cite("Typecheck passed.", ["npx tsc --noEmit", 0])).toEqual(["unverified", "npx tsc --noEmit"]);
   });
 
   test("A: a failed run that mentions the kind contradicts, whatever its shape", () => {
@@ -353,7 +360,7 @@ describe("A and B: asymmetric evidence", () => {
       eventIds: new Map(),
       toolNames: new Map([[1, "mcp__demo__describe_command"]])
     });
-    expect(ledger.claims.map((c) => c.verdict)).toEqual(["unsupported"]);
+    expect(ledger.claims.map((c) => c.verdict)).toEqual(["unverified"]);
     for (const tool of ["Bash", "shell", "exec_command", "local_shell", "functions.exec_command"]) {
       const shell = buildClaimsLedger({ sessionId: "s", finalEvent: { rowId: 99, eventId: null, text: "Tests passed." }, commands: [run(1, "bun test", 0)], eventIds: new Map(), toolNames: new Map([[1, tool]]) });
       expect(shell.claims.map((c) => c.verdict)).toEqual(["supported"]);
@@ -375,7 +382,7 @@ describe("A and B: asymmetric evidence", () => {
     const { sessionId } = ingestTranscript(store, transcript, defaultConfig);
     const claims = getClaimsLedger(store, sessionId).claims.map((c) => c.verdict);
     store.db.close();
-    expect(claims).toEqual(["unsupported"]);
+    expect(claims).toEqual(["unverified"]);
   });
 });
 
@@ -446,13 +453,13 @@ describe("Claude Code: a result after the final response is not evidence", () =>
     const { sessionId } = ingestTranscript(store, parseClaudeCodeStreamJsonl("claude.jsonl", stream), defaultConfig);
     analyzeSession(store, sessionId, defaultConfig);
     const claims = getClaimsLedger(store, sessionId).claims.map((c) => c.verdict);
-    const gate = evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }).checks.find((c) => c.id === "unsupported-final-claims")?.status;
+    const gate = claimGate(evaluateQualityGate(store, sessionId, defaultConfig, { gitChanges: [] }));
     store.db.close();
     return { claims, gate };
   };
 
-  test("a successful result recorded after the final claim leaves the claim unsupported", () => {
-    expect(verdict(records(final("All tests pass."), ok))).toEqual({ claims: ["unsupported"], gate: "failed" });
+  test("a successful result recorded after the final claim leaves the claim unverified", () => {
+    expect(verdict(records(final("All tests pass."), ok))).toEqual({ claims: ["unverified"], gate: "failed" });
   });
 
   test("a result before the latest final response still counts", () => {
@@ -473,7 +480,7 @@ describe("Claude Code: a result after the final response is not evidence", () =>
     ]
       .map((record) => JSON.stringify(record))
       .join("\n");
-    expect(verdict(stream)).toEqual({ claims: ["unsupported"], gate: "failed" });
+    expect(verdict(stream)).toEqual({ claims: ["unverified"], gate: "failed" });
   });
 
   test("C: a reused tool_use id never shares an outcome between calls", () => {
@@ -481,7 +488,7 @@ describe("Claude Code: a result after the final response is not evidence", () =>
     const res = (isError: boolean) => ({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_r", is_error: isError, content: "out" }] } });
     const stream = (...rows: unknown[]) => [{ type: "system", subtype: "init", session_id: "claude-reuse" }, ...rows].map((record) => JSON.stringify(record)).join("\n");
     expect(verdict(stream(call("echo hello"), res(false), call("bun test"), res(true), final("All tests pass.")))).toEqual({ claims: ["contradicted"], gate: "failed" });
-    expect(verdict(stream(call("echo hello"), res(false), call("bun test"), final("All tests pass.")))).toEqual({ claims: ["unsupported"], gate: "failed" });
+    expect(verdict(stream(call("echo hello"), res(false), call("bun test"), final("All tests pass.")))).toEqual({ claims: ["unverified"], gate: "failed" });
     expect(verdict(stream(call("bun test"), res(true), call("bun test"), res(false), final("All tests pass.")))).toEqual({ claims: ["supported"], gate: "passed" });
   });
 
@@ -695,8 +702,9 @@ describe("regressions against the base: outcome-less retries and stores written 
       [init, call("toolu_a", "bun test"), result("toolu_a", true), call("toolu_b", "bun test"), done]
     ]) {
       const claim = claudeStore(records);
-      expect(claim.verdict).toBe("unsupported");
-      expect(claim.cited).toBeNull();
+      // Never cited as evidence for or against: at most unverified.
+      expect(claim.verdict).toBe("unverified");
+      expect(claim.evidence).toEqual([]);
     }
   });
 
@@ -832,7 +840,7 @@ describe("review 6001092236: configured failures, recorded outcomes, shell ident
     for (const unsafe of ["make test --dry-run", "bun test --help", "true || bun test", "bun test; true", "! bun test"]) {
       expect(isSafeSupportCommand(unsafe)).toBe(false);
       const config = { ...defaultConfig, evidence: { ...defaultConfig.evidence, supportCommands: { test: [unsafe] } } };
-      expect(ledgerFor([header, v1({ type: "command", command: unsafe, exitCode: 0 }), final], config).verdict).toBe("unsupported");
+      expect(ledgerFor([header, v1({ type: "command", command: unsafe, exitCode: 0 }), final], config).verdict).toBe("unverified");
     }
     const dir = mkdtempSync(join(tmpdir(), "agentops-cfg-"));
     writeFileSync(join(dir, "agentops.config.json"), JSON.stringify({ evidence: { supportCommands: { test: ["bun test --help"] } } }));
@@ -842,7 +850,7 @@ describe("review 6001092236: configured failures, recorded outcomes, shell ident
   test("a command with a non-breaking space never matches a configured command", () => {
     const nbsp = String.fromCharCode(0xa0);
     const claim = ledgerFor([header, v1({ type: "command", command: `bun test${nbsp}`, exitCode: 0 }), final]);
-    expect(claim.verdict).toBe("unsupported");
+    expect(claim.verdict).toBe("unverified");
   });
 });
 

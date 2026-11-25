@@ -663,9 +663,14 @@ function ingestInput(store: Store, input: ReturnType<typeof loadAdapterInput>, a
       }
     });
   }
-  const result = ingestTranscript(store, transcript, config);
-  analyzeSession(store, result.sessionId, config);
-  return result;
+  // Import and analysis commit together, so an audit interrupted between them
+  // can never leave a session with its events but without its risk flags.
+  // The nested transactions inside both become savepoints of this one.
+  return store.db.transaction(() => {
+    const result = ingestTranscript(store, transcript, config);
+    analyzeSession(store, result.sessionId, config);
+    return result;
+  }).immediate();
 }
 
 function realPathOrSelf(path: string): string {

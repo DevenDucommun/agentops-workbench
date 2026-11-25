@@ -381,6 +381,8 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
       });
     } else if (claim.verdict === "stale") {
       flags.push({ eventId: finalEventId, severity: "medium", category: "stale-verification", message: claim.reason });
+    } else if (claim.verdict === "unverified") {
+      flags.push({ eventId: finalEventId, severity: "medium", category: UNVERIFIED_CLAIM_CATEGORY, message: `Final response claims ${claim.label} success, but the evidence is unverified. ${claim.reason}` });
     } else if (claim.verdict === "contradicted" && claim.cited) {
       const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
       flags.push({
@@ -394,8 +396,11 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
   return flags;
 }
 
+/** Raised for a claim whose only evidence is inferred (evidence trust model, rule 2). */
+export const UNVERIFIED_CLAIM_CATEGORY = "unverified-claim";
+
 /** Categories that only ledger verdicts raise. */
-export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification"]);
+export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification", UNVERIFIED_CLAIM_CATEGORY]);
 
 /**
  * The ledger's claim flags for a stored session under `config`, after its

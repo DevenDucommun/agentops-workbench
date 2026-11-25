@@ -47,7 +47,9 @@ Default gates fail when:
 - any high-severity risk is present
 - more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
-  contradicted, stale, or only inferred from forensic text
+  contradicted or stale
+- a claim is backed only by inferred evidence (`unverified-claims`, unless
+  `gates.allowUnverifiedClaims` is set)
 - generated-file churn is above the configured threshold
 
 An unfinished command, including a Claude tool call without a result or a Codex start without a completion, cannot satisfy a verification requirement. A recorded failure proves the check ran. The verification gate reports its failure count, and a later success claim is checked against the ledger.
@@ -64,7 +66,32 @@ from the runs recorded before it:
 | `supported` | The latest relevant run is a passing run that can support the claim | none |
 | `contradicted` | The latest relevant run failed | `contradicted-claim` |
 | `stale` | A passing run predates or overlaps an applied file change | `stale-verification` |
-| `unsupported` | No relevant run was observed | `missing-<kind>-evidence` |
+| `unverified` | Only inferred evidence matches the claim (see [Evidence tiers](#evidence-tiers)) | `unverified-claim` |
+| `unsupported` | No relevant run of any tier was recorded | `missing-<kind>-evidence` |
+
+### Evidence tiers
+
+Every command is stored with an evidence tier, decided at import:
+
+- **Observed**: a command from a structured source (recorder spool, Claude
+  Code stream or hooks, Codex exec JSON, generic JSONL).
+- **Inferred**: anything parsed from plain text, including a pasted
+  `$ bun test` line followed by `Process exited with code 0`, and any event
+  its adapter marked inferred.
+
+Only an observed shell run of a configured command, word for word, with its
+own recorded outcome, supports a claim. When no such run decides a claim but
+matching runs exist that cannot (inferred, no outcome of their own, extra
+arguments or a wrapper, or a call that is not a shell execution), the verdict
+is `unverified` and cites the latest of them. Unknown is never a pass. A failed
+run counts against a claim whatever its tier.
+
+`unverified` claims fail the separate `unverified-claims` check. A repository
+that accepts text-derived evidence can set `gates.allowUnverifiedClaims: true`.
+The check then passes, but the CLI, PR comment and dashboard still show the
+claim as `unverified`, and the dashboard still asks for review. Stores written
+before tiers existed are classified the same way on read: rows from the
+`forensic-text` adapter, or with an `inferred` status, are inferred.
 
 A run counts only with its own recorded outcome: an exit code, an explicit
 failed status (`failed`, `error`, `timed_out`, `cancelled`, `interrupted`,
@@ -212,6 +239,7 @@ Configure gates in `agentops.config.json`:
     "maxHighSeverityRisks": 0,
     "maxBlockedAttempts": 2,
     "allowUnsupportedFinalClaims": false,
+    "allowUnverifiedClaims": false,
     "maxGeneratedFileChurnLines": 20,
     "generatedFilePatterns": ["generated", "dist", "build"]
   }

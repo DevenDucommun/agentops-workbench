@@ -4,6 +4,26 @@
 
 ### Changed
 
+- Evidence tiers and the `unverified` verdict (T2.7, evidence trust model).
+  Each command is stored with an evidence tier: `observed` from a structured
+  source, `inferred` from plain text. Only an observed shell run of a
+  configured command, word for word, with its own outcome, supports a claim.
+  A claim whose only matching evidence is inferred (a pasted transcript, a run
+  with no outcome, a narrowed or wrapped command, a non-shell tool) is now
+  `unverified` instead of `supported` or `unsupported`, and fails the new
+  `unverified-claims` gate check. **Gate outcomes can change:** a plain-text
+  forensic import that used to pass on `$ bun test` / `exit code 0` now fails.
+  Set `gates.allowUnverifiedClaims: true` to pass the gate on such claims; they
+  are still shown as unverified. A failed run still contradicts a claim
+  whatever its tier.
+- Claim detection reads underscores as spaces, so Markdown emphasis
+  (`_Tests_ passed.`) no longer hides a claim.
+- Claude Code stream: a `permission_denials` entry applies once, to the
+  `tool_use` with the denied input. A reused `tool_use` id no longer marks an
+  earlier, executed call as denied and hides its failure.
+- `agentops audit` imports and analyzes a session in one transaction, so an
+  interrupted audit can no longer store a session without its risk flags.
+
 - Blocked risky commands (T2.4): a destructive or permission-changing command
   that was denied or declined never ran, so it raises a low `blocked-attempt`
   flag instead of a high `destructive-command` (or medium `permission-change`)

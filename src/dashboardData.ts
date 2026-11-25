@@ -632,6 +632,13 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     row.riskMessage = entry.reason;
     row.riskCategory = "stale-verification";
   }
+  if (entry.verdict === "unverified") {
+    // Same verdict as the gate and report: shown as inferred even when the
+    // repository's gates.allowUnverifiedClaims lets the gate pass on it.
+    row.status = "inferred-evidence";
+    row.riskMessage = entry.reason;
+    row.riskCategory = "unverified-claim";
+  }
   return row;
 }
 

@@ -15,7 +15,7 @@
 | Events | 7 |
 | Commands | 2 |
 | Files Changed | 2 |
-| Risk Flags | 1 |
+| Risk Flags | 2 |
 
 ## Evidence Quality
 
@@ -51,9 +51,13 @@
 
 | Claim | Verdict | Evidence |
 | --- | --- | --- |
-| test | Supported | `bun test` (exit 0), [step 6](#event-step-6) |
+| test | Unverified | `bun test` (exit 0), [step 6](#event-step-6). Only inferred test evidence: bun test was inferred from text, not observed. Rerun a configured test command in a recorded or provider-JSON session. |
 
 ## Risk Flags
+
+### Medium Severity
+
+- **unverified-claim**: Final response claims test success, but the evidence is unverified. Only inferred test evidence: bun test was inferred from text, not observed. Rerun a configured test command in a recorded or provider-JSON session.
 
 ### Low Severity
 

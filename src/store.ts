@@ -4,6 +4,7 @@ import { defaultStateDir, enrolledRepository, findRepositoryRoots } from "./reco
 import { Database } from "bun:sqlite";
 import type {
   CommandRecord,
+  EvidenceTier,
   FileChangeRecord,
   ParsedTranscript,
   RawEvent,
@@ -169,6 +170,7 @@ export function ingestTranscript(
   // read of a store from an earlier version never writes (read-only or locked stores).
   addColumnIfMissing(db, "events", "text", "TEXT");
   addColumnIfMissing(db, "file_changes", "status", "TEXT");
+  addColumnIfMissing(db, "commands", "evidence_tier", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -194,8 +196,8 @@ export function ingestTranscript(
     RETURNING id
   `);
   const insertCommand = db.query(`
-    INSERT INTO commands (session_id, event_id, command, status, exit_code, output)
-    VALUES ($sessionId, $eventId, $command, $status, $exitCode, $output)
+    INSERT INTO commands (session_id, event_id, command, status, exit_code, output, evidence_tier)
+    VALUES ($sessionId, $eventId, $command, $status, $exitCode, $output, $evidenceTier)
   `);
   const insertFileChange = db.query(`
     INSERT INTO file_changes (session_id, event_id, path, operation, status, lines_added, lines_removed)
@@ -280,7 +282,8 @@ export function ingestTranscript(
           $command: command,
           $status: typeof event.status === "string" ? event.status : null,
           $exitCode: typeof event.exitCode === "number" ? event.exitCode : null,
-          $output: typeof event.output === "string" ? event.output : null
+          $output: typeof event.output === "string" ? event.output : null,
+          $evidenceTier: evidenceTierAtIngest(session.sourceAdapter, event)
         });
       }
 
@@ -413,10 +416,32 @@ export function getEvents(store: Store, sessionId: string): StoredEvent[] {
     .all({ $sessionId: sessionId }) as StoredEvent[];
 }
 
+/** Adapters whose every command is derived from text (evidence trust model, rule 1). */
+const TEXT_ADAPTERS = new Set(["forensic-text"]);
+
+/**
+ * A command's evidence tier, decided once at ingest (evidence trust model,
+ * rule 1). Anything parsed from plain text is `inferred`, including a pasted
+ * `$ bun test` line with `exit code 0` prose, as is any event its adapter
+ * marked inferred. Every other command comes from a structured source and is
+ * `observed`; whether it also has its own outcome is judged by the ledger.
+ */
+export function evidenceTierAtIngest(sourceAdapter: string | null | undefined, event: RawEvent): EvidenceTier {
+  if (sourceAdapter && TEXT_ADAPTERS.has(sourceAdapter)) return "inferred";
+  if (event.provenance === "inferred" || (typeof event.status === "string" && event.status.toLowerCase() === "inferred")) return "inferred";
+  return "observed";
+}
+
 export function getCommands(store: Store, sessionId: string): CommandRecord[] {
+  // Rows written before the tier column existed are classified the way ingest
+  // would have: a text adapter or an inferred status is inferred.
+  const stored = hasColumn(store.db, "commands", "evidence_tier") ? "c.evidence_tier" : "NULL";
   return store.db
     .query(
-      "SELECT id, event_id as eventId, command, status, exit_code as exitCode, output FROM commands WHERE session_id = $sessionId ORDER BY id"
+      `SELECT c.id, c.event_id as eventId, c.command, c.status, c.exit_code as exitCode, c.output,
+         COALESCE(${stored}, CASE WHEN LOWER(COALESCE(c.status, '')) = 'inferred' OR s.source_adapter = 'forensic-text' THEN 'inferred' ELSE 'observed' END) as evidenceTier
+       FROM commands c JOIN sessions s ON s.id = c.session_id
+       WHERE c.session_id = $sessionId ORDER BY c.id`
     )
     .all({ $sessionId: sessionId }) as CommandRecord[];
 }

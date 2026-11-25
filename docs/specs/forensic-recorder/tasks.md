@@ -68,12 +68,13 @@ Sizes are relative effort: S, M or L.
   the behavior change and the config key that restores it.
 - [x] **T2.5 (M) Ledger rendering** in the report, dashboard and PR comment.
   Verify: demo artifacts regenerated (`smoke:demo-artifacts`).
-- [ ] **T2.7 Evidence classification and citations.** Implement the evidence
+- [x] **T2.7 Evidence classification and citations.** Implement the evidence
   tiers and the `unverified` verdict from the [trust model](evidence-trust-model.md).
   Verify each [#154 case](https://github.com/DevenDucommun/agentops-workbench/issues/154)
   against the expected verdict and cited event. [#160](https://github.com/DevenDucommun/agentops-workbench/pull/160)
   covers evidence freshness and agreement across surfaces. [#161](https://github.com/DevenDucommun/agentops-workbench/pull/161)
-  tracks recognition of real verification commands.
+  tracks recognition of real verification commands. Regression rows for every
+  #154 case: `test/evidence-tiers.test.ts`.
 - [ ] **T2.6 (S) Release v3.4.0.** Complete T2.7 and the
   [integrated acceptance checks](https://github.com/DevenDucommun/agentops-workbench/issues/157),
   including creating and updating the same opt-in PR comment on GitHub.

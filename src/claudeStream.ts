@@ -238,8 +238,12 @@ function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUs
   }
 
   if (block.type === "tool_use") {
-    if (typeof block.id === "string" && denied.has(block.id)) {
-      denied.get(block.id)!.matched = true;
+    // A denial names a tool_use id, and ids can be reused. It applies once, to
+    // a use with the denied input; any other use of the id ran, so its outcome
+    // (a failed test, say) is never hidden as a denial.
+    const denial = typeof block.id === "string" ? denied.get(block.id) : undefined;
+    if (denial && !denial.matched && sameDeniedInput(denial.input, block.input)) {
+      denial.matched = true;
       return [deniedToolUseEvent(block.name, block.input)];
     }
     return [normalizeToolUse(block, results)];
@@ -343,6 +347,22 @@ function deniedToolUseEvent(name: string | undefined, input: Record<string, unkn
     status: "denied",
     summary: `Permission denied: ${toolName}${command ? ` (${command})` : ""}`
   };
+}
+
+/**
+ * A denial without a recorded input matches by id alone. Otherwise every field
+ * the denial recorded must equal the use's field: Claude Code records a subset
+ * (`command` without the `description` the tool_use carried).
+ */
+function sameDeniedInput(denied: Record<string, unknown> | undefined, used: Record<string, unknown> | undefined): boolean {
+  if (denied === undefined) return true;
+  return Object.keys(denied).every((key) => stableJson(denied[key]) === stableJson(used?.[key]));
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (isRecord(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
 }
 
 function unmatchedDenialEvents(denied: DeniedToolUses): RawEvent[] {

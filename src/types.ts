@@ -114,7 +114,15 @@ export type CommandRecord = {
   status: string | null;
   exitCode: number | null;
   output: string | null;
+  /**
+   * Evidence tier (evidence trust model, rule 1): `observed` for a structured
+   * source's own recorded outcome, `inferred` for anything derived from text.
+   * Absent is read as `observed`; stored rows always carry a value.
+   */
+  evidenceTier?: EvidenceTier;
 };
+
+export type EvidenceTier = "observed" | "inferred";
 
 export type FileChangeRecord = {
   id: number;
