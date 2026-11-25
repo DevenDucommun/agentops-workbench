@@ -1,3 +1,4 @@
+import { getClaimsLedger } from "../src/ledger";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -179,7 +180,12 @@ test("upgrading released v3.2 rows requires review until re-import restores the 
     expect(report()).toContain(warning);
     expect(getDashboardSession(store, id, defaultConfig)?.decision.mergeReadiness.reasons.join(" ")).toContain(warning);
     expect(gate("legacy-short").status).toBe("failed");
-    expect(gate("legacy-pass").status).toBe("passed");
+    // A generic row stored without its payload may have been marked inferred and
+    // the mark is gone: it stays unverified, and says why, until re-import.
+    const legacyPass = gate("legacy-pass");
+    expect(legacyPass.status).toBe("failed");
+    expect(legacyPass.checks.filter(check => check.status === "failed").map(check => check.id)).toEqual(["required-verification", "unverified-claims"]);
+    expect(getClaimsLedger(store, "legacy-pass").claims[0]?.reason).toContain("re-import the capture with agentops audit");
 
     // An opt-in retained payload can establish the full text before re-import.
     const updatePayload = store.db.query("UPDATE events SET raw_json = ? WHERE session_id = ? AND type = 'final_response'");
@@ -214,7 +220,7 @@ test("upgrading released v3.2 rows requires review until re-import restores the 
     records[1].command = "bun run lint";
     ingestTranscript(store, capture());
     expect(getSessionCommits(store, id)).toEqual([{ ...linked, eventId: null }]);
-    expect(gate("legacy-pass").status).toBe("passed");
+    expect(gate("legacy-pass").status).toBe("failed");
   } finally {
     store.db.close();
   }

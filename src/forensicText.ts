@@ -150,12 +150,16 @@ export function parseForensicTextTranscript(
 
   const finalResponse = extractFinalResponse(meaningfulLines);
   if (finalResponse) {
+    // The bounded response is the summary people see. Claims are read from the
+    // summary and the content, which holds every non-user line (evidence trust
+    // model, rule 4), so a later turn marker cannot hide an earlier claim.
+    const claimText = nonUserText(meaningfulLines);
     events.push({
       schemaVersion: "agentops.event.v1",
       type: "final_response",
       source: "forensic-text",
       role: "assistant",
-      content: finalResponse,
+      content: claimText.includes(finalResponse) ? claimText : collapse(`${claimText} ${finalResponse}`),
       summary: finalResponse,
       provenance: "inferred",
       confidence: commandEvents.length > 0 ? "low" : "very-low"
@@ -285,6 +289,26 @@ function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>
     .filter((line) => line.length > 20);
   const tail = candidates.slice(-3).join(" ");
   return tail ? collapse(tail) : null;
+}
+
+/** A line that starts a user's turn. */
+const USER_TURN = /^(?:user|human|you|me)\s*:/i;
+
+/**
+ * Every line outside a user turn, other than shell prompts and exit-code lines
+ * (evidence, not statements). A user turn runs from its marker to the next
+ * speaker turn or shell prompt.
+ */
+function nonUserText(lines: Array<{ line: string; lineNumber: number }>): string {
+  const parts: string[] = [];
+  let inUserTurn = false;
+  for (const entry of lines) {
+    if (USER_TURN.test(entry.line)) inUserTurn = true;
+    else if (TURN_MARKER.test(entry.line) || extractObservedCommand(entry.line)) inUserTurn = false;
+    if (inUserTurn || extractObservedCommand(entry.line) || extractExitCode(entry.line) !== null) continue;
+    parts.push(entry.line);
+  }
+  return collapse(parts.join(" "));
 }
 
 function inferAgent(input: string): string {

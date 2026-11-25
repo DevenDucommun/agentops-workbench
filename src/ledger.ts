@@ -427,11 +427,20 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   // Only runs whose outcome was recorded before the final response can back it:
   // never-run and still-running commands, and runs whose result came later, are
   // skipped. Commands without an event row keep their place in insertion order.
-  const runs = input.commands.filter((command) => {
-    const status = (command.status ?? "").toLowerCase();
-    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
+  const beforeFinal = (command: CommandRecord) => {
     const at = outcomeRow(command);
     return at === null || at < finalEvent.rowId;
+  };
+  // A command inferred from text still counts when text attributes a failing
+  // exit code to it: an inferred failure contradicts the claim, so opting in to
+  // unverified claims can never pass a session whose own transcript shows the
+  // check failing.
+  const inferredFailure = (command: CommandRecord) => typeof command.exitCode === "number" && command.exitCode !== 0;
+  const runs = input.commands.filter((command) => {
+    const status = (command.status ?? "").toLowerCase();
+    if (status === "inferred" ? !inferredFailure(command) : NOT_EXECUTED_STATUSES.has(status)) return false;
+    if (NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
+    return beforeFinal(command);
   });
   // Runs are ordered by when their outcome was recorded, so with overlapping
   // calls the latest run is the one whose result arrived last. When two runs'
@@ -485,10 +494,13 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
       });
       const latest = inferred.at(-1);
       if (latest) {
-        const basis = toEvidence(latest, hasOwnOutcome(latest) ? commandOutcome(latest) : "unknown");
+        // An outcome recorded after the final response is not cited as one.
+        const late = hasOwnOutcome(latest) && !beforeFinal(latest);
+        const known = hasOwnOutcome(latest) && !late;
+        const basis = toEvidence(latest, known ? commandOutcome(latest) : "unknown");
         ledger.claims.push({
           id: rule.id, label: rule.label, category: rule.category, verdict: "unverified",
-          reason: unverifiedReason(rule.label, latest, hasOwnOutcome(latest), isObserved(latest) && fromShell(latest), inferred.length),
+          reason: unverifiedReason(rule.label, latest, { known, late, observedShell: isObserved(latest) && fromShell(latest) }, inferred.length),
           evidence: [], cited: basis
         });
         continue;
@@ -677,16 +689,26 @@ function mentionsKind(rule: EvidenceClaimRule, command: string, config: AgentOps
   return mentionsRuleCommand(rule, command) || looselyMentionsKind(rule, command) || extendsSupportCommand(rule, command, config);
 }
 
-function unverifiedReason(label: string, run: CommandRecord, hasOutcome: boolean, observedShell: boolean, runs: number): string {
-  const why = run.evidenceTier === "inferred"
+function unverifiedReason(
+  label: string,
+  run: CommandRecord,
+  outcome: { known: boolean; late: boolean; observedShell: boolean },
+  runs: number
+): string {
+  const basis = run.evidenceTier === "inferred" ? (run.tierBasis ?? "text") : null;
+  const why = basis === "text"
     ? "was inferred from text, not observed"
-    : !hasOutcome
-      ? "has no recorded outcome"
-      : !observedShell
-        ? "was not a shell execution"
-        : "is not one of the configured commands, word for word";
+    : basis === "legacy"
+      ? "was stored by an earlier version that did not keep its provenance; re-import the capture with agentops audit"
+      : outcome.late
+        ? "recorded its result only after the final response"
+        : basis === "no-outcome" || !outcome.known
+          ? "has no recorded outcome"
+          : !outcome.observedShell
+            ? "was not a shell execution"
+            : "is not one of the configured commands, word for word";
   const more = runs > 1 ? ` (${runs} matching runs, none observed)` : "";
-  const next = run.evidenceTier === "inferred" || !hasOutcome
+  const next = basis !== null || outcome.late || !outcome.known
     ? `Rerun a configured ${label} command in a recorded or provider-JSON session.`
     : `Run a configured ${label} command, or add this exact form to evidence.supportCommands.`;
   return `Only inferred ${label} evidence: ${run.command} ${why}${more}. ${next}`;

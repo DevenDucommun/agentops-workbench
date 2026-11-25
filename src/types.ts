@@ -120,9 +120,16 @@ export type CommandRecord = {
    * Absent is read as `observed`; stored rows always carry a value.
    */
   evidenceTier?: EvidenceTier;
+  /**
+   * Why an inferred row is inferred, derived when it is read: parsed from
+   * `text`, recorded with `no-outcome` of its own, or written by an earlier
+   * version (`legacy`) whose provenance the store did not keep.
+   */
+  tierBasis?: TierBasis;
 };
 
 export type EvidenceTier = "observed" | "inferred";
+export type TierBasis = "text" | "no-outcome" | "legacy";
 
 export type FileChangeRecord = {
   id: number;

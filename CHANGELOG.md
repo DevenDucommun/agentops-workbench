@@ -5,22 +5,34 @@
 ### Changed
 
 - Evidence tiers and the `unverified` verdict (T2.7, evidence trust model).
-  Each command is stored with an evidence tier: `observed` from a structured
-  source, `inferred` from plain text. Only an observed shell run of a
-  configured command, word for word, with its own outcome, supports a claim.
-  A claim whose only matching evidence is inferred (a pasted transcript, a run
-  with no outcome, a narrowed or wrapped command, a non-shell tool) is now
+  Each command and tool call is stored with an evidence tier: `observed` from a
+  structured source with its own outcome, `inferred` from plain text or with no
+  outcome of its own. Only an observed shell run of a configured command, word
+  for word, supports a claim. A claim whose only matching evidence is inferred
+  (a pasted transcript, a run with no outcome, a narrowed or wrapped command, a
+  non-shell tool, a result recorded after the final response) is now
   `unverified` instead of `supported` or `unsupported`, and fails the new
-  `unverified-claims` gate check. **Gate outcomes can change:** a plain-text
-  forensic import that used to pass on `$ bun test` / `exit code 0` now fails.
-  Set `gates.allowUnverifiedClaims: true` to pass the gate on such claims; they
-  are still shown as unverified. A failed run still contradicts a claim
-  whatever its tier.
+  `unverified-claims` gate check whatever `allowUnsupportedFinalClaims` says.
+  **Gate outcomes can change:**
+  - A plain-text forensic import that used to pass on `$ bun test` /
+    `exit code 0` now fails, and inferred commands no longer satisfy
+    `requireVerification` or `requiredVerificationCommands`.
+  - Plain-text claims are read from every non-user line, so a later
+    `Final: Done.` no longer hides an earlier `Assistant: Tests passed.`
+  - A generic JSONL row stored by an earlier version without its raw payload
+    is inferred until the capture is re-imported, because the store cannot
+    tell whether it was marked inferred. Recorder, Claude Code and Codex rows,
+    and rows whose payload was retained, are classified as before.
+
+  Set `gates.allowUnverifiedClaims: true` to pass the gate on unverified
+  claims; they are still shown as unverified. A failed run still contradicts a
+  claim whatever its tier, including a failure attributed to a command in text.
 - Claim detection reads underscores as spaces, so Markdown emphasis
   (`_Tests_ passed.`) no longer hides a claim.
-- Claude Code stream: a `permission_denials` entry applies once, to the
-  `tool_use` with the denied input. A reused `tool_use` id no longer marks an
-  earlier, executed call as denied and hides its failure.
+- Claude Code stream: each `permission_denials` entry applies once, to the
+  first `tool_use` with the denied input. A reused `tool_use` id no longer
+  marks an earlier, executed call as denied and hides its failure, and several
+  denials on one id are each matched to their own call.
 - `agentops audit` imports and analyzes a session in one transaction, so an
   interrupted audit can no longer store a session without its risk flags.
 

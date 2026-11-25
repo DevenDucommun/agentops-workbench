@@ -71,27 +71,42 @@ from the runs recorded before it:
 
 ### Evidence tiers
 
-Every command is stored with an evidence tier, decided at import:
+Every command and tool call is stored with an evidence tier, decided at
+import (`evidence_tier` on the `commands` and `tool_calls` rows):
 
-- **Observed**: a command from a structured source (recorder spool, Claude
-  Code stream or hooks, Codex exec JSON, generic JSONL).
+- **Observed**: a call from a structured source (recorder spool, Claude Code
+  stream or hooks, Codex exec JSON, generic JSONL) with its own recorded
+  outcome: an exit code or a terminal status.
 - **Inferred**: anything parsed from plain text, including a pasted
-  `$ bun test` line followed by `Process exited with code 0`, and any event
-  its adapter marked inferred.
+  `$ bun test` line followed by `Process exited with code 0`; any event its
+  adapter marked inferred; and any call with no outcome of its own, since a
+  structured format alone cannot establish that the call completed.
 
-Only an observed shell run of a configured command, word for word, with its
-own recorded outcome, supports a claim. When no such run decides a claim but
-matching runs exist that cannot (inferred, no outcome of their own, extra
-arguments or a wrapper, or a call that is not a shell execution), the verdict
-is `unverified` and cites the latest of them. Unknown is never a pass. A failed
-run counts against a claim whatever its tier.
+Only an observed shell run of a configured command, word for word, supports a
+claim. When no such run decides a claim but matching runs exist that cannot
+(inferred, extra arguments or a wrapper, a call that is not a shell execution,
+or a result recorded after the final response), the verdict is `unverified`
+and cites the latest of them, with its outcome shown as unknown when none was
+recorded before the final response. Unknown is never a pass. A failed run
+counts against a claim whatever its tier, including a failing exit code that
+text attributes to a command.
 
-`unverified` claims fail the separate `unverified-claims` check. A repository
-that accepts text-derived evidence can set `gates.allowUnverifiedClaims: true`.
-The check then passes, but the CLI, PR comment and dashboard still show the
-claim as `unverified`, and the dashboard still asks for review. Stores written
-before tiers existed are classified the same way on read: rows from the
-`forensic-text` adapter, or with an `inferred` status, are inferred.
+Inferred commands never satisfy `requireVerification` or
+`requiredVerificationCommands`. In a plain-text import, claims are read from
+every line outside a user turn, not only the last marked response.
+
+`unverified` claims fail the separate `unverified-claims` check, whatever
+`allowUnsupportedFinalClaims` says, and are not also counted as unsupported. A
+repository that accepts text-derived evidence can set
+`gates.allowUnverifiedClaims: true`. The check then passes, but the CLI, PR
+comment and dashboard still show the claim as `unverified`, and the dashboard
+still asks for review.
+
+Stores written before tiers existed are classified on read. Rows from the
+`forensic-text` adapter, with an `inferred` status or retained `inferred`
+provenance, or without an outcome, are inferred. A generic JSONL row whose raw
+payload was not retained is also inferred, because its provenance cannot be
+recovered: re-import the capture with `agentops audit` to classify it.
 
 A run counts only with its own recorded outcome: an exit code, an explicit
 failed status (`failed`, `error`, `timed_out`, `cancelled`, `interrupted`,

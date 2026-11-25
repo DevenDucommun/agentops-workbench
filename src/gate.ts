@@ -34,8 +34,7 @@ const unsupportedClaimCategories = new Set([
   "missing-lint-evidence",
   "missing-typecheck-evidence",
   "missing-build-evidence",
-  "contradicted-claim",
-  "inferred-verification-evidence"
+  "contradicted-claim"
 ]);
 
 export function evaluateQualityGate(
@@ -61,7 +60,10 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command, config));
+  // Only observed runs satisfy the verification prerequisites: a command parsed
+  // from text is inferred however it reads (evidence trust model, rule 1).
+  const verification = commands.filter((command) =>
+    command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -93,25 +95,27 @@ function evaluateQualityGateSnapshot(
       message: ledger.evidenceLimitation, observed: 0, threshold: 1
     });
   }
+  // Ledger verdicts are judged under this check's config (not the audit's), so a
+  // stricter support list here, or an analysis that did not finish, cannot pass
+  // a claim the ledger rejects. Other claim flags come from the stored analysis.
+  const allFlags = currentLedgerClaimFlags(ledger, config);
+  const ledgerFlags = allFlags.filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
+  const unverified = allFlags.filter((flag) => flag.category === UNVERIFIED_CLAIM_CATEGORY);
+  // The two switches are independent: inferred evidence fails its own check
+  // unless the repository opts in, whatever allowUnsupportedFinalClaims says, and
+  // an unverified claim is never also charged as unsupported. The claim is still
+  // reported as unverified either way (trust model, decision 1).
+  checks.push({
+    id: "unverified-claims",
+    label: "Claims backed only by inferred evidence",
+    status: unverified.length === 0 || config.gates.allowUnverifiedClaims ? "passed" : "failed",
+    message: unverified.length === 0
+      ? "0 observed."
+      : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${ledger.claims.filter((claim) => claim.verdict === "unverified").map((claim) => claim.label).join(", ")}.`,
+    observed: unverified.length,
+    threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
+  });
   if (!config.gates.allowUnsupportedFinalClaims) {
-    // Ledger verdicts are judged under this check's config (not the audit's), so a
-    // stricter support list here, or an analysis that did not finish, cannot pass
-    // a claim the ledger rejects. Other claim flags come from the stored analysis.
-    const allFlags = currentLedgerClaimFlags(ledger, config);
-    const ledgerFlags = allFlags.filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
-    const unverified = allFlags.filter((flag) => flag.category === UNVERIFIED_CLAIM_CATEGORY);
-    // Inferred evidence fails its own check unless the repository opts in; the
-    // claim is still reported as unverified either way (trust model, decision 1).
-    checks.push({
-      id: "unverified-claims",
-      label: "Claims backed only by inferred evidence",
-      status: unverified.length === 0 || config.gates.allowUnverifiedClaims ? "passed" : "failed",
-      message: unverified.length === 0
-        ? "0 observed."
-        : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${ledger.claims.filter((claim) => claim.verdict === "unverified").map((claim) => claim.label).join(", ")}.`,
-      observed: unverified.length,
-      threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
-    });
     const unsupportedClaims =
       risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
       ledgerFlags.length;

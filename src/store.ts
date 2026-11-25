@@ -11,6 +11,7 @@ import type {
   RiskFlagRecord,
   SessionSummary,
   StoredEvent,
+  TierBasis,
   ToolCallRecord,
   UsageInput,
   UsageSummary
@@ -19,6 +20,7 @@ import { extractCommand, extractPath, finalResponseText, summarizeEvent } from "
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import { sha256 } from "./redaction";
+import { hasRecordedOutcome } from "./ledger";
 
 export type Store = {
   db: Database;
@@ -171,6 +173,7 @@ export function ingestTranscript(
   addColumnIfMissing(db, "events", "text", "TEXT");
   addColumnIfMissing(db, "file_changes", "status", "TEXT");
   addColumnIfMissing(db, "commands", "evidence_tier", "TEXT");
+  addColumnIfMissing(db, "tool_calls", "evidence_tier", "TEXT");
   const session = transcript.session;
   const usage = deriveUsageSummary(session.usage, transcript.events);
 
@@ -204,8 +207,8 @@ export function ingestTranscript(
     VALUES ($sessionId, $eventId, $path, $operation, $status, $linesAdded, $linesRemoved)
   `);
   const insertToolCall = db.query(`
-    INSERT INTO tool_calls (session_id, event_id, tool_name, category, status)
-    VALUES ($sessionId, $eventId, $toolName, $category, $status)
+    INSERT INTO tool_calls (session_id, event_id, tool_name, category, status, evidence_tier)
+    VALUES ($sessionId, $eventId, $toolName, $category, $status, $evidenceTier)
   `);
 
   db.transaction(() => {
@@ -271,7 +274,8 @@ export function ingestTranscript(
           $eventId: row.id,
           $toolName: toolName,
           $category: categorizeTool(toolName, type),
-          $status: typeof event.status === "string" ? event.status : null
+          $status: typeof event.status === "string" ? event.status : null,
+          $evidenceTier: evidenceTierAtIngest(session.sourceAdapter, event)
         });
       }
 
@@ -419,31 +423,71 @@ export function getEvents(store: Store, sessionId: string): StoredEvent[] {
 /** Adapters whose every command is derived from text (evidence trust model, rule 1). */
 const TEXT_ADAPTERS = new Set(["forensic-text"]);
 
+/** Adapters that never mark an event inferred, so a legacy row's tier is recoverable without its payload. */
+const STRUCTURED_ADAPTERS = new Set(["claude-hooks", "claude-code-stream-json", "codex-exec-jsonl"]);
+
 /**
- * A command's evidence tier, decided once at ingest (evidence trust model,
- * rule 1). Anything parsed from plain text is `inferred`, including a pasted
- * `$ bun test` line with `exit code 0` prose, as is any event its adapter
- * marked inferred. Every other command comes from a structured source and is
- * `observed`; whether it also has its own outcome is judged by the ledger.
+ * A command or tool call's evidence tier, decided once at ingest (evidence
+ * trust model, rule 1). Anything parsed from plain text is `inferred`,
+ * including a pasted `$ bun test` line with `exit code 0` prose, as is any
+ * event its adapter marked inferred. So is a call with no outcome of its own:
+ * a structured format alone cannot establish that it completed (owner
+ * decision 2). Everything else is `observed`.
  */
 export function evidenceTierAtIngest(sourceAdapter: string | null | undefined, event: RawEvent): EvidenceTier {
-  if (sourceAdapter && TEXT_ADAPTERS.has(sourceAdapter)) return "inferred";
-  if (event.provenance === "inferred" || (typeof event.status === "string" && event.status.toLowerCase() === "inferred")) return "inferred";
-  return "observed";
+  return tierBasis(sourceAdapter, event.provenance, typeof event.status === "string" ? event.status : null, typeof event.exitCode === "number" ? event.exitCode : null) ? "inferred" : "observed";
+}
+
+function tierBasis(sourceAdapter: string | null | undefined, provenance: unknown, status: string | null, exitCode: number | null): TierBasis | undefined {
+  if ((sourceAdapter && TEXT_ADAPTERS.has(sourceAdapter)) || provenance === "inferred" || status?.toLowerCase() === "inferred") return "text";
+  if (!hasRecordedOutcome({ status, exitCode })) return "no-outcome";
+  return undefined;
+}
+
+/**
+ * Tier for a row written before the tier column existed. A retained payload
+ * gives its provenance back; without one, a generic JSONL row may have been
+ * marked inferred and the mark is gone, so it is inferred (`legacy`) until the
+ * capture is re-imported. Unknown is never observed.
+ */
+function legacyTierBasis(sourceAdapter: string | null, status: string | null, exitCode: number | null, rawJson: string | null): TierBasis | undefined {
+  let provenance: unknown;
+  if (rawJson) {
+    try {
+      provenance = (JSON.parse(rawJson) as RawEvent).provenance;
+    } catch {
+      // An unreadable payload cannot restore the provenance.
+    }
+  }
+  const basis = tierBasis(sourceAdapter, provenance, status, exitCode);
+  if (basis) return basis;
+  if (!rawJson && !(sourceAdapter && STRUCTURED_ADAPTERS.has(sourceAdapter))) return "legacy";
+  return undefined;
 }
 
 export function getCommands(store: Store, sessionId: string): CommandRecord[] {
-  // Rows written before the tier column existed are classified the way ingest
-  // would have: a text adapter or an inferred status is inferred.
+  // Rows written before the tier column existed are classified on read (see
+  // legacyTierBasis); a read never writes to the store.
   const stored = hasColumn(store.db, "commands", "evidence_tier") ? "c.evidence_tier" : "NULL";
-  return store.db
+  const rows = store.db
     .query(
       `SELECT c.id, c.event_id as eventId, c.command, c.status, c.exit_code as exitCode, c.output,
-         COALESCE(${stored}, CASE WHEN LOWER(COALESCE(c.status, '')) = 'inferred' OR s.source_adapter = 'forensic-text' THEN 'inferred' ELSE 'observed' END) as evidenceTier
-       FROM commands c JOIN sessions s ON s.id = c.session_id
+         ${stored} as storedTier, s.source_adapter as sourceAdapter, e.raw_json as rawJson
+       FROM commands c JOIN sessions s ON s.id = c.session_id LEFT JOIN events e ON e.id = c.event_id
        WHERE c.session_id = $sessionId ORDER BY c.id`
     )
-    .all({ $sessionId: sessionId }) as CommandRecord[];
+    .all({ $sessionId: sessionId }) as Array<Omit<CommandRecord, "evidenceTier" | "tierBasis"> & {
+      storedTier: EvidenceTier | null; sourceAdapter: string | null; rawJson: string | null;
+    }>;
+  return rows.map(({ storedTier, sourceAdapter, rawJson, ...command }) => {
+    let basis: TierBasis | undefined;
+    if (storedTier === null) {
+      basis = legacyTierBasis(sourceAdapter, command.status, command.exitCode, rawJson);
+    } else if (storedTier === "inferred") {
+      basis = tierBasis(sourceAdapter, undefined, command.status, command.exitCode) ?? "text";
+    }
+    return basis ? { ...command, evidenceTier: "inferred", tierBasis: basis } : { ...command, evidenceTier: "observed" };
+  });
 }
 
 export function getFileChanges(store: Store, sessionId: string): FileChangeRecord[] {

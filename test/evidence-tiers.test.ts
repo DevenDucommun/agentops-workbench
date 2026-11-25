@@ -260,21 +260,109 @@ describe("evidence tiers (rule 1) and the unverified verdict (rule 2)", () => {
     store.db.close();
   });
 
-  test("a store written before the tier column classifies its rows the way ingest would", () => {
+  test("a store written before the tier column never reads unknown provenance as observed", () => {
     const dir = mkdtempSync(join(tmpdir(), "agentops-tiers-"));
     const path = join(dir, "agentops.db");
     const db = new Database(path);
+    const inferredPayload = JSON.stringify({ type: "command", command: "bun test", provenance: "inferred", status: "completed", exitCode: 0 });
+    const plainPayload = JSON.stringify({ type: "command", command: "bun test", status: "completed", exitCode: 0 });
     db.exec(`
       CREATE TABLE sessions (id TEXT PRIMARY KEY, source_path TEXT NOT NULL, source_adapter TEXT, ingested_at TEXT NOT NULL);
       CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, idx INTEGER NOT NULL, type TEXT NOT NULL, role TEXT, summary TEXT NOT NULL, raw_json TEXT NOT NULL);
       CREATE TABLE commands (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, event_id INTEGER, command TEXT NOT NULL, status TEXT, exit_code INTEGER, output TEXT);
-      INSERT INTO sessions VALUES ('text', 'a.txt', 'forensic-text', '2026-01-01'), ('json', 'b.jsonl', 'agentops-jsonl', '2026-01-01');
-      INSERT INTO commands (session_id, command, status, exit_code) VALUES ('text', 'bun test', 'observed', 0), ('json', 'bun test', 'completed', 0), ('json', 'bun run lint', 'inferred', NULL);
+      INSERT INTO sessions VALUES ('text', 'a.txt', 'forensic-text', '2026-01-01'), ('json', 'b.jsonl', 'agentops-jsonl', '2026-01-01'),
+        ('kept', 'c.jsonl', 'agentops-jsonl', '2026-01-01'), ('hooks', 'd.jsonl', 'claude-hooks', '2026-01-01');
+      INSERT INTO events (session_id, idx, type, summary, raw_json) VALUES
+        ('json', 1, 'command', 'bun test', ''), ('json', 2, 'command', 'bun run lint', ''),
+        ('kept', 1, 'command', 'bun test', '${inferredPayload}'), ('kept', 2, 'command', 'bun test', '${plainPayload}'),
+        ('hooks', 1, 'tool_call', 'bun test', ''), ('hooks', 2, 'tool_call', 'bun test', '');
+      INSERT INTO commands (session_id, event_id, command, status, exit_code) VALUES
+        ('text', NULL, 'bun test', 'observed', 0),
+        ('json', 1, 'bun test', 'completed', 0), ('json', 2, 'bun run lint', 'inferred', NULL),
+        ('kept', 3, 'bun test', 'completed', 0), ('kept', 4, 'bun test', 'completed', 0),
+        ('hooks', 5, 'bun test', 'completed', 0), ('hooks', 6, 'bun test', 'started', NULL);
     `);
     db.close();
     const store = openStore(path);
-    expect(getCommands(store, "text").map((c) => c.evidenceTier)).toEqual(["inferred"]);
-    expect(getCommands(store, "json").map((c) => c.evidenceTier)).toEqual(["observed", "inferred"]);
+    const tiers = (id: string) => getCommands(store, id).map((c) => [c.evidenceTier, c.tierBasis ?? null]);
+    expect(tiers("text")).toEqual([["inferred", "text"]]);
+    // The payload is gone: the row may have been marked inferred, so it is not trusted.
+    expect(tiers("json")).toEqual([["inferred", "legacy"], ["inferred", "text"]]);
+    // A retained payload gives the provenance back.
+    expect(tiers("kept")).toEqual([["inferred", "text"], ["observed", null]]);
+    // A structured adapter never marks events inferred; a row without an outcome is inferred.
+    expect(tiers("hooks")).toEqual([["observed", null], ["inferred", "no-outcome"]]);
     store.db.close();
+  });
+});
+
+describe("review 6063242011: every blocking case gets the expected verdict and citation", () => {
+  const text = (lines: string[], config: AgentOpsConfig = defaultConfig) => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-tiers-"));
+    writeFileSync(join(dir, "transcript.txt"), `${lines.join("\n")}\n`);
+    return audit(join(dir, "transcript.txt"), dir, config);
+  };
+  const gates = (overrides: Partial<AgentOpsConfig["gates"]>): AgentOpsConfig => ({ ...defaultConfig, gates: { ...defaultConfig.gates, ...overrides } });
+  const failedChecks = (result: { gate: { checks: Array<{ id: string; status: string }> } }) => result.gate.checks.filter((c) => c.status === "failed").map((c) => c.id);
+
+  test("1: the two claim switches are independent", () => {
+    // Allowing unsupported claims never allows unverified ones.
+    const subset = run([session("s1"), shell("bun test a.test.ts", "completed", 0), final("Tests passed.")], "s1.jsonl", gates({ allowUnsupportedFinalClaims: true, allowUnverifiedClaims: false }));
+    expect([subset.claim?.verdict, subset.gate.status]).toEqual(["unverified", "failed"]);
+    expect(failedChecks(subset)).toEqual(["unverified-claims"]);
+    // An unverified claim is not charged again as unsupported.
+    const prose = text(["Ran bun test", "exit code 0", "Final: Tests passed."], gates({ allowUnverifiedClaims: true, requireVerification: false }));
+    expect([prose.claim?.verdict, prose.gate.status]).toEqual(["unverified", "passed"]);
+  });
+
+  test("2: text never satisfies the verification prerequisites", () => {
+    const result = text(["$ bun test", "exit code 0", "Final: Done."], gates({ requiredVerificationCommands: ["bun test"] }));
+    expect(result.claim).toBeUndefined();
+    expect(failedChecks(result)).toEqual(["required-verification", "required-command:bun test"]);
+  });
+
+  test("3: a later turn marker never erases an earlier plain-text claim; user turns never claim", () => {
+    const erased = text(["$ bun test", "exit code 0", "Assistant: Tests passed.", "Final: Done."]);
+    expect([erased.claim?.verdict, erased.claim?.cited?.command, erased.gate.status]).toEqual(["unverified", "bun test", "failed"]);
+    const user = text(["$ bun test", "exit code 0", "User: Tests passed, right?", "Final: Done."], gates({ requireVerification: false }));
+    expect(user.claim).toBeUndefined();
+  });
+
+  test("5: every denial on a reused Claude id is consumed by its own use", () => {
+    const s = "stream-r5";
+    const lines = [
+      init(s),
+      uses(s, [{ id: "p", command: "bun test" }]), results(s, [{ id: "p", isError: false }]),
+      uses(s, [{ id: "t", command: "bun test first.test.ts" }]), results(s, [{ id: "t", isError: true }]),
+      uses(s, [{ id: "t", command: "echo second" }]), results(s, [{ id: "t", isError: true }]),
+      ...done(s, "Tests passed.", [
+        { tool_name: "Bash", tool_use_id: "t", tool_input: { command: "bun test first.test.ts" } },
+        { tool_name: "Bash", tool_use_id: "t", tool_input: { command: "echo second" } }
+      ])
+    ];
+    const result = run(lines, "stream.jsonl");
+    expectCase(result, { verdict: "supported", cite: "bun test", gate: "passed" });
+    expect(result.commands.filter((c) => c.status === "denied").map((c) => c.command)).toEqual(["bun test first.test.ts", "echo second"]);
+  });
+
+  test("6: a structured call with no outcome is stored inferred, on the command and the tool call", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentops-tiers-"));
+    const path = join(dir, "g.jsonl");
+    writeFileSync(path, `${[session("r6"), shell("bun test"), shell("bun run lint", "completed", 0), final("Done.")].map((l) => JSON.stringify(l)).join("\n")}\n`);
+    const store = openStore(join(dir, "agentops.db"));
+    const input = loadAdapterInput(path);
+    ingestTranscript(store, resolveAdapter(input).parse(input, defaultConfig), defaultConfig);
+    expect(store.db.query("SELECT command, evidence_tier AS tier FROM commands ORDER BY id").all()).toEqual([{ command: "bun test", tier: "inferred" }, { command: "bun run lint", tier: "observed" }]);
+    expect(store.db.query("SELECT evidence_tier AS tier FROM tool_calls ORDER BY id").all()).toEqual([{ tier: "inferred" }, { tier: "observed" }]);
+    store.db.close();
+  });
+
+  test("7: a result after the final response is not cited as an outcome; an inferred failure contradicts", () => {
+    const s = "stream-r7";
+    const late = run([init(s), uses(s, [{ id: "x", command: "bun test" }]), ...done(s, "Tests passed."), results(s, [{ id: "x", isError: false }])], "stream.jsonl");
+    expect([late.claim?.verdict, late.claim?.cited?.command, late.claim?.cited?.outcome]).toEqual(["unverified", "bun test", "unknown"]);
+    expect(late.claim?.reason).toContain("recorded its result only after the final response");
+    const prose = text(["Ran bun test", "exit code 1", "Final: Tests passed."], gates({ allowUnverifiedClaims: true }));
+    expect([prose.claim?.verdict, prose.claim?.cited?.command, prose.gate.status]).toEqual(["contradicted", "bun test", "failed"]);
   });
 });

@@ -241,8 +241,12 @@ function normalizeAssistantBlock(block: ClaudeContentBlock, denied: DeniedToolUs
     // A denial names a tool_use id, and ids can be reused. It applies once, to
     // a use with the denied input; any other use of the id ran, so its outcome
     // (a failed test, say) is never hidden as a denial.
-    const denial = typeof block.id === "string" ? denied.get(block.id) : undefined;
-    if (denial && !denial.matched && sameDeniedInput(denial.input, block.input)) {
+    // Several denials can share one id: each is consumed once, by the first use
+    // whose input matches it.
+    const denial = typeof block.id === "string"
+      ? denied.get(block.id)?.find((entry) => !entry.matched && sameDeniedInput(entry.input, block.input))
+      : undefined;
+    if (denial) {
       denial.matched = true;
       return [deniedToolUseEvent(block.name, block.input)];
     }
@@ -314,7 +318,8 @@ function normalizeResultRecord(record: ClaudeStreamRecord): RawEvent[] {
   return [result];
 }
 
-type DeniedToolUses = Map<string, { toolName?: string; input?: Record<string, unknown>; matched: boolean }>;
+type DeniedToolUse = { toolName?: string; input?: Record<string, unknown>; matched: boolean };
+type DeniedToolUses = Map<string, DeniedToolUse[]>;
 
 function deniedToolUses(records: ClaudeStreamRecord[]): DeniedToolUses {
   const denied: DeniedToolUses = new Map();
@@ -322,11 +327,13 @@ function deniedToolUses(records: ClaudeStreamRecord[]): DeniedToolUses {
     if (record.type !== "result" || !Array.isArray(record.permission_denials)) continue;
     for (const [index, denial] of record.permission_denials.filter(isRecord).entries()) {
       const id = typeof denial.tool_use_id === "string" ? denial.tool_use_id : `unmatched-denial-${index}`;
-      denied.set(id, {
+      const entries = denied.get(id) ?? [];
+      entries.push({
         toolName: typeof denial.tool_name === "string" ? denial.tool_name : undefined,
         input: isRecord(denial.tool_input) ? denial.tool_input : undefined,
         matched: false
       });
+      denied.set(id, entries);
     }
   }
   return denied;
@@ -366,7 +373,7 @@ function stableJson(value: unknown): string {
 }
 
 function unmatchedDenialEvents(denied: DeniedToolUses): RawEvent[] {
-  return [...denied.values()].filter((denial) => !denial.matched).map((denial) => deniedToolUseEvent(denial.toolName, denial.input));
+  return [...denied.values()].flat().filter((denial) => !denial.matched).map((denial) => deniedToolUseEvent(denial.toolName, denial.input));
 }
 
 function sessionModel(records: ClaudeStreamRecord[]): string | undefined {
