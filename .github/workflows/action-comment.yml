@@ -1,0 +1,88 @@
+name: Action PR comment
+
+# Hosted check of the Action's opt-in sticky comment (T2.6, #157): the first
+# run creates one comment, the second updates that same comment in place.
+# Opt-in per pull request with the `action-comment-test` label, because it
+# writes to the pull request. Pull requests from forks are skipped: their
+# token cannot write.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: action-comment-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  sticky-comment:
+    name: Sticky comment is created, then updated
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'action-comment-test') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Remove earlier gate comments from this workflow
+        run: |
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- agentops-gate -->"))) | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
+          done
+
+      - name: First run creates the comment
+        uses: ./
+        with:
+          agentops-path: ./bin/agentops
+          artifact: fixtures/codex-exec-session.jsonl
+          comment: "true"
+          fail-on-gate: "false"
+
+      - name: Assert one comment with the first result
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("<!-- agentops-gate -->"))]' > "$RUNNER_TEMP/first.json"
+          test "$(jq -s 'add | length' "$RUNNER_TEMP/first.json")" = 1
+          jq -rs 'add | .[0].id' "$RUNNER_TEMP/first.json" > "$RUNNER_TEMP/comment-id"
+          jq -rs 'add | .[0].user.login' "$RUNNER_TEMP/first.json" | grep -qx 'github-actions\[bot\]'
+          body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/first.json")"
+          grep -q 'Session: .codex-exec-sample.$' <<< "$body"
+          grep -q 'PASSED' <<< "$body"
+
+      - name: Second run updates the same comment
+        uses: ./
+        with:
+          agentops-path: ./bin/agentops
+          artifact: fixtures/risky-session.jsonl
+          comment: "true"
+          fail-on-gate: "false"
+
+      - name: Assert the same comment now holds the second result
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("<!-- agentops-gate -->"))]' > "$RUNNER_TEMP/second.json"
+          test "$(jq -s 'add | length' "$RUNNER_TEMP/second.json")" = 1
+          test "$(jq -rs 'add | .[0].id' "$RUNNER_TEMP/second.json")" = "$(cat "$RUNNER_TEMP/comment-id")"
+          body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/second.json")"
+          grep -q 'Session: .risky-session.$' <<< "$body"
+          grep -q 'FAILED' <<< "$body"
+          if grep -q 'codex-exec-sample' <<< "$body"; then echo "::error::The first result is still in the comment."; exit 1; fi
+          echo "Comment $(cat "$RUNNER_TEMP/comment-id") was created, then updated in place."
