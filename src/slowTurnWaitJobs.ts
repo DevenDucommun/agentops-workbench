@@ -43,7 +43,8 @@ export function parseWaitJobs(raw: string, input: unknown, file: unknown): WaitJ
     for (const sequence of job.waitSequences) {
       const wait = resolve(sequence);
       const key = job.turn + "/tools/" + wait.index;
-      if (!isCellWait(wait.tool) || wait.index <= launch.index || wait.sequence <= launch.sequence || jobs.has(key)) {
+      const execPoll = wait.tool.name === "exec" && wait.tool.executionPhase === "continuation";
+      if ((!isCellWait(wait.tool) && !execPoll) || wait.index <= launch.index || wait.sequence <= launch.sequence || jobs.has(key)) {
         throw Error("Invalid or duplicate wait-job link");
       }
       jobs.set(key, { kind: job.kind, origin });

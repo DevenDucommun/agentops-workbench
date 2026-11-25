@@ -99,8 +99,8 @@ function measurements(t: Row, start: number, end: number, evidence: string, jobs
     const ref = { evidence: `${evidence}/tools/${i}`, origin: typeof tool.sequence === "number" ? origins.get(tool.sequence) : undefined,
       sequence: typeof tool.sequence === "number" ? tool.sequence : undefined };
     let operation = operationFor(tool);
-    if (isCellWait(tool)) {
-      const supplied = jobs.get(ref.evidence);
+    const supplied = jobs.get(ref.evidence);
+    if (supplied || isCellWait(tool)) {
       const launch = ref.origin && launches.get(ref.origin.sequence);
       // A nested/wrapper operation may simply be polling some other process.
       const linked = launch?.executionPhase === "initial" ? linkedJobs.get(String(launch.operation)) : undefined;

@@ -148,3 +148,28 @@ test("job evidence overrides the polling helper and preserves elapsed totals", (
     expect(() => parse(invalid)).toThrow();
   }
 });
+
+test("verified exec polls and cell waits share one job, excluding unverified work and time between polls", () => {
+  const t = turn(1);
+  const start = Date.parse(t.startedAt);
+  const phases = ["initial", "continuation", "cell-wait", "continuation", "orchestrated", "initial"];
+  const tools = phases.map((phase, i) => ({ ...t.tools[0], name: phase === "cell-wait" ? "wait" : "exec",
+    sequence: i + 1, operation: "other", executionPhase: phase, continuationOfSequence: i || null,
+    startedAt: iso(start + i * 200), completedAt: iso(start + i * 200 + 100) }));
+  const input = source({ ...t, tools, postToolGaps: [{ ...t.postToolGaps[0], afterTool: 2 }] });
+  const raw = JSON.stringify(input);
+  const job = { turn: "/sessions/0/interactions/0", launchSequence: 1, kind: "review" };
+  const links = (waitSequences: number[]) => parseWaitJobs(raw, input, { schemaVersion: 1,
+    exportSha256: createHash("sha256").update(raw).digest("hex"), jobs: [{ ...job, waitSequences }] });
+  const before = slowTurnReport(input).turns[0];
+  const after = slowTurnReport(input, 48, 28, anchor, 3, links([2, 3])).turns[0];
+  expect(after.waitAttribution).toHaveLength(2);
+  expect(after.waitAttribution.every(w => w.basis === "supplied" && w.launch === job.turn + "/tools/0")).toBe(true);
+  expect(after.steps.find(s => s.step === "Tool execution: wait for review")?.measurement)
+    .toEqual({ count: 2, totalMs: 200, longestMs: 100 });
+  expect(after.steps.find(s => s.step === "Tool execution: execution continuation")?.measurement.count).toBe(1);
+  expect(after.steps.some(s => s.step === "After wait for review result → reasoning item")).toBe(true);
+  expect(after.toolExecution).toEqual(before.toolExecution);
+  expect(after.afterResult).toEqual(before.afterResult);
+  for (const invalid of [[5], [6], [2, 2]]) expect(() => links(invalid)).toThrow();
+});
