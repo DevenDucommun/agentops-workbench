@@ -5,6 +5,11 @@ name: Action PR comment
 # Opt-in per pull request with the `action-comment-test` label, because it
 # writes to the pull request. Pull requests from forks are skipped: their
 # token cannot write.
+#
+# The Action finds its comment by a marker that every gate comment shares, so
+# this test refuses to run on a pull request that has a gate comment from any
+# other run. It tags its own comment with a second marker when it finishes and
+# removes only tagged comments on a re-run.
 
 on:
   pull_request:
@@ -28,6 +33,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      GATE_MARKER: "<!-- agentops-gate -->"
+      TEST_MARKER: "<!-- agentops-action-comment-test -->"
 
     steps:
       - name: Checkout
@@ -41,12 +48,27 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Remove earlier gate comments from this workflow
+      - name: Start from a pull request with no gate comment
         run: |
-          for id in $(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- agentops-gate -->"))) | .id'); do
+          list_gate_comments() {
+            # A failed request stops the job: an empty list must mean no comments.
+            if ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+              --jq '.[] | select(.body | startswith(env.GATE_MARKER)) | {id, own: (.user.login == "github-actions[bot]" and (.body | contains(env.TEST_MARKER)))}' \
+              > "$RUNNER_TEMP/gate-comments.jsonl"; then
+              echo "::error::Could not list the pull request's comments."
+              exit 1
+            fi
+          }
+          list_gate_comments
+          if jq -e 'select(.own | not)' "$RUNNER_TEMP/gate-comments.jsonl" > /dev/null; then
+            echo "::error::This pull request has a gate comment from another run. The Action would overwrite it. Run this test on a pull request without one."
+            exit 1
+          fi
+          for id in $(jq -r 'select(.own) | .id' "$RUNNER_TEMP/gate-comments.jsonl"); do
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
           done
+          list_gate_comments
+          test ! -s "$RUNNER_TEMP/gate-comments.jsonl"
 
       - name: First run creates the comment
         uses: ./
@@ -59,7 +81,7 @@ jobs:
       - name: Assert one comment with the first result
         run: |
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq '[.[] | select(.body | startswith("<!-- agentops-gate -->"))]' > "$RUNNER_TEMP/first.json"
+            --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/first.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/first.json")" = 1
           jq -rs 'add | .[0].id' "$RUNNER_TEMP/first.json" > "$RUNNER_TEMP/comment-id"
           jq -rs 'add | .[0].user.login' "$RUNNER_TEMP/first.json" | grep -qx 'github-actions\[bot\]'
@@ -78,7 +100,7 @@ jobs:
       - name: Assert the same comment now holds the second result
         run: |
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq '[.[] | select(.body | startswith("<!-- agentops-gate -->"))]' > "$RUNNER_TEMP/second.json"
+            --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/second.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/second.json")" = 1
           test "$(jq -rs 'add | .[0].id' "$RUNNER_TEMP/second.json")" = "$(cat "$RUNNER_TEMP/comment-id")"
           body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/second.json")"
@@ -86,3 +108,10 @@ jobs:
           grep -q 'FAILED' <<< "$body"
           if grep -q 'codex-exec-sample' <<< "$body"; then echo "::error::The first result is still in the comment."; exit 1; fi
           echo "Comment $(cat "$RUNNER_TEMP/comment-id") was created, then updated in place."
+
+      - name: Tag the test comment as this workflow's
+        run: |
+          id="$(cat "$RUNNER_TEMP/comment-id")"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body > "$RUNNER_TEMP/body.md"
+          printf '\n%s\n' "$TEST_MARKER" >> "$RUNNER_TEMP/body.md"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$RUNNER_TEMP/body.md" > /dev/null
