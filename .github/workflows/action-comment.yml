@@ -51,6 +51,9 @@ jobs:
             --jq '.[] | select((.body | startswith("<!-- agentops-gate")) and (.body | startswith(env.MARKER) | not)) | {id, updated_at}' \
             > "$RUNNER_TEMP/others-before.jsonl"
           echo "Other gate comments: $(wc -l < "$RUNNER_TEMP/others-before.jsonl")"
+          # This run's marker must be unused, so the first Action call can only create.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | startswith(env.MARKER))] | length' | jq -s add)" = 0
 
       - name: First run creates the comment
         id: first
@@ -116,7 +119,8 @@ jobs:
           fi
 
       - name: Remove this run's comment
-        if: always() && steps.first.outputs.comment-id != ''
+        # Only a comment this run's first call created; never one it found and updated.
+        if: always() && steps.first.outputs.comment-action == 'created'
         env:
           ID: ${{ steps.first.outputs.comment-id }}
         run: |
