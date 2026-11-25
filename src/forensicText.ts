@@ -148,14 +148,20 @@ export function parseForensicTextTranscript(
     events.push(forensicNote("Low-confidence forensic import: no shell commands were observed in the plain-text transcript.", "missing"));
   }
 
-  const finalResponse = extractFinalResponse(meaningfulLines);
+  // Claims are read from every non-user line (evidence trust model, rule 4),
+  // built independently of the bounded response: a later turn marker, or a
+  // short unmarked last line, cannot hide a claim. The bounded response, when
+  // one is found, is the summary people see; otherwise the last non-user line.
+  const claimLines = nonUserLines(meaningfulLines);
+  const finalResponse = extractFinalResponse(meaningfulLines) ?? claimLines.at(-1) ?? null;
   if (finalResponse) {
+    const claimText = collapse(claimLines.join(" "));
     events.push({
       schemaVersion: "agentops.event.v1",
       type: "final_response",
       source: "forensic-text",
       role: "assistant",
-      content: finalResponse,
+      content: claimText.includes(finalResponse) ? claimText : collapse(`${claimText} ${finalResponse}`),
       summary: finalResponse,
       provenance: "inferred",
       confidence: commandEvents.length > 0 ? "low" : "very-low"
@@ -285,6 +291,27 @@ function extractFinalResponse(lines: Array<{ line: string; lineNumber: number }>
     .filter((line) => line.length > 20);
   const tail = candidates.slice(-3).join(" ");
   return tail ? collapse(tail) : null;
+}
+
+/** A line that starts a user's turn. */
+const USER_TURN = /^(?:user|human|you|me)\s*:/i;
+
+/**
+ * Every line outside a user turn except shell prompts (commands, not
+ * statements). A line that mentions an exit code is kept: it may also carry a
+ * claim ("Tests passed with exit code 0."). A user turn runs from its marker to
+ * the next speaker turn or shell prompt.
+ */
+function nonUserLines(lines: Array<{ line: string; lineNumber: number }>): string[] {
+  const parts: string[] = [];
+  let inUserTurn = false;
+  for (const entry of lines) {
+    if (USER_TURN.test(entry.line)) inUserTurn = true;
+    else if (TURN_MARKER.test(entry.line) || extractObservedCommand(entry.line)) inUserTurn = false;
+    if (inUserTurn || extractObservedCommand(entry.line)) continue;
+    parts.push(entry.line);
+  }
+  return parts;
 }
 
 function inferAgent(input: string): string {

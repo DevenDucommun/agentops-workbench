@@ -29,6 +29,14 @@
       "threshold": ">= 1"
     },
     {
+      "id": "unverified-claims",
+      "label": "Claims backed only by inferred evidence",
+      "status": "passed",
+      "message": "0 observed.",
+      "observed": 0,
+      "threshold": "<= 0"
+    },
+    {
       "id": "unsupported-final-claims",
       "label": "Unsupported or inferred final claims",
       "status": "passed",

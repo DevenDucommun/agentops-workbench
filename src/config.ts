@@ -30,6 +30,8 @@ export type AgentOpsConfig = {
     maxHighSeverityRisks: number;
     maxBlockedAttempts: number;
     allowUnsupportedFinalClaims: boolean;
+    /** Pass the gate on claims backed only by inferred evidence; they are still shown as unverified. */
+    allowUnverifiedClaims: boolean;
     maxGeneratedFileChurnLines: number;
     generatedFilePatterns: string[];
   };
@@ -74,6 +76,7 @@ export const defaultConfig: AgentOpsConfig = {
     maxHighSeverityRisks: 0,
     maxBlockedAttempts: 2,
     allowUnsupportedFinalClaims: false,
+    allowUnverifiedClaims: false,
     maxGeneratedFileChurnLines: 0,
     generatedFilePatterns: ["generated", "dist", "build"]
   },
@@ -228,6 +231,7 @@ function validateConfigShape(value: unknown): string[] {
     } else {
       requireBoolean(value.gates, "gates.requireVerification", "requireVerification", errors);
       requireBoolean(value.gates, "gates.allowUnsupportedFinalClaims", "allowUnsupportedFinalClaims", errors);
+      requireBoolean(value.gates, "gates.allowUnverifiedClaims", "allowUnverifiedClaims", errors);
       requireNonNegativeInteger(value.gates, "gates.maxHighSeverityRisks", "maxHighSeverityRisks", errors);
       requireNonNegativeInteger(value.gates, "gates.maxBlockedAttempts", "maxBlockedAttempts", errors);
       requireNonNegativeInteger(value.gates, "gates.maxGeneratedFileChurnLines", "maxGeneratedFileChurnLines", errors);

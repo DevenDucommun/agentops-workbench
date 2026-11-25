@@ -1,4 +1,4 @@
-import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isVerificationCommand } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedVerification } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { requiredCommandChecks } from "./gate";
 import { type ClaimsLedger, commandOutcome, hasRecordedOutcome, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
@@ -310,7 +310,8 @@ function readDashboardSession(store: Store, sessionId: string, config: AgentOpsC
   const events = getEvents(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => dashboardEvidenceCandidate(command) && isVerificationCommand(command, config));
+  // The gate's eligibility rule, so readiness and named requirements agree with `agentops check`.
+  const verification = commands.filter((command) => isObservedVerification(command, config));
   const decision = buildDashboardDecision(events, commands, risks, verification, getClaimsLedger(store, sessionId, config), config);
   return {
     session: toDashboardSessionRecord(session),
@@ -624,13 +625,25 @@ function ledgerRow(entry: LedgerClaim, label: string, risks: RiskFlagRecord[]): 
     claimed: true,
     evidenceFound: entry.verdict !== "unsupported",
     contradicted: entry.verdict === "contradicted",
-    command: entry.cited ? { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode } : null,
+    // The outcome as of the claim: one recorded only after the final response is unknown.
+    command: !entry.cited
+      ? null
+      : entry.cited.outcome === "unknown" && hasRecordedOutcome(entry.cited)
+        ? { command: entry.cited.command, status: "unknown", exitCode: null }
+        : { command: entry.cited.command, status: entry.cited.status, exitCode: entry.cited.exitCode },
     risk
   });
   if (entry.verdict === "stale") {
     row.status = "stale";
     row.riskMessage = entry.reason;
     row.riskCategory = "stale-verification";
+  }
+  if (entry.verdict === "unverified") {
+    // Same verdict as the gate and report: shown as inferred even when the
+    // repository's gates.allowUnverifiedClaims lets the gate pass on it.
+    row.status = "inferred-evidence";
+    row.riskMessage = entry.reason;
+    row.riskCategory = "unverified-claim";
   }
   return row;
 }

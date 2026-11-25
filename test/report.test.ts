@@ -353,8 +353,11 @@ test("flags inferred forensic verification as review evidence", () => {
   expect(commands.some((command) => command.command === "bun test" && command.status === "inferred")).toBe(true);
   expect(report).toContain("`bun test` - inferred");
   expect(report).toContain("inferred-verification-evidence");
-  expect(report).toContain("missing-test-evidence");
-  expect(report).toContain("no observed matching test command");
+  // An inferred test run makes the claim unverified, not unsupported (trust model, rule 2).
+  expect(commands.find((command) => command.command === "bun test")?.evidenceTier).toBe("inferred");
+  expect(report).toContain("unverified-claim");
+  expect(report).toContain("| test | Unverified |");
+  expect(report).toContain("was inferred from text, not observed");
 
   store.db.close();
 });

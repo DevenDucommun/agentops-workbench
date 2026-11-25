@@ -47,7 +47,9 @@ Default gates fail when:
 - any high-severity risk is present
 - more than `gates.maxBlockedAttempts` (default 2) risky commands were blocked
 - final success or test/lint/typecheck/build claims are unsupported,
-  contradicted, stale, or only inferred from forensic text
+  contradicted or stale
+- a claim is backed only by inferred evidence (`unverified-claims`, unless
+  `gates.allowUnverifiedClaims` is set)
 - generated-file churn is above the configured threshold
 
 An unfinished command, including a Claude tool call without a result or a Codex start without a completion, cannot satisfy a verification requirement. A recorded failure proves the check ran. The verification gate reports its failure count, and a later success claim is checked against the ledger.
@@ -64,7 +66,54 @@ from the runs recorded before it:
 | `supported` | The latest relevant run is a passing run that can support the claim | none |
 | `contradicted` | The latest relevant run failed | `contradicted-claim` |
 | `stale` | A passing run predates or overlaps an applied file change | `stale-verification` |
-| `unsupported` | No relevant run was observed | `missing-<kind>-evidence` |
+| `unverified` | Only inferred evidence matches the claim (see [Evidence tiers](#evidence-tiers)) | `unverified-claim` |
+| `unsupported` | No relevant run of any tier was recorded | `missing-<kind>-evidence` |
+
+### Evidence tiers
+
+Every command and tool call is stored with an evidence tier, decided at
+import (`evidence_tier` on the `commands` and `tool_calls` rows):
+
+- **Observed**: a call from a structured source (recorder spool, Claude Code
+  stream or hooks, Codex exec JSON, generic JSONL) with its own recorded
+  outcome: an exit code or a terminal status.
+- **Inferred**: anything parsed from plain text, including a pasted
+  `$ bun test` line followed by `Process exited with code 0`; any event its
+  adapter marked inferred; and any call with no outcome of its own, since a
+  structured format alone cannot establish that the call completed.
+
+Only an observed shell run of a configured command, word for word, supports a
+claim. When no such run decides a claim but matching runs exist that cannot
+(inferred, extra arguments or a wrapper, a call that is not a shell execution,
+or a result recorded after the final response), the verdict is `unverified`
+and cites the latest of them, with its outcome shown as unknown when none was
+recorded before the final response. Unknown is never a pass. A failed run
+counts against a claim whatever its tier, including a failing exit code that
+text attributes to a command.
+
+Inferred commands never satisfy `requireVerification` or
+`requiredVerificationCommands`, and never back a general success claim such as
+"Implemented." The dashboard's readiness and verification count use the same
+rule. `agentops check` evaluates the general success claim from the stored
+final response and commands each time it runs, so a session stored by an
+earlier version is judged by the current rule without re-import. In a plain-text import, claims are read from every
+line outside a user turn (shell prompts aside), not only the last marked
+response.
+
+`unverified` claims fail the separate `unverified-claims` check, whatever
+`allowUnsupportedFinalClaims` says, and are not also counted as unsupported.
+The check counts the ledger's verdicts, so suppressing the `unverified-claim`
+risk hides it from the risk list but does not pass the check. A repository
+that accepts text-derived evidence can set
+`gates.allowUnverifiedClaims: true`. The check then passes, but the CLI, PR
+comment and dashboard still show the claim as `unverified`, and the dashboard
+still asks for review.
+
+Stores written before tiers existed are classified on read. Rows from the
+`forensic-text` adapter, with an `inferred` status or retained `inferred`
+provenance, or without an outcome, are inferred. A generic JSONL row whose raw
+payload was not retained is also inferred, because its provenance cannot be
+recovered: re-import the capture with `agentops audit` to classify it.
 
 A run counts only with its own recorded outcome: an exit code, an explicit
 failed status (`failed`, `error`, `timed_out`, `cancelled`, `interrupted`,
@@ -212,6 +261,7 @@ Configure gates in `agentops.config.json`:
     "maxHighSeverityRisks": 0,
     "maxBlockedAttempts": 2,
     "allowUnsupportedFinalClaims": false,
+    "allowUnverifiedClaims": false,
     "maxGeneratedFileChurnLines": 20,
     "generatedFilePatterns": ["generated", "dist", "build"]
   }

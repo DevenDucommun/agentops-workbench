@@ -1,6 +1,6 @@
 import { finalResponseText } from "./parser";
 import type { Store } from "./store";
-import type { CommandRecord, RawEvent } from "./types";
+import type { CommandRecord, EvidenceTier, RawEvent } from "./types";
 import { getCommands, getFileChanges, getUnconfirmedFileEvents } from "./store";
 import { type AgentOpsConfig, defaultConfig } from "./config";
 
@@ -12,7 +12,12 @@ import { type AgentOpsConfig, defaultConfig } from "./config";
 // the stored event row ID for legacy sessions that have none.
 
 export type EvidenceClaimId = "test" | "lint" | "typecheck" | "build";
-export type ClaimVerdict = "supported" | "unsupported" | "contradicted" | "stale";
+/**
+ * `unverified`: only inferred evidence matches the claim (text-derived runs,
+ * runs without their own outcome, narrowed or wrapped runs, or calls that are
+ * not shell executions). Evidence trust model, rule 2.
+ */
+export type ClaimVerdict = "supported" | "unsupported" | "contradicted" | "stale" | "unverified";
 
 export type EvidenceClaimRule = {
   id: EvidenceClaimId;
@@ -30,7 +35,10 @@ export type LedgerEvidence = {
   command: string;
   status: string | null;
   exitCode: number | null;
-  outcome: "passed" | "failed";
+  /** `unknown` only on an `unverified` claim's citation: a run with no outcome of its own. */
+  outcome: "passed" | "failed" | "unknown";
+  /** Evidence tier of the run (evidence trust model, rule 1). */
+  tier: EvidenceTier;
 };
 
 export type LedgerClaim = {
@@ -42,7 +50,10 @@ export type LedgerClaim = {
   reason: string;
   /** Every matching run before the final response, in order. */
   evidence: LedgerEvidence[];
-  /** The run the verdict rests on: the latest matching run, or null when unsupported. */
+  /**
+   * The run the verdict rests on: the latest matching run; for `unverified`, the
+   * latest inferred matching run; null when unsupported.
+   */
   cited: LedgerEvidence | null;
 };
 
@@ -103,7 +114,18 @@ export const evidenceClaimRules: EvidenceClaimRule[] = [
  * A missed claim can produce a false pass; an extra one cannot.
  */
 export function claimsRule(rule: Pick<EvidenceClaimRule, "claimPattern">, text: string): boolean {
-  return rule.claimPattern.test(text.replace(/\s+/g, " "));
+  return rule.claimPattern.test(claimText(text));
+}
+
+/**
+ * Text as claims are matched: whitespace collapsed, and underscores read as
+ * spaces. `_` is a word character, so Markdown emphasis (`_Tests_ passed.`)
+ * would otherwise hide the claim from `\b`. Over-detecting is safe (rule 4):
+ * `snake_case_test passed` is read as a test claim, which at worst asks for
+ * evidence that a human would not.
+ */
+export function claimText(text: string): string {
+  return text.replace(/_/g, " ").replace(/\s+/g, " ");
 }
 
 /** Plain printable ASCII only: no tabs, newlines, non-breaking spaces or other Unicode. */
@@ -405,11 +427,20 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
   // Only runs whose outcome was recorded before the final response can back it:
   // never-run and still-running commands, and runs whose result came later, are
   // skipped. Commands without an event row keep their place in insertion order.
-  const runs = input.commands.filter((command) => {
-    const status = (command.status ?? "").toLowerCase();
-    if (NOT_EXECUTED_STATUSES.has(status) || NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
+  const beforeFinal = (command: CommandRecord) => {
     const at = outcomeRow(command);
     return at === null || at < finalEvent.rowId;
+  };
+  // A command inferred from text still counts when text attributes a failing
+  // exit code to it: an inferred failure contradicts the claim, so opting in to
+  // unverified claims can never pass a session whose own transcript shows the
+  // check failing.
+  const inferredFailure = (command: CommandRecord) => typeof command.exitCode === "number" && command.exitCode !== 0;
+  const runs = input.commands.filter((command) => {
+    const status = (command.status ?? "").toLowerCase();
+    if (status === "inferred" ? !inferredFailure(command) : NOT_EXECUTED_STATUSES.has(status)) return false;
+    if (NONTERMINAL_STATUSES.has(status) || !hasOwnOutcome(command)) return false;
+    return beforeFinal(command);
   });
   // Runs are ordered by when their outcome was recorded, so with overlapping
   // calls the latest run is the one whose result arrived last. When two runs'
@@ -426,29 +457,55 @@ export function buildClaimsLedger(input: LedgerInput): ClaimsLedger {
     .map((entry) => entry.command);
   const fromShell = (command: CommandRecord) =>
     command.eventId === null || isShellExecution(input.eventTypes?.get(command.eventId), input.toolNames?.get(command.eventId));
+  const toEvidence = (command: CommandRecord, outcome: LedgerEvidence["outcome"]): LedgerEvidence => ({
+    eventRowId: command.eventId,
+    eventId: command.eventId === null ? null : (input.eventIds.get(command.eventId) ?? null),
+    command: command.command,
+    status: command.status,
+    exitCode: command.exitCode,
+    outcome,
+    tier: command.evidenceTier ?? "observed"
+  });
 
   // Claims are read from the full final response and the summary together.
   const text = [...new Set([finalEvent.text, finalEvent.summary ?? ""])].join(" ");
   for (const rule of evidenceClaimRules) {
     if (!claimsRule(rule, text)) continue;
     // Evidence is asymmetric: any failed run that mentions the kind counts
-    // against the claim; only a passing shell run of a configured command,
-    // word for word (rule 3), counts for it.
+    // against the claim, whatever its tier; only a passing, observed shell run
+    // of a configured command, word for word (rule 3), counts for it.
     const evidence = ordered
       .filter((command) =>
         commandOutcome(command) === "failed"
-          ? mentionsRuleCommand(rule, command.command) || looselyMentionsKind(rule, command.command) || extendsSupportCommand(rule, command.command, input.config)
-          : fromShell(command) && isSupportCommand(rule, command.command, input.config)
+          ? mentionsKind(rule, command.command, input.config)
+          : isObserved(command) && fromShell(command) && isSupportCommand(rule, command.command, input.config)
       )
-      .map((command): LedgerEvidence => ({
-        eventRowId: command.eventId,
-        eventId: command.eventId === null ? null : (input.eventIds.get(command.eventId) ?? null),
-        command: command.command,
-        status: command.status,
-        exitCode: command.exitCode,
-        outcome: commandOutcome(command)
-      }));
+      .map((command): LedgerEvidence => toEvidence(command, commandOutcome(command)));
     const cited = evidence.at(-1) ?? null;
+    if (!cited) {
+      // No observed run decides the claim. Matching runs that cannot (inferred,
+      // no outcome of their own, narrowed or wrapped, not a shell execution)
+      // make it `unverified` rather than `unsupported`: unknown is never a pass.
+      const inferred = input.commands.filter((command) => {
+        const status = (command.status ?? "").toLowerCase();
+        if (status === "denied" || status === "declined") return false;
+        if (command.eventId !== null && command.eventId >= finalEvent.rowId) return false;
+        return mentionsKind(rule, command.command, input.config) || isSupportCommand(rule, command.command, input.config);
+      });
+      const latest = inferred.at(-1);
+      if (latest) {
+        // An outcome recorded after the final response is not cited as one.
+        const late = hasOwnOutcome(latest) && !beforeFinal(latest);
+        const known = hasOwnOutcome(latest) && !late;
+        const basis = toEvidence(latest, known ? commandOutcome(latest) : "unknown");
+        ledger.claims.push({
+          id: rule.id, label: rule.label, category: rule.category, verdict: "unverified",
+          reason: unverifiedReason(rule.label, latest, { known, late, observedShell: isObserved(latest) && fromShell(latest) }, inferred.length),
+          evidence: [], cited: basis
+        });
+        continue;
+      }
+    }
     const start = cited?.eventRowId == null ? null : input.runStarts?.get(cited.eventRowId) ?? cited.eventRowId;
     const change = input.latestChange;
     const stale = cited?.outcome === "passed" && change && (start === null || change.rowId > start);
@@ -620,6 +677,41 @@ export function eventRef(evidence: Pick<LedgerEvidence, "eventId" | "eventRowId"
 function verdictFor(cited: LedgerEvidence | null): ClaimVerdict {
   if (!cited) return "unsupported";
   return cited.outcome === "passed" ? "supported" : "contradicted";
+}
+
+/** Observed tier (rule 1). A record without a tier (built in memory, not stored) is observed. */
+function isObserved(command: CommandRecord): boolean {
+  return (command.evidenceTier ?? "observed") === "observed";
+}
+
+/** Whether a run is about this kind at all: the counting rule for failures. */
+function mentionsKind(rule: EvidenceClaimRule, command: string, config: AgentOpsConfig | undefined): boolean {
+  return mentionsRuleCommand(rule, command) || looselyMentionsKind(rule, command) || extendsSupportCommand(rule, command, config);
+}
+
+function unverifiedReason(
+  label: string,
+  run: CommandRecord,
+  outcome: { known: boolean; late: boolean; observedShell: boolean },
+  runs: number
+): string {
+  const basis = run.evidenceTier === "inferred" ? (run.tierBasis ?? "text") : null;
+  const why = basis === "text"
+    ? "was inferred from text, not observed"
+    : basis === "legacy"
+      ? "was stored by an earlier version that did not keep its provenance; re-import the capture with agentops audit"
+      : outcome.late
+        ? "recorded its result only after the final response"
+        : basis === "no-outcome" || !outcome.known
+          ? "has no recorded outcome"
+          : !outcome.observedShell
+            ? "was not a shell execution"
+            : "is not one of the configured commands, word for word";
+  const more = runs > 1 ? ` (${runs} matching runs, none observed)` : "";
+  const next = basis !== null || outcome.late || !outcome.known
+    ? `Rerun a configured ${label} command in a recorded or provider-JSON session.`
+    : `Run a configured ${label} command, or add this exact form to evidence.supportCommands.`;
+  return `Only inferred ${label} evidence: ${run.command} ${why}${more}. ${next}`;
 }
 
 function reasonFor(label: string, cited: LedgerEvidence | null, runs: number): string {

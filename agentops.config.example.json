@@ -18,6 +18,7 @@
     "requiredVerificationCommands": [],
     "maxHighSeverityRisks": 0,
     "allowUnsupportedFinalClaims": false,
+    "allowUnverifiedClaims": false,
     "maxGeneratedFileChurnLines": 0,
     "generatedFilePatterns": ["generated", "dist", "build"]
   },

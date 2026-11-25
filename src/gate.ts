@@ -1,9 +1,9 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, verificationTexts, LEDGER_CLAIM_CATEGORIES } from "./analyzer";
+import { countBlockedAttempts, currentGeneralSuccessFlags, currentLedgerClaimFlags, GENERAL_SUCCESS_CATEGORY, gateHighRiskCount, isObservedVerification, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import type { CommandRecord } from "./types";
-import { getClaimsLedger, commandOutcome, hasRecordedOutcome } from "./ledger";
+import { getClaimsLedger, commandOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
@@ -34,8 +34,7 @@ const unsupportedClaimCategories = new Set([
   "missing-lint-evidence",
   "missing-typecheck-evidence",
   "missing-build-evidence",
-  "contradicted-claim",
-  "inferred-verification-evidence"
+  "contradicted-claim"
 ]);
 
 export function evaluateQualityGate(
@@ -61,7 +60,7 @@ function evaluateQualityGateSnapshot(
   const commands = getCommands(store, sessionId);
   const risks = getRiskFlags(store, sessionId);
   const files = getFileChanges(store, sessionId);
-  const verification = commands.filter((command) => hasRecordedOutcome(command) && isVerificationCommand(command, config));
+  const verification = commands.filter((command) => isObservedVerification(command, config));
   const checks: GateCheck[] = [];
 
   const highRisks = gateHighRiskCount(commands, risks, config);
@@ -93,14 +92,35 @@ function evaluateQualityGateSnapshot(
       message: ledger.evidenceLimitation, observed: 0, threshold: 1
     });
   }
+  // Ledger verdicts are judged under this check's config (not the audit's), so a
+  // stricter support list here, or an analysis that did not finish, cannot pass
+  // a claim the ledger rejects. Other claim flags come from the stored analysis.
+  const ledgerFlags = currentLedgerClaimFlags(ledger, config).filter((flag) => flag.category !== UNVERIFIED_CLAIM_CATEGORY);
+  // The two switches are independent: inferred evidence fails its own check
+  // unless the repository opts in, whatever allowUnsupportedFinalClaims says, and
+  // an unverified claim is never also charged as unsupported. The claim is still
+  // reported as unverified either way (trust model, decision 1). The check counts
+  // the ledger's verdicts, not risk flags: a suppression hides a flag from the
+  // risk list, but only gates.allowUnverifiedClaims can pass an unverified claim.
+  const unverified = ledger.claims.filter((claim) => claim.verdict === "unverified");
+  checks.push({
+    id: "unverified-claims",
+    label: "Claims backed only by inferred evidence",
+    status: unverified.length === 0 || config.gates.allowUnverifiedClaims ? "passed" : "failed",
+    message: unverified.length === 0
+      ? "0 observed."
+      : `${unverified.length} unverified claim${unverified.length === 1 ? "" : "s"}${config.gates.allowUnverifiedClaims ? " (allowed by gates.allowUnverifiedClaims)" : ""}: ${unverified.map((claim) => claim.label).join(", ")}.`,
+    observed: unverified.length,
+    threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
+  });
   if (!config.gates.allowUnsupportedFinalClaims) {
-    // Ledger verdicts are judged under this check's config (not the audit's), so a
-    // stricter support list here, or an analysis that did not finish, cannot pass
-    // a claim the ledger rejects. Other claim flags come from the stored analysis.
-    const ledgerFlags = currentLedgerClaimFlags(ledger, config);
+    // The general success check is re-evaluated here too, so a session stored
+    // by an earlier version is judged by the current evidence rule.
+    const successFlags = currentGeneralSuccessFlags(store, sessionId, ledger, commands, config);
     const unsupportedClaims =
-      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
-      ledgerFlags.length;
+      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category) && risk.category !== GENERAL_SUCCESS_CATEGORY).length +
+      ledgerFlags.length +
+      successFlags.length;
     const check = checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0);
     for (const flag of ledgerFlags) {
       if (flag.category === "stale-verification") check.message += ` ${flag.message}`;

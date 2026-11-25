@@ -2,7 +2,7 @@ import type { AgentOpsConfig, RiskSuppression } from "./config";
 import { defaultConfig } from "./config";
 import type { Store } from "./store";
 import type { CommandRecord } from "./types";
-import { type ClaimsLedger, claimsRule, commandOutcome, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
+import { type ClaimsLedger, claimsRule, claimText, commandOutcome, type EvidenceClaimId, evidenceClaimRules, getClaimsLedger, getCommandContext, hasRecordedOutcome, mentionsRuleCommand } from "./ledger";
 import { detectStalls } from "./stalls";
 import { getCommands, getEvents, getFileChanges, getSession, getUnconfirmedFileEvents } from "./store";
 import { verificationInvocations } from "./verificationCommand";
@@ -140,8 +140,6 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
   flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
-  // An attempt without a recorded outcome cannot substantiate a success claim.
-  const observedCommands = commands.filter(hasRecordedOutcome);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -152,21 +150,13 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     });
   }
 
-  const ranVerification = observedCommands.some((command) => isVerificationCommand(command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
     const ledger = getClaimsLedger(store, sessionId, config);
     flags.push(...ledgerClaimFlags(ledger, finalEvent.id));
-    const unsupportedEvidenceClaims = ledger.claims.filter((claim) => claim.verdict !== "supported");
-    if (claimsSuccess(finalClaimTexts(finalEvent)) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
-      flags.push({
-        eventId: finalEvent.id,
-        severity: "medium",
-        category: "unsupported-success-claim",
-        message: "Final response claims success, but no test/lint/check command was recorded."
-      });
-    }
+    const success = generalSuccessClaimFlag(finalEvent, ledger, commands, config);
+    if (success) flags.push(success);
   }
 
   for (const event of events) {
@@ -213,6 +203,52 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   })();
+}
+
+/**
+ * The general success check: a final response that claims success, with no
+ * specific ledger claim to judge it and no observed verification. A command
+ * parsed from text never backs it (evidence trust model, rule 1).
+ */
+function generalSuccessClaimFlag(
+  finalEvent: { id: number; text?: string | null; summary: string },
+  ledger: ClaimsLedger,
+  commands: readonly CommandRecord[],
+  config: AgentOpsConfig
+): RiskFlag | null {
+  if (ledger.claims.some((claim) => claim.verdict !== "supported")) return null;
+  if (commands.some((command) => isObservedVerification(command, config))) return null;
+  if (!claimsSuccess(finalClaimTexts(finalEvent))) return null;
+  return {
+    eventId: finalEvent.id,
+    severity: "medium",
+    category: GENERAL_SUCCESS_CATEGORY,
+    message: "Final response claims success, but no test/lint/check command was recorded."
+  };
+}
+
+export const GENERAL_SUCCESS_CATEGORY = "unsupported-success-claim";
+
+/**
+ * The general success check as of now, under the given config: the gate
+ * evaluates it from the stored final response and the current evidence rule,
+ * not from flags an earlier version stored (spec R2.1). Honors suppressions.
+ */
+export function currentGeneralSuccessFlags(store: Store, sessionId: string, ledger: ClaimsLedger, commands: readonly CommandRecord[], config: AgentOpsConfig): RiskFlag[] {
+  const finalEvent = [...getEvents(store, sessionId)].reverse().find((event) => event.type === "final_response");
+  if (!finalEvent) return [];
+  const flag = generalSuccessClaimFlag(finalEvent, ledger, commands, config);
+  return flag && !isSuppressed(flag, config.suppressions) ? [flag] : [];
+}
+
+/**
+ * A run that counts as verification: a verification command with its own
+ * recorded outcome, observed rather than parsed from text (evidence trust
+ * model, rule 1). The gate, the dashboard and the general success check all
+ * use this rule.
+ */
+export function isObservedVerification(command: CommandRecord, config: AgentOpsConfig): boolean {
+  return command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config);
 }
 
 export function isVerificationCommand(command: CommandRecord | string, config: AgentOpsConfig = defaultConfig): boolean {
@@ -354,7 +390,9 @@ export function claimsFinalSuccess(value: string | readonly string[]): boolean {
 }
 
 function claimsSuccess(value: string | readonly string[]): boolean {
-  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(text));
+  // Matched as the ledger matches claims (claimText), so Markdown emphasis such
+  // as `_Implemented_.` cannot hide a success claim from `\b`.
+  return toClaimTexts(value).some((text) => /\b(done|complete|completed|success|successful|fixed|implemented|passed|working)\b/i.test(claimText(text)));
 }
 
 function isSensitivePath(path: string, config: AgentOpsConfig): boolean {
@@ -381,6 +419,8 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
       });
     } else if (claim.verdict === "stale") {
       flags.push({ eventId: finalEventId, severity: "medium", category: "stale-verification", message: claim.reason });
+    } else if (claim.verdict === "unverified") {
+      flags.push({ eventId: finalEventId, severity: "medium", category: UNVERIFIED_CLAIM_CATEGORY, message: `Final response claims ${claim.label} success, but the evidence is unverified. ${claim.reason}` });
     } else if (claim.verdict === "contradicted" && claim.cited) {
       const exit = claim.cited.exitCode === null ? "" : ` (exit ${claim.cited.exitCode})`;
       flags.push({
@@ -394,8 +434,11 @@ export function ledgerClaimFlags(ledger: ClaimsLedger, finalEventId: number | nu
   return flags;
 }
 
+/** Raised for a claim whose only evidence is inferred (evidence trust model, rule 2). */
+export const UNVERIFIED_CLAIM_CATEGORY = "unverified-claim";
+
 /** Categories that only ledger verdicts raise. */
-export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification"]);
+export const LEDGER_CLAIM_CATEGORIES = new Set([...evidenceClaimRules.map((rule) => rule.category), "contradicted-claim", "stale-verification", UNVERIFIED_CLAIM_CATEGORY]);
 
 /**
  * The ledger's claim flags for a stored session under `config`, after its

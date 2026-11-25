@@ -45,6 +45,7 @@ and have safe defaults. See [Compatibility policy](COMPATIBILITY.md).
     "maxHighSeverityRisks": 0,
     "maxBlockedAttempts": 2,
     "allowUnsupportedFinalClaims": false,
+    "allowUnverifiedClaims": false,
     "maxGeneratedFileChurnLines": 0,
     "generatedFilePatterns": ["generated", "dist", "build"]
   },
