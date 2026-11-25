@@ -320,7 +320,8 @@ describe("review 6063242011: every blocking case gets the expected verdict and c
   test("2: text never satisfies the verification prerequisites", () => {
     const result = text(["$ bun test", "exit code 0", "Final: Done."], gates({ requiredVerificationCommands: ["bun test"] }));
     expect(result.claim).toBeUndefined();
-    expect(failedChecks(result)).toEqual(["required-verification", "required-command:bun test"]);
+    // "Done." is a general success claim: pasted evidence cannot back it either.
+    expect(failedChecks(result)).toEqual(["required-verification", "required-command:bun test", "unsupported-final-claims"]);
   });
 
   test("3: a later turn marker never erases an earlier plain-text claim; user turns never claim", () => {
@@ -416,6 +417,17 @@ describe("review 6063542874: every blocking case gets the expected verdict and c
     expect(readiness("pasted.txt", "$ bun test\nexit code 0\nFinal: Done.\n")).toEqual(["failed", "blocked", 0]);
     const structured = [session("r3"), shell("bun test", "completed", 0), final("Done.")].map((l) => JSON.stringify(l)).join("\n");
     expect(readiness("structured.jsonl", `${structured}\n`)).toEqual(["passed", "ready", 1]);
+  });
+
+  test("review 6063889161: a general success claim needs observed verification", () => {
+    const optional = gates({ requireVerification: false });
+    const failed = (result: { gate: { checks: Array<{ id: string; status: string }> } }) => result.gate.checks.filter((c) => c.status === "failed").map((c) => c.id);
+    const pasted = text(["$ bun test", "exit code 0", "Ran bun run lint", "Final: Implemented."], optional);
+    expect([pasted.gate.status, failed(pasted)]).toEqual(["failed", ["unsupported-final-claims"]]);
+    // Controls: an observed run backs the same claim, and a neutral final response needs nothing.
+    const observed = run([session("g1"), shell("bun test", "completed", 0), final("Implemented.")], "g1.jsonl", optional);
+    expect(observed.gate.status).toBe("passed");
+    expect(text(["$ bun test", "exit code 0", "Final: Proceeding to the next file."], optional).gate.status).toBe("passed");
   });
 
   test("4: a citation shows the outcome as of the claim", () => {

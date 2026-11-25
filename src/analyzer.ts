@@ -140,8 +140,6 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
   const appliedChanges = fileChanges.filter(file => file.eventId !== null && !unconfirmed.has(file.eventId));
   flags.push(...detectStalls(commands, appliedChanges, { repeatedEditThreshold: config.risk.repeatedEditThreshold }, context));
 
-  // An attempt without a recorded outcome cannot substantiate a success claim.
-  const observedCommands = commands.filter(hasRecordedOutcome);
   const inferredVerificationCommands = commands.filter((command) => command.status === "inferred" && isVerificationCommand(command, config));
   for (const command of inferredVerificationCommands) {
     flags.push({
@@ -152,7 +150,9 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     });
   }
 
-  const ranVerification = observedCommands.some((command) => isVerificationCommand(command, config));
+  // A general success claim needs the same observed verification as the gate's
+  // prerequisites: a command parsed from text never backs it (rule 1).
+  const ranVerification = commands.some((command) => isObservedVerification(command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
@@ -213,6 +213,16 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   })();
+}
+
+/**
+ * A run that counts as verification: a verification command with its own
+ * recorded outcome, observed rather than parsed from text (evidence trust
+ * model, rule 1). The gate, the dashboard and the general success check all
+ * use this rule.
+ */
+export function isObservedVerification(command: CommandRecord, config: AgentOpsConfig): boolean {
+  return command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config);
 }
 
 export function isVerificationCommand(command: CommandRecord | string, config: AgentOpsConfig = defaultConfig): boolean {

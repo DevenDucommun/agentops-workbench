@@ -1,6 +1,6 @@
-import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts } from "./analyzer";
+import { claimsFinalSuccess, countBlockedAttempts, evaluateEvidenceClaims, gateHighRiskCount, finalClaimTexts, isObservedVerification } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
-import { isObservedVerification, requiredCommandChecks } from "./gate";
+import { requiredCommandChecks } from "./gate";
 import { type ClaimsLedger, commandOutcome, hasRecordedOutcome, evidenceClaimRules, getClaimsLedger, type LedgerClaim } from "./ledger";
 import {
   getCommands,

@@ -1,9 +1,9 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isVerificationCommand, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
+import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedVerification, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
 import type { CommandRecord } from "./types";
-import { getClaimsLedger, commandOutcome, hasRecordedOutcome } from "./ledger";
+import { getClaimsLedger, commandOutcome } from "./ledger";
 import { getCommands, getFileChanges, getRiskFlags, getSession, type Store } from "./store";
 
 export type GateStatus = "passed" | "failed";
@@ -138,15 +138,6 @@ function evaluateQualityGateSnapshot(
       changedFiles: options.gitChanges?.length ?? 0
     }
   };
-}
-
-/**
- * A run that can satisfy the verification prerequisites: a verification command
- * with its own recorded outcome, observed rather than parsed from text
- * (evidence trust model, rule 1). Every surface (gate, dashboard) uses this rule.
- */
-export function isObservedVerification(command: CommandRecord, config: AgentOpsConfig): boolean {
-  return command.evidenceTier !== "inferred" && hasRecordedOutcome(command) && isVerificationCommand(command, config);
 }
 
 /** Evaluate named requirements against observed verification commands, using the current repository policy. */
