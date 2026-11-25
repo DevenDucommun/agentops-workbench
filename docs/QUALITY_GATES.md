@@ -92,8 +92,11 @@ counts against a claim whatever its tier, including a failing exit code that
 text attributes to a command.
 
 Inferred commands never satisfy `requireVerification` or
-`requiredVerificationCommands`, and the dashboard's readiness and verification
-count use the same rule. In a plain-text import, claims are read from every
+`requiredVerificationCommands`, and never back a general success claim such as
+"Implemented." The dashboard's readiness and verification count use the same
+rule. `agentops check` evaluates the general success claim from the stored
+final response and commands each time it runs, so a session stored by an
+earlier version is judged by the current rule without re-import. In a plain-text import, claims are read from every
 line outside a user turn (shell prompts aside), not only the last marked
 response.
 

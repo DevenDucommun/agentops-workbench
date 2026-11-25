@@ -150,23 +150,13 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
     });
   }
 
-  // A general success claim needs the same observed verification as the gate's
-  // prerequisites: a command parsed from text never backs it (rule 1).
-  const ranVerification = commands.some((command) => isObservedVerification(command, config));
   const finalEvent = [...events].reverse().find((event) => event.type === "final_response");
   if (finalEvent) {
     // Verification claims get a ledger verdict (spec R2.1, R2.2).
     const ledger = getClaimsLedger(store, sessionId, config);
     flags.push(...ledgerClaimFlags(ledger, finalEvent.id));
-    const unsupportedEvidenceClaims = ledger.claims.filter((claim) => claim.verdict !== "supported");
-    if (claimsSuccess(finalClaimTexts(finalEvent)) && !ranVerification && unsupportedEvidenceClaims.length === 0) {
-      flags.push({
-        eventId: finalEvent.id,
-        severity: "medium",
-        category: "unsupported-success-claim",
-        message: "Final response claims success, but no test/lint/check command was recorded."
-      });
-    }
+    const success = generalSuccessClaimFlag(finalEvent, ledger, commands, config);
+    if (success) flags.push(success);
   }
 
   for (const event of events) {
@@ -213,6 +203,42 @@ export function analyzeSession(store: Store, sessionId: string, config: AgentOps
       });
     }
   })();
+}
+
+/**
+ * The general success check: a final response that claims success, with no
+ * specific ledger claim to judge it and no observed verification. A command
+ * parsed from text never backs it (evidence trust model, rule 1).
+ */
+function generalSuccessClaimFlag(
+  finalEvent: { id: number; text?: string | null; summary: string },
+  ledger: ClaimsLedger,
+  commands: readonly CommandRecord[],
+  config: AgentOpsConfig
+): RiskFlag | null {
+  if (ledger.claims.some((claim) => claim.verdict !== "supported")) return null;
+  if (commands.some((command) => isObservedVerification(command, config))) return null;
+  if (!claimsSuccess(finalClaimTexts(finalEvent))) return null;
+  return {
+    eventId: finalEvent.id,
+    severity: "medium",
+    category: GENERAL_SUCCESS_CATEGORY,
+    message: "Final response claims success, but no test/lint/check command was recorded."
+  };
+}
+
+export const GENERAL_SUCCESS_CATEGORY = "unsupported-success-claim";
+
+/**
+ * The general success check as of now, under the given config: the gate
+ * evaluates it from the stored final response and the current evidence rule,
+ * not from flags an earlier version stored (spec R2.1). Honors suppressions.
+ */
+export function currentGeneralSuccessFlags(store: Store, sessionId: string, ledger: ClaimsLedger, commands: readonly CommandRecord[], config: AgentOpsConfig): RiskFlag[] {
+  const finalEvent = [...getEvents(store, sessionId)].reverse().find((event) => event.type === "final_response");
+  if (!finalEvent) return [];
+  const flag = generalSuccessClaimFlag(finalEvent, ledger, commands, config);
+  return flag && !isSuppressed(flag, config.suppressions) ? [flag] : [];
 }
 
 /**

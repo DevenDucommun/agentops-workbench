@@ -430,6 +430,42 @@ describe("review 6063542874: every blocking case gets the expected verdict and c
     expect(text(["$ bun test", "exit code 0", "Final: Proceeding to the next file."], optional).gate.status).toBe("passed");
   });
 
+  test("review 6064789225: a stored session is checked under the current rule, not its stored flags", () => {
+    const optional = gates({ requireVerification: false });
+    const check = (body: string, stored: (db: Database, sessionId: string) => void) => {
+      const { dir, path } = imported("capture.txt", body);
+      const store = openStore(join(dir, "agentops.db"));
+      const input = loadAdapterInput(path);
+      const { sessionId } = ingestTranscript(store, resolveAdapter(input).parse(input, optional), optional);
+      analyzeSession(store, sessionId, optional);
+      // Rewrite the stored analysis the way an earlier version left it: it
+      // charged inferred-verification-evidence and stored no general-success flag.
+      stored(store.db, sessionId);
+      const gate = evaluateQualityGate(store, sessionId, optional, { gitChanges: [] });
+      store.db.close();
+      return gate.checks.filter((c) => c.status === "failed").map((c) => c.id);
+    };
+    const earlierVersion = (db: Database, sessionId: string) => {
+      db.query("DELETE FROM risk_flags WHERE session_id = ? AND category = 'unsupported-success-claim'").run(sessionId);
+      db.query("INSERT INTO risk_flags (session_id, event_id, severity, category, message) VALUES (?, NULL, 'medium', 'inferred-verification-evidence', 'Verification command was inferred from plain text, not observed: bun test')").run(sessionId);
+    };
+    const mixed = "$ bun test\nexit code 0\nRan bun run lint\nFinal: Implemented.\n";
+    expect(check(mixed, earlierVersion)).toEqual(["unsupported-final-claims"]);
+    // Controls: a neutral final response on the same stored evidence passes, and
+    // a suppression of the general-success category still applies at check time.
+    expect(check("$ bun test\nexit code 0\nFinal: Proceeding to the next file.\n", earlierVersion)).toEqual([]);
+    const suppressed = gates({ requireVerification: false });
+    suppressed.suppressions = [{ category: "unsupported-success-claim", reason: "Accepted for this repository." }];
+    const { dir, path } = imported("capture.txt", mixed);
+    const store = openStore(join(dir, "agentops.db"));
+    const input = loadAdapterInput(path);
+    const { sessionId } = ingestTranscript(store, resolveAdapter(input).parse(input, suppressed), suppressed);
+    analyzeSession(store, sessionId, suppressed);
+    earlierVersion(store.db, sessionId);
+    expect(evaluateQualityGate(store, sessionId, suppressed, { gitChanges: [] }).status).toBe("passed");
+    store.db.close();
+  });
+
   test("4: a citation shows the outcome as of the claim", () => {
     const s = "stream-r4";
     const render = (lines: Lines) => {

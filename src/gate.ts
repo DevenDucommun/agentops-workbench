@@ -1,4 +1,4 @@
-import { countBlockedAttempts, currentLedgerClaimFlags, gateHighRiskCount, isObservedVerification, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
+import { countBlockedAttempts, currentGeneralSuccessFlags, currentLedgerClaimFlags, GENERAL_SUCCESS_CATEGORY, gateHighRiskCount, isObservedVerification, verificationTexts, LEDGER_CLAIM_CATEGORIES, UNVERIFIED_CLAIM_CATEGORY } from "./analyzer";
 import type { AgentOpsConfig } from "./config";
 import { defaultConfig } from "./config";
 import type { GitChange } from "./git";
@@ -114,9 +114,13 @@ function evaluateQualityGateSnapshot(
     threshold: config.gates.allowUnverifiedClaims ? "allowed" : "<= 0"
   });
   if (!config.gates.allowUnsupportedFinalClaims) {
+    // The general success check is re-evaluated here too, so a session stored
+    // by an earlier version is judged by the current evidence rule.
+    const successFlags = currentGeneralSuccessFlags(store, sessionId, ledger, commands, config);
     const unsupportedClaims =
-      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category)).length +
-      ledgerFlags.length;
+      risks.filter((risk) => unsupportedClaimCategories.has(risk.category) && !LEDGER_CLAIM_CATEGORIES.has(risk.category) && risk.category !== GENERAL_SUCCESS_CATEGORY).length +
+      ledgerFlags.length +
+      successFlags.length;
     const check = checkAtMost("unsupported-final-claims", "Unsupported or inferred final claims", unsupportedClaims, 0);
     for (const flag of ledgerFlags) {
       if (flag.category === "stale-verification") check.message += ` ${flag.message}`;
