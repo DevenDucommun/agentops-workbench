@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { parseWaitJobs } from "../src/slowTurnWaitJobs";
 import { slowTurnReport } from "../src/slowTurns";
 
 const anchor = "2026-01-05T00:00:00Z";
@@ -95,7 +97,10 @@ test("missing targets, ambiguous sequences and cycles never invent an operation 
     ...a.tools[0], sequence, executionPhase: "cell-wait", continuationOfSequence: parent
   }));
   const r = slowTurnReport(source({ ...a, tools }, { ...b, tools: [{ ...b.tools[0], continuationOfSequence: null, executionPhase: "initial" }] }));
-  expect(r.recurring.find(s => s.step === "Tool execution: test suite")).toMatchObject({ operationCount: 1, unlinkedRecords: 7 });
+  expect(r.turns[0].waitAttribution).toHaveLength(7);
+  expect(r.turns[0].waitAttribution.every(w => w.job === null && w.launch === null)).toBe(true);
+  expect(r.turns[1].waitAttribution).toHaveLength(0);
+  expect(r.recurring.some(s => s.step.startsWith("Tool execution:"))).toBe(false);
 });
 
 test("ranks individual transitions and computes their median from all observations before limiting examples", () => {
@@ -112,4 +117,65 @@ test("ranks individual transitions and computes their median from all observatio
   expect(r.recurring.find(x => x.step.startsWith("Between "))).toMatchObject({ medianMs: null, longestMs: 30000,
     topContributors: [{ kind: "turn summary", records: 10, evidence: "/sessions/0/interactions/0/reasoningItemGaps" }] });
   expect(() => slowTurnReport(source(), 48, 28, anchor, 0)).toThrow("--top");
+});
+
+test("job evidence overrides the polling helper and preserves elapsed totals", () => {
+  const t = turn(1);
+  const tools = [
+    { ...t.tools[0], sequence: 1, executionPhase: "initial", continuationOfSequence: null },
+    { ...t.tools[0], sequence: 2, executionPhase: "orchestrated", operation: "discovery", continuationOfSequence: null },
+    { ...t.tools[0], sequence: 3, executionPhase: "initial", operation: "other", continuationOfSequence: null },
+    ...[1, 2, 2].map((parent, i) => ({ ...t.tools[0], sequence: i + 4, name: "wait",
+      operation: "discovery", executionPhase: "cell-wait", continuationOfSequence: parent }))
+  ];
+  const input = source({ ...t, tools, postToolGaps: [{ ...t.postToolGaps[0], afterTool: 5 }] });
+  const raw = JSON.stringify(input);
+  const turnRef = "/sessions/0/interactions/0";
+  const job = { turn: turnRef, launchSequence: 3, kind: "review", waitSequences: [5] };
+  const file = { schemaVersion: 1, exportSha256: createHash("sha256").update(raw).digest("hex"), jobs: [job] };
+  const parse = (jobs: unknown[]) => parseWaitJobs(raw, input, { ...file, jobs });
+  const before = slowTurnReport(input).turns[0];
+  const after = slowTurnReport(input, 48, 28, anchor, 3, parse([job])).turns[0];
+  expect(after.toolExecution).toEqual(before.toolExecution);
+  expect(after.afterResult).toEqual(before.afterResult);
+  expect(after.waitAttribution.map(w => [w.job, w.basis])).toEqual([
+    ["test", "linked operation"], ["review", "supplied"], [null, "unknown"]
+  ]);
+  expect(after.waitAttribution[1]).toMatchObject({ launch: turnRef + "/tools/2", wait: turnRef + "/tools/4" });
+  expect(after.steps.map(s => s.step)).toContain("After wait for review result → reasoning item");
+  expect(() => parseWaitJobs(raw + " ", input, file)).toThrow("digest");
+  for (const invalid of [[job, job], [{ ...job, waitSequences: [2] }], [{ ...job, launchSequence: 4 }],
+    [{ ...job, kind: "private text" }], [{ ...job, turn: "/sessions/0/interactions/1" }]]) {
+    expect(() => parse(invalid)).toThrow();
+  }
+  const secondWait = { ...job, waitSequences: [6] };
+  expect(parse([job, secondWait]).size).toBe(2);
+  expect(() => parse([job, { ...secondWait, kind: "merge" }])).toThrow("Conflicting job kinds");
+  expect(() => parse([{ ...job, launchSequence: 1 }])).toThrow("Conflicting job kinds");
+  expect(parse([{ ...job, launchSequence: 1, kind: "test" }]).size).toBe(1);
+});
+
+test("verified exec polls and cell waits share one job, excluding unverified work and time between polls", () => {
+  const t = turn(1);
+  const start = Date.parse(t.startedAt);
+  const phases = ["initial", "continuation", "cell-wait", "continuation", "orchestrated", "initial"];
+  const tools = phases.map((phase, i) => ({ ...t.tools[0], name: phase === "cell-wait" ? "wait" : "exec",
+    sequence: i + 1, operation: "other", executionPhase: phase, continuationOfSequence: i || null,
+    startedAt: iso(start + i * 200), completedAt: iso(start + i * 200 + 100) }));
+  const input = source({ ...t, tools, postToolGaps: [{ ...t.postToolGaps[0], afterTool: 2 }] });
+  const raw = JSON.stringify(input);
+  const job = { turn: "/sessions/0/interactions/0", launchSequence: 1, kind: "review" };
+  const links = (waitSequences: number[]) => parseWaitJobs(raw, input, { schemaVersion: 1,
+    exportSha256: createHash("sha256").update(raw).digest("hex"), jobs: [{ ...job, waitSequences }] });
+  const before = slowTurnReport(input).turns[0];
+  const after = slowTurnReport(input, 48, 28, anchor, 3, links([2, 3])).turns[0];
+  expect(after.waitAttribution).toHaveLength(2);
+  expect(after.waitAttribution.every(w => w.basis === "supplied" && w.launch === job.turn + "/tools/0")).toBe(true);
+  expect(after.steps.find(s => s.step === "Tool execution: wait for review")?.measurement)
+    .toEqual({ count: 2, totalMs: 200, longestMs: 100 });
+  expect(after.steps.find(s => s.step === "Tool execution: execution continuation")?.measurement.count).toBe(1);
+  expect(after.steps.some(s => s.step === "After wait for review result → reasoning item")).toBe(true);
+  expect(after.toolExecution).toEqual(before.toolExecution);
+  expect(after.afterResult).toEqual(before.afterResult);
+  for (const invalid of [[5], [6], [2, 2]]) expect(() => links(invalid)).toThrow();
 });
