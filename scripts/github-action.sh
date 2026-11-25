@@ -9,8 +9,23 @@
 #   AGENTOPS_CONFIG       config path (default: agentops.config.json)
 #   AGENTOPS_FAIL_ON_GATE "true" (default) exits 1 when any gate fails
 #   AGENTOPS_REPORT_DIR   where to write gate comments (default: $RUNNER_TEMP or $TMPDIR)
+#   AGENTOPS_COMMENT_KEY  optional key for a separate sticky comment (letters,
+#                         digits, `.`, `_`, `-`; at most 64 characters)
 #   GITHUB_STEP_SUMMARY, GITHUB_OUTPUT  set by the runner; optional locally
 set -euo pipefail
+
+# The report's first line is the sticky comment's marker. Each key gets its own
+# marker, and no marker is a prefix of another, so keyed comments and the
+# default comment never match each other.
+comment_key="${AGENTOPS_COMMENT_KEY-}"
+marker='<!-- agentops-gate -->'
+if [ -n "$comment_key" ]; then
+  if ! [[ "$comment_key" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+    echo "::error::comment-key must be 1 to 64 letters, digits, dots, underscores or hyphens."
+    exit 1
+  fi
+  marker="<!-- agentops-gate:$comment_key -->"
+fi
 
 bin="${AGENTOPS_BIN:?AGENTOPS_BIN is required}"
 config="${AGENTOPS_CONFIG:-agentops.config.json}"
@@ -45,7 +60,7 @@ shopt -u nullglob
 status="passed"
 failed=0
 : > "$combined"
-printf '<!-- agentops-gate -->\n' >> "$combined"
+printf '%s\n' "$marker" >> "$combined"
 
 gate_failed() {
   # $1 = artifact path (from the workflow input), $2 = reason (fixed text)

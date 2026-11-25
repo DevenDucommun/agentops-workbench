@@ -6,12 +6,10 @@ name: Action PR comment
 # writes to the pull request. Pull requests from forks are skipped: their
 # token cannot write.
 #
-# The Action finds its comment by a marker that every gate comment shares, so
-# this test refuses to run on a pull request that has a gate comment from any
-# other run. It tags a comment only when the Action reports that this job's
-# first run created it (output `comment-action`), and removes only tagged
-# comments on a re-run. A comment from another run that appears mid-test is
-# updated by the Action, never created, so the test fails without tagging it.
+# The test runs the Action with a `comment-key` unique to this run and attempt,
+# so it only ever creates, updates and deletes its own comment. Gate comments
+# from other runs (the default comment or other keys) are never matched, and
+# the test checks that they are left unchanged.
 
 on:
   pull_request:
@@ -20,10 +18,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-
-concurrency:
-  group: action-comment-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
 
 jobs:
   sticky-comment:
@@ -35,8 +29,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      GATE_MARKER: "<!-- agentops-gate -->"
-      TEST_MARKER: "<!-- agentops-action-comment-test -->"
+      COMMENT_KEY: action-comment-test-${{ github.run_id }}-${{ github.run_attempt }}
+      MARKER: "<!-- agentops-gate:action-comment-test-${{ github.run_id }}-${{ github.run_attempt }} -->"
 
     steps:
       - name: Checkout
@@ -50,27 +44,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Start from a pull request with no gate comment
+      - name: Record the other gate comments
         run: |
-          list_gate_comments() {
-            # A failed request stops the job: an empty list must mean no comments.
-            if ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-              --jq '.[] | select(.body | startswith(env.GATE_MARKER)) | {id, own: (.user.login == "github-actions[bot]" and (.body | contains(env.TEST_MARKER)))}' \
-              > "$RUNNER_TEMP/gate-comments.jsonl"; then
-              echo "::error::Could not list the pull request's comments."
-              exit 1
-            fi
-          }
-          list_gate_comments
-          if jq -e 'select(.own | not)' "$RUNNER_TEMP/gate-comments.jsonl" > /dev/null; then
-            echo "::error::This pull request has a gate comment from another run. The Action would overwrite it. Run this test on a pull request without one."
-            exit 1
-          fi
-          for id in $(jq -r 'select(.own) | .id' "$RUNNER_TEMP/gate-comments.jsonl"); do
-            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$id"
-          done
-          list_gate_comments
-          test ! -s "$RUNNER_TEMP/gate-comments.jsonl"
+          # Every gate comment that is not this run's: they must be untouched at the end.
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select((.body | startswith("<!-- agentops-gate")) and (.body | startswith(env.MARKER) | not)) | {id, updated_at}' \
+            > "$RUNNER_TEMP/others-before.jsonl"
+          echo "Other gate comments: $(wc -l < "$RUNNER_TEMP/others-before.jsonl")"
 
       - name: First run creates the comment
         id: first
@@ -79,6 +59,7 @@ jobs:
           agentops-path: ./bin/agentops
           artifact: fixtures/codex-exec-session.jsonl
           comment: "true"
+          comment-key: ${{ env.COMMENT_KEY }}
           fail-on-gate: "false"
 
       - name: Assert one comment with the first result
@@ -86,18 +67,11 @@ jobs:
           FIRST_ID: ${{ steps.first.outputs.comment-id }}
           FIRST_ACTION: ${{ steps.first.outputs.comment-action }}
         run: |
-          # This run must have created the comment itself. If another run's
-          # comment appeared after the empty-start check, the Action updated
-          # that one instead: stop here, before this test tags anything.
-          if [ "$FIRST_ACTION" != created ]; then
-            echo "::error::The first run ${FIRST_ACTION:-did not report} a comment instead of creating one. Another run may be writing gate comments on this pull request."
-            exit 1
-          fi
+          test "$FIRST_ACTION" = created
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/first.json"
+            --jq '[.[] | select(.body | startswith(env.MARKER))]' > "$RUNNER_TEMP/first.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/first.json")" = 1
-          jq -rs 'add | .[0].id' "$RUNNER_TEMP/first.json" > "$RUNNER_TEMP/comment-id"
-          test "$(cat "$RUNNER_TEMP/comment-id")" = "$FIRST_ID"
+          test "$(jq -rs 'add | .[0].id' "$RUNNER_TEMP/first.json")" = "$FIRST_ID"
           jq -rs 'add | .[0].user.login' "$RUNNER_TEMP/first.json" | grep -qx 'github-actions\[bot\]'
           body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/first.json")"
           grep -q 'Session: .codex-exec-sample.$' <<< "$body"
@@ -110,28 +84,43 @@ jobs:
           agentops-path: ./bin/agentops
           artifact: fixtures/risky-session.jsonl
           comment: "true"
+          comment-key: ${{ env.COMMENT_KEY }}
           fail-on-gate: "false"
 
       - name: Assert the same comment now holds the second result
         env:
+          FIRST_ID: ${{ steps.first.outputs.comment-id }}
           SECOND_ID: ${{ steps.second.outputs.comment-id }}
           SECOND_ACTION: ${{ steps.second.outputs.comment-action }}
         run: |
           test "$SECOND_ACTION" = updated
-          test "$SECOND_ID" = "$(cat "$RUNNER_TEMP/comment-id")"
+          test "$SECOND_ID" = "$FIRST_ID"
           gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq '[.[] | select(.body | startswith(env.GATE_MARKER))]' > "$RUNNER_TEMP/second.json"
+            --jq '[.[] | select(.body | startswith(env.MARKER))]' > "$RUNNER_TEMP/second.json"
           test "$(jq -s 'add | length' "$RUNNER_TEMP/second.json")" = 1
-          test "$(jq -rs 'add | .[0].id' "$RUNNER_TEMP/second.json")" = "$(cat "$RUNNER_TEMP/comment-id")"
+          test "$(jq -rs 'add | .[0].id' "$RUNNER_TEMP/second.json")" = "$FIRST_ID"
           body="$(jq -rs 'add | .[0].body' "$RUNNER_TEMP/second.json")"
           grep -q 'Session: .risky-session.$' <<< "$body"
           grep -q 'FAILED' <<< "$body"
           if grep -q 'codex-exec-sample' <<< "$body"; then echo "::error::The first result is still in the comment."; exit 1; fi
-          echo "Comment $(cat "$RUNNER_TEMP/comment-id") was created, then updated in place."
+          echo "Comment $FIRST_ID was created, then updated in place."
 
-      - name: Tag the test comment as this workflow's
+      - name: Other gate comments are unchanged
         run: |
-          id="$(cat "$RUNNER_TEMP/comment-id")"
-          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$id" --jq .body > "$RUNNER_TEMP/body.md"
-          printf '\n%s\n' "$TEST_MARKER" >> "$RUNNER_TEMP/body.md"
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$RUNNER_TEMP/body.md" > /dev/null
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select((.body | startswith("<!-- agentops-gate")) and (.body | startswith(env.MARKER) | not)) | {id, updated_at}' \
+            > "$RUNNER_TEMP/others-after.jsonl"
+          if ! diff "$RUNNER_TEMP/others-before.jsonl" "$RUNNER_TEMP/others-after.jsonl"; then
+            echo "::error::Another gate comment changed during the test. If another run wrote it at the same time, re-run; otherwise the keyed comment is not isolated."
+            exit 1
+          fi
+
+      - name: Remove this run's comment
+        if: always() && steps.first.outputs.comment-id != ''
+        env:
+          ID: ${{ steps.first.outputs.comment-id }}
+        run: |
+          # Delete only this run's keyed comment, after confirming its marker.
+          if gh api "repos/$GITHUB_REPOSITORY/issues/comments/$ID" --jq '.body | startswith(env.MARKER)' | grep -qx true; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$ID"
+          fi

@@ -102,3 +102,51 @@ test("Action summary and sticky comment cite the same failed run and the later s
     expect(readFileSync(stepOutput, "utf8")).toBe(`id=${id}\naction=${action}\n`);
   }
 });
+
+test("comment-key gives each key its own sticky comment", () => {
+  const root = join(import.meta.dir, "..");
+  const dir = mkdtempSync(join(tmpdir(), "agentops-action-key-"));
+  // The gate report's first line is the marker; an invalid key stops before any write.
+  const report = (key: string) => {
+    const proc = Bun.spawnSync(["bash", script], {
+      cwd: dir,
+      env: { PATH: process.env.PATH ?? "", AGENTOPS_BIN: "false", AGENTOPS_ARTIFACTS: "", AGENTOPS_REPORT_DIR: dir, AGENTOPS_COMMENT_KEY: key, GITHUB_OUTPUT: join(dir, `out-${key}`) },
+      stdout: "pipe", stderr: "pipe"
+    });
+    const out = proc.stdout.toString() + proc.stderr.toString();
+    const path = /Report: (.*)$/m.exec(out)?.[1];
+    return { exitCode: proc.exitCode, out, path, firstLine: path ? readFileSync(path, "utf8").split("\n")[0] : null };
+  };
+  expect(report("").firstLine).toBe("<!-- agentops-gate -->");
+  expect(report("a").firstLine).toBe("<!-- agentops-gate:a -->");
+  for (const bad of ["has space", "x -->", "a".repeat(65)]) {
+    const result = report(bad);
+    expect([bad, result.exitCode, result.path]).toEqual([bad, 1, undefined]);
+    expect(result.out).toContain("comment-key must be");
+  }
+
+  // The comment step's own selection filter, run by real jq over existing comments:
+  // the default comment and keys `a` and `ab` never match each other.
+  const action = Bun.YAML.parse(readFileSync(join(root, "action.yml"), "utf8")) as { runs: { steps: Array<{ name: string; run: string }> } };
+  const post = action.runs.steps.find(step => step.name === "Post sticky PR comment")!;
+  const comments = join(dir, "comments.json");
+  writeFileSync(comments, JSON.stringify([
+    { id: 1, body: "<!-- agentops-gate -->\ndefault" },
+    { id: 2, body: "<!-- agentops-gate:a -->\nkey a" },
+    { id: 3, body: "<!-- agentops-gate:ab -->\nkey ab" }
+  ]));
+  writeFileSync(join(dir, "gh"), [
+    "#!/bin/sh",
+    'if [ "$2" != "-X" ]; then jq -r "$5" "$COMMENTS"; exit 0; fi',
+    'echo "$3 $4" > "$CALLED"',
+    'echo 99'
+  ].join("\n"), { mode: 0o755 });
+  for (const [key, expected] of [["", "PATCH repos/org/repo/issues/comments/1"], ["a", "PATCH repos/org/repo/issues/comments/2"], ["ab", "PATCH repos/org/repo/issues/comments/3"], ["abc", "POST repos/org/repo/issues/7/comments"]]) {
+    const { path } = report(key);
+    const called = join(dir, `called-${key}`);
+    const result = Bun.spawnSync(["bash", "-e", "-o", "pipefail", "-c", post.run], {
+      cwd: dir, env: { PATH: dir + ":" + (process.env.PATH ?? ""), REPORT: path!, GITHUB_REPOSITORY: "org/repo", PR_NUMBER: "7", GITHUB_OUTPUT: join(dir, `step-${key}`), COMMENTS: comments, CALLED: called }
+    });
+    expect([key, result.exitCode, readFileSync(called, "utf8").trim()]).toEqual([key, 0, expected]);
+  }
+});
