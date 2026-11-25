@@ -29,6 +29,10 @@ inputs:
     description: "Post or update one sticky PR comment with the gate result. Needs `pull-requests: write`."
     required: false
     default: "false"
+  comment-key:
+    description: "Optional key for a separate sticky comment, so several gates on one pull request keep their own comments. Letters, digits, `.`, `_` and `-`, at most 64 characters. Empty uses the default comment."
+    required: false
+    default: ""
   github-token:
     description: Token used only when `comment` is true.
     required: false
@@ -44,6 +48,12 @@ outputs:
   report:
     description: Path to the combined Markdown gate report.
     value: ${{ steps.gate.outputs.report }}
+  comment-id:
+    description: Id of the sticky PR comment, when `comment` is true.
+    value: ${{ steps.comment.outputs.id }}
+  comment-action:
+    description: "`created` or `updated`, when `comment` is true."
+    value: ${{ steps.comment.outputs.action }}
 
 runs:
   using: composite
@@ -73,11 +83,13 @@ runs:
         AGENTOPS_BIN: ${{ steps.install.outputs.bin }}
         AGENTOPS_ARTIFACTS: ${{ inputs.artifact }}
         AGENTOPS_CONFIG: ${{ inputs.config }}
+        AGENTOPS_COMMENT_KEY: ${{ inputs.comment-key }}
         # The comment step must run even when the gate fails, so failing is deferred.
         AGENTOPS_FAIL_ON_GATE: "false"
       run: bash "$GITHUB_ACTION_PATH/scripts/github-action.sh"
 
     - name: Post sticky PR comment
+      id: comment
       if: inputs.comment == 'true' && github.event.pull_request.number
       shell: bash
       env:
@@ -85,14 +97,22 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPORT: ${{ steps.gate.outputs.report }}
       run: |
-        marker='<!-- agentops-gate -->'
+        # The report starts with this comment's marker (keyed by comment-key).
+        MARKER="$(head -n 1 "$REPORT")"
+        export MARKER
         existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)"
+          --jq '.[] | select(.body | startswith(env.MARKER)) | .id' | head -n 1)"
         if [ -n "$existing" ]; then
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$REPORT" > /dev/null
+          id="$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@"$REPORT" --jq .id)"
+          action=updated
         else
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@"$REPORT" > /dev/null
+          id="$(gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@"$REPORT" --jq .id)"
+          action=created
         fi
+        {
+          echo "id=$id"
+          echo "action=$action"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Enforce gate
       if: inputs.fail-on-gate == 'true' && steps.gate.outputs.status == 'failed'

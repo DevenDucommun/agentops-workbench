@@ -286,14 +286,19 @@ jobs:
 | `config` | `agentops.config.json` | Config used by both `audit` and `check`. |
 | `fail-on-gate` | `true` | Fail the job when any gate fails. |
 | `comment` | `false` | Post or update one sticky PR comment with the result. Needs `pull-requests: write`. |
+| `comment-key` | empty | Keep a separate sticky comment for this key (letters, digits, `.`, `_`, `-`; at most 64 characters), so several gates on one pull request do not overwrite each other. |
 | `github-token` | `github.token` | Token used only for `comment`. |
 
 Outputs: `status` (`passed` or `failed`), `failed` (count of failing
-artifacts), and `report` (path to the combined Markdown report).
+artifacts), and `report` (path to the combined Markdown report). With
+`comment: true`, also `comment-id` (the sticky comment's id) and
+`comment-action` (`created` or `updated`).
 
 The CLI never posts to GitHub. Only the Action posts, and only with
 `comment: true`. The sticky comment starts with `<!-- agentops-gate -->` and is
-updated in place on later runs.
+updated in place on later runs. With `comment-key: <key>` it starts with
+`<!-- agentops-gate:<key> -->` instead, and only runs with the same key update
+it.
 
 Artifacts are treated as untrusted input. The Action keeps its SQLite
 databases and reports under `$RUNNER_TEMP`, never in the repository checkout,

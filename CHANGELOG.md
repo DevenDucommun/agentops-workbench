@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- The Action reports its sticky comment: outputs `comment-id` and
+  `comment-action` (`created` or `updated`) when `comment` is true.
+- Action input `comment-key` keeps a separate sticky comment per key, so
+  several gates on one pull request do not overwrite each other. The default
+  comment is unchanged.
+- A hosted workflow, run on pull requests labeled `action-comment-test`,
+  checks that one comment is created and then updated in place. It uses a key
+  unique to each run, so it never touches other gate comments.
+
 ### Changed
 
 - Blocked risky commands (T2.4): a destructive or permission-changing command
